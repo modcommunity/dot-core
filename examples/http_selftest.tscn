@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cdh0t5nrxk8qa"]
+
+[ext_resource type="Script" path="res://examples/http_selftest.gd" id="1_httpst"]
+
+[node name="HttpSelfTest" type="Node"]
+script = ExtResource("1_httpst")
