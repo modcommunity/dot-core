@@ -13,8 +13,8 @@ I intend on reviewing code, testing, and editing documentation regularly. If you
 
 ## The Foundation of the `dot-*` Asset Family
 Shared foundation for the `dot-*` Godot 4 asset family — the common layer under
-[dot-server](../dot-server), [dot-auth](../dot-auth) and
-[dot-cloud](../dot-cloud).
+[dot-server](https://github.com/modcommunity/dot-server), [dot-auth](https://github.com/modcommunity/dot-auth) and
+[dot-cloud](https://github.com/modcommunity/dot-cloud).
 
 Targets desktop (Windows, macOS, Linux), mobile (Android, iOS) and the web from
 one codebase, and encodes the browser's limitations rather than pretending they
@@ -26,7 +26,7 @@ Copy `addons/dot_core/` into your project and enable **dot-core** in
 *Project → Project Settings → Plugins*. The plugin only registers inspector
 types; every class is available via `class_name` whether it is enabled or not.
 
-Requires Godot 4.4 or newer.
+Requires Godot 4.7 or newer.
 
 ## What is in it
 

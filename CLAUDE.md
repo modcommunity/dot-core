@@ -70,6 +70,17 @@ the cause. `DotLog.result(channel, what, res)` collapses the log-and-return case
 one-to-one: a threads-enabled web template has threads, a single-threaded
 desktop build does not.
 
+**Sometimes the capability question has to come first because the call itself is
+the damage.** `OS.get_unique_id()` does not fail quietly on web or iOS: it pushes
+`OS::get_unique_id() is not available on the Web platform` and *then* returns the
+empty string. Five callers across dot-auth, dot-server and dot-user checked the
+result for emptiness and fell back correctly — after each had printed a red engine
+error, on the page a player has open and in the log a bug report is pasted from,
+naming a function nobody called on purpose. `DotPlatform.has_unique_id()` and
+`DotPlatform.unique_id()` are the honest form: ask whether the capability is there
+before reaching for it, rather than reaching for it and reading the wreckage.
+Found by loading the browser client, which is the only place it was visible.
+
 ### Signals from worker threads must be deferred.
 
 `DotJob._emit_on_main_thread()` exists because GDScript resumes an awaiting

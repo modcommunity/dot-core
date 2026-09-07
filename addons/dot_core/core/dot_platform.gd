@@ -221,6 +221,29 @@ static func can_listen() -> bool:
 	return not is_web()
 
 
+## Whether [method OS.get_unique_id] may be CALLED, never mind what it returns.
+##
+## [b]It is not a query that fails quietly.[/b] On web and iOS the engine pushes
+## `OS::get_unique_id() is not available on the <platform> platform` and then returns
+## the empty string — so every caller that politely checks the result for emptiness
+## has already printed a red error to the console. In a browser that is on the page a
+## player opens, in the log a bug report is pasted from, and it names a function
+## nobody called deliberately.
+##
+## The family's rule with the check on the other side: ask whether the capability is
+## there before reaching for it, rather than reaching for it and reading the wreckage.
+static func has_unique_id() -> bool:
+	return not (is_web() or kind() == Kind.IOS)
+
+
+## The machine's own identifier, or the empty string where there is none.
+##
+## Never errors. Callers that need a stable id where this is empty generate and store
+## one — see [code]DotClientLink._device_id[/code], which is the shape to copy.
+static func unique_id() -> String:
+	return OS.get_unique_id() if has_unique_id() else ""
+
+
 ## Whether [FileAccess] encrypted files are usable for the token store.
 ##
 ## Works everywhere the engine has a filesystem. Note that on web the key
@@ -257,6 +280,7 @@ static func describe() -> Dictionary:
 		"can_listen": can_listen(),
 		"can_mount_packs": can_mount_packs(),
 		"can_unmount_packs": can_unmount_packs(),
+		"unique_id": has_unique_id(),
 		"storage": ["native", "sandboxed", "browser"][storage()],
 	}
 

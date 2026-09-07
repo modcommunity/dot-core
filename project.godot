@@ -12,7 +12,7 @@ config/name="dot-core"
 config/description="Shared foundation for the dot-* Godot asset family."
 config/version="0.1.0"
 run/main_scene="res://examples/capability_report.tscn"
-config/features=PackedStringArray("4.4", "GL Compatibility")
+config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [editor_plugins]
 
