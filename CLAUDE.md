@@ -81,6 +81,29 @@ naming a function nobody called on purpose. `DotPlatform.has_unique_id()` and
 before reaching for it, rather than reaching for it and reading the wreckage.
 Found by loading the browser client, which is the only place it was visible.
 
+### `==` and `!=` are not total. Use `DotValue` where a type is not yours.
+
+GDScript's comparison operators between two **mismatched Variant types** are a runtime
+error, not `false` and `true`. The expression is abandoned, an error is pushed, and the
+calling function carries on with an undefined condition — so the caller sees a plausible
+answer and the only trace is a line in a log nobody is reading.
+
+This family has now paid for it twice. `DotNpcAiBlackboard.has()` was the textbook
+sentinel comparison — `get_value(key, now, MISSING) != MISSING` — and answered false for
+every value that was not a `StringName`, because comparing a `Vector3` with one is an
+error rather than a difference. dot-settings then hit the identical thing comparing a
+coerced value with the raw one it came from, and **its suite reported "0 failed" and
+exited 0** while eight checks never ran.
+
+`DotValue.same` / `differs` / `is_blank` / `same_dictionary` answer the question that was
+actually being asked. Two foldings are deliberate and documented at the call site: int
+against float, and `StringName` against `String` — a document that made a round trip
+through JSON otherwise reports a change on every single load.
+
+Use them **anywhere either side is a `Variant` whose type you do not control**: a config
+file, a wire message, a saved document, a sentinel. Ordinary comparisons between two
+values of a declared type stay as they are; wrapping those would be noise.
+
 ### Signals from worker threads must be deferred.
 
 `DotJob._emit_on_main_thread()` exists because GDScript resumes an awaiting
@@ -149,6 +172,7 @@ done
 # 2. It actually works at runtime.
 godot --headless --path . res://examples/capability_report.tscn
 godot --headless --path . res://examples/http_selftest.tscn   # 35 checks, exits non-zero
+godot --headless --path . res://examples/value_selftest.tscn  # 27 checks, exits non-zero
 ```
 
 The second one matters. Parse-clean GDScript can still be wrong in ways only
@@ -207,6 +231,7 @@ addons/dot_core/
     dot_hash_job.gd      Chunked file hashing as a DotJob.
     dot_rate_limiter.gd  Token bucket.
     dot_semver.gd        Version compare that does not sort 0.10 below 0.9.
+    dot_value.gd         Comparisons that are total. Read the next section.
   net/
     dot_transport.gd           Base + address parsing (incl. bracketed IPv6).
     dot_transport_websocket.gd Serves browser + native from one listener.
@@ -219,8 +244,11 @@ addons/dot_core/
 
 - **WebRTC transport.** `DotPlatform.has_webrtc()` probes for it, but the module
   ships as an optional GDExtension rather than in standard templates, so a
-  transport implementation would be untestable in a default install. Worth adding
-  when peer-to-peer or unreliable-over-web is actually needed.
+  transport implementation would be untestable in a default install. **dot-p2p is
+  where it went**, for exactly the reason this entry gave: it reaches every WebRTC
+  class through `ClassDB.instantiate`, never by name, so a build without the
+  extension still compiles — the same rule `DotTransportENet` follows for the web
+  template.
 - **DTLS for ENet.** Configured on `ENetConnection` rather than the peer, and the
   dynamic-access indirection makes it fiddly. WebSocket + TLS covers the
   encrypted case today.

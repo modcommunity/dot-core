@@ -12,7 +12,7 @@ This asset, along with all the others, was built initially with **Claude Code** 
 I intend on reviewing code, testing, and editing documentation regularly. If you're interested in helping out, please let me know!
 
 ## The Foundation of the `dot-*` Asset Family
-Shared foundation for the `dot-*` Godot 4 asset family — the common layer under [dot-server](https://github.com/modcommunity/dot-server), [dot-auth](https://github.com/modcommunity/dot-auth) and [dot-cloud](https://github.com/modcommunity/dot-cloud).
+Shared foundation for the `dot-*` Godot 4 asset family, and the common layer under [dot-server](https://github.com/modcommunity/dot-server), [dot-auth](https://github.com/modcommunity/dot-auth) and [dot-cloud](https://github.com/modcommunity/dot-cloud).
 
 Targets desktop (Windows, macOS, Linux), mobile (Android, iOS) and the web from one codebase, and encodes the browser's limitations rather than pretending they do not exist.
 
@@ -27,7 +27,7 @@ Requires Godot 4.7 or newer.
 | | |
 | --- | --- |
 | **`DotResult` / `DotError`** | The return type of everything fallible. Stable `CODE_*` values callers branch on; reading `.value` on a failure errors instead of handing back a default. |
-| **`DotPlatform`** | Cached capability detection — threads, UDP, listening, pack mounting, storage family. Ask about capabilities, not platform names. |
+| **`DotPlatform`** | Cached capability detection for threads, UDP, listening, pack mounting and storage family. Ask about capabilities, not platform names. |
 | **`DotNodeRef`** | An inspector-editable description of *which node*: relative, absolute, group, registry, ancestor/descendant by type, or create-if-missing. Replaces hardcoded scene paths. |
 | **`DotConfig`** | Layered configuration: exported defaults < file < environment < command line, with reflective key discovery and secret-key protection. |
 | **`DotScheduler` / `DotJob`** | Long work in slices. Worker threads where available, a per-frame time budget where not. |
@@ -43,7 +43,7 @@ Requires Godot 4.7 or newer.
 godot --headless --path . res://examples/capability_report.tscn
 ```
 
-Prints what the build can do and self-tests the pieces that need no network. Run it on every target you ship to — it is the quickest way to discover that your web export has no threads or that a device reports no storage quota, both of which change how dot-cloud behaves.
+Prints what the build can do and self-tests the pieces that need no network. Run it on every target you ship to. It is the quickest way to discover that your web export has no threads or that a device reports no storage quota, both of which change how dot-cloud behaves.
 
 ## Design notes
 
@@ -55,4 +55,4 @@ Prints what the build can do and self-tests the pieces that need no network. Run
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
