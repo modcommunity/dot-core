@@ -3,7 +3,8 @@
 Shared foundation for the `dot-*` Godot asset family. Everything the other three
 addons need in common: logging, platform capability detection, filesystem
 handling, configurable node references, layered configuration, frame-budgeted
-background work, hashing, HTTP, and the multiplayer transport abstraction.
+background work, hashing, reproducible randomness, HTTP, and the multiplayer
+transport abstraction.
 
 **The distributable is `addons/dot_core/`.** Everything outside it — `project.godot`,
 `examples/` — exists so the addon can be opened and validated on its own and is
@@ -115,6 +116,22 @@ adding a node, mounting a pack — touches the scene tree off-thread.
 **This was a real bug found by running `examples/capability_report.tscn`, not by
 reading the code.** Any new signal emitted from thread-capable code needs the
 same treatment.
+
+## Reproducible randomness
+
+`random/` was `dot-randomness`, a repository of its own, until it was folded in here. It is in dot-core rather than beside it because **it could never have been optional**: it already depended on `DotConfig`, `DotError`, `DotLog`, `DotRegistry` and `DotResult`, and while it sat behind an extra vendored addon nobody installed it. Six addons hand-rolled a generator instead — dot-spawn, dot-combat, dot-team, dot-map, dot-vote and dot-2d — and two of those hand-rolled the *same algorithm this file implements*, worse. Determinism has to arrive with dot-core or it does not arrive.
+
+**The one idea: a draw is a pure function of (key, index), not a position in a moving cursor.** `at(index)` touches nothing, answers the same on every machine, and works for an index nobody has reached. `stream(name)` derives a child by hashing the name in, so two subsystems never disturb each other and the order they were created in stops mattering. Three failures this prevents have all happened in this tree: two peers drawing in a different order diverge for the rest of the session; inserting one roll changes every replay recorded before it; and a stream a receiving peer cannot mirror, because it must *adopt* an index rather than allocate one — which is what `adopt()` is named for.
+
+Three things about the splitmix64 mixer are load-bearing and **all three fail silently**:
+
+- **The constants are written as signed decimals.** All three are above 2^63 and GDScript's `int` is signed, so the hex spelling either fails to parse or quietly becomes a float — and a mixer that is a float is not a mixer. dot-combat hit exactly this and cleared the top bit of each constant to make them fit, leaving something that mixed but was no longer the algorithm it named.
+- **`>>` is arithmetic.** Shifting a negative value keeps the sign bits, so the top of the output is a run of ones rather than entropy. `_unsigned_shift` masks after the shift. Half of every mixer's output has the high bit set, so this is not an edge case — it is half of them.
+- **Take the bits you meant to take.** `DotSpread.unit()` took 23 where it meant 24 and so never returned a value above 0.5: every shotgun pattern was a half-moon, and a maximum-magnitude assertion passed throughout. The suites count quadrants and buckets for that reason and never assert one particular number.
+
+`_hash_name` is FNV-1a rather than `String.hash()`, which is 32-bit and is not promised to be stable across engine versions — a seed that means a different world after an engine upgrade was never shareable. `dot-spawn` folded its key in with `hash()` for the same reason it should not have, and now derives a named stream instead.
+
+**`mix4` and `unit_from` are public on purpose.** A subsystem whose draw is a pure function of several integers has nowhere to keep a stream object and will not allocate one per pellet. Given no shared entry point it writes its own mixer, which is how the family got two. The seed is public, deliberately: a client can compute every number the server will, so anything that must be secret from a player belongs behind a value they do not have.
 
 ## Platform constraints this codebase encodes
 
@@ -238,6 +255,12 @@ addons/dot_core/
     dot_transport_enet.gd      Lower overhead, no browsers. Dynamic ENet access.
     dot_transport_auto.gd      Picks one and logs why.
     dot_http.gd                HTTPRequest wrapper: retries, resume, pooling.
+  random/
+    dot_random_stream.gd   A key and an index. Splits by name, mirrors by adopt.
+    dot_random_table.gd    Weighted ids, three policies, pity honest about its rate.
+    dot_random_schedule.gd Random events in ticks, from a pure function of the tick.
+    dot_random_config.gd   The seed, the scope, whether to announce it. A DotConfig.
+    dot_random_manager.gd  The node a game holds. The only thing that knows the seed.
 ```
 
 ## Things deliberately not here

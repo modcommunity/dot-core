@@ -36,7 +36,19 @@ func _enter_tree() -> void:
 		icon
 	)
 
+	# Registered like the other two and for the same reason, but note what it is
+	# NOT: a manager is placed by the host, never autoloaded. A server's
+	# authoritative streams and a client's private cosmetic ones are two managers
+	# in one process with two different seeds, on purpose.
+	add_custom_type(
+		"DotRandomManager",
+		"Node",
+		load("res://addons/dot_core/random/dot_random_manager.gd"),
+		icon
+	)
+
 
 func _exit_tree() -> void:
+	remove_custom_type("DotRandomManager")
 	remove_custom_type("DotLogSink")
 	remove_custom_type("DotScheduler")
