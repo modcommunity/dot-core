@@ -105,6 +105,21 @@ const MAX_POOL := 16
 
 var _pool: Array[HTTPRequest] = []
 var _in_flight: int = 0
+
+## Nodes handed out by [method _acquire] and not yet released.
+##
+## [b]Busy-ness cannot be read off the node.[/b] [method _acquire] used to pick any
+## node reporting [code]STATUS_DISCONNECTED[/code], on the reasoning that a finished
+## request is disconnected again -- which is true, and useless, because a node that has
+## just been given `request_raw()` is ALSO still disconnected: it does not connect until
+## the next poll. So two calls in one frame both saw the same idle node and both took it.
+##
+## That is not a rare race. dot-cloud downloads with `parallel_downloads` of 6, so six
+## requests start in the same frame, five collide with "HTTPRequest is processing a
+## request", the source is marked failing and backs off for sixty seconds, and every
+## remaining file reports "No content source is available". A content delivery network
+## that cannot download content, from one wrong idle test.
+var _busy: Array[HTTPRequest] = []
 var _rng := RandomNumberGenerator.new()
 
 
@@ -603,9 +618,13 @@ func _redact(url: String) -> String:
 
 func _acquire() -> HTTPRequest:
 	for req in _pool:
-		# get_http_client_status() is the only reliable "is this node busy"
-		# signal; a node whose request finished is DISCONNECTED again.
+		# Both tests, and both are needed. `_busy` covers the node we handed out this
+		# frame that has not connected yet; the status covers a node released while its
+		# connection is still winding down.
+		if _busy.has(req):
+			continue
 		if req.get_http_client_status() == HTTPClient.STATUS_DISCONNECTED:
+			_busy.append(req)
 			return req
 
 	if _pool.size() >= MAX_POOL:
@@ -627,14 +646,17 @@ func _acquire() -> HTTPRequest:
 
 	add_child(req)
 	_pool.append(req)
+	_busy.append(req)
 	return req
 
 
 func _release(req: HTTPRequest) -> void:
+	_busy.erase(req)
+
 	# Nodes are kept rather than freed: connection reuse across requests to the
 	# same host is most of the benefit, and a token refresh followed by three API
 	# calls should not open four TLS sessions.
-	if _in_flight == 0 and _pool.size() > 4:
+	if _in_flight == 0 and _busy.is_empty() and _pool.size() > 4:
 		for extra in _pool.slice(4):
 			extra.queue_free()
 		_pool = _pool.slice(0, 4)
