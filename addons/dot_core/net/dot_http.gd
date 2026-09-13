@@ -385,6 +385,22 @@ func download_to_file(
 	if not parent.ok:
 		return parent
 
+	# [b]The engine does not always write the file it was asked to.[/b] On the web
+	# export a 2xx arrives, `HTTPRequest.download_file` reports success, and there is
+	# nothing at the path afterwards -- which surfaced three layers away in dot-cloud as
+	# "There is no partial download to commit", an INTEGRITY error against a mirror that
+	# had just served the right bytes, followed by that source backing itself off and
+	# every remaining file reporting "No content source is available". A browser client
+	# could not download a single object.
+	#
+	# Detected rather than asked about, in the family's own style: try the engine's
+	# writer once, and if a success leaves no file, do it in memory from then on. That is
+	# one wasted request per process on a platform where it does not work, none anywhere
+	# else, and it needs no list of which platforms those are -- a list that would be
+	# wrong the first time one of them was fixed.
+	if not _engine_writes_downloads:
+		return await _download_in_memory(url, dest_path, range_start, headers)
+
 	var merged := headers.duplicate()
 
 	# HTTPRequest has no append mode: it truncates whatever download_file points
@@ -469,13 +485,58 @@ func download_to_file(
 			if not joined.ok:
 				out = joined
 			else:
-				DotWeb.sync_filesystem()
-				out = DotResult.success({
-					"status": status,
-					"headers": _parse_headers(completed[2]),
-					"size": DotPaths.file_size(dest_path),
-					"resumed": resumed,
-				})
+				# [b]No flush here, deliberately, and removing it is what made
+				# downloading work in a browser at all.[/b] On web `user://` is an
+				# emscripten IDBFS mirror and `force_fs_sync` is an ASYNCHRONOUS
+				# `FS.syncfs`; overlapping calls are not safe, and this ran once per
+				# completed download with `parallel_downloads` of them in flight. The
+				# result was a file that existed when this function measured it and
+				# was gone a moment later, three layers away, as
+				#
+				#     [io] There is no partial download to commit.
+				#
+				# reported as an integrity failure against a mirror that had just
+				# served a 200 with the right bytes. Six objects, six false
+				# accusations, and then the source backed itself off and every
+				# remaining file said "No content source is available".
+				#
+				# Nothing is lost by not flushing: what is written here is a PARTIAL,
+				# and a partial that does not survive a closed tab costs a re-download
+				# of one object. `DotCloudStore` flushes after each object is
+				# COMMITTED, which is the durable thing and is already one flush at a
+				# time.
+
+				# [b]A 2xx with no file on disk is a failure, and it used to be
+				# reported as a success.[/b] HTTPRequest writes the body itself and
+				# says nothing about whether the write landed, so a caller got
+				# `ok` and then found nothing where it had asked for it -- which
+				# surfaced three layers away as "There is no partial download to
+				# commit", an integrity error blaming a mirror that had served the
+				# right bytes. Checked here, where the answer is still specific.
+				var written := DotPaths.file_size(dest_path)
+
+				if not FileAccess.file_exists(dest_path):
+					# Said once. The flag is set on the first one, but with parallel
+					# downloads several are already in flight and each finds the same
+					# thing -- six identical warnings about one property of the
+					# platform, which is how a line stops being read.
+					if _engine_writes_downloads:
+						DotLog.warn(
+							CHANNEL,
+							"this platform's HTTP client does not write downloads to "
+							+ "a file; fetching into memory from here on",
+							{"status": status, "claimed_bytes": written}
+						)
+
+					_engine_writes_downloads = false
+					out = DotResult.success({"retry_in_memory": true})
+				else:
+					out = DotResult.success({
+						"status": status,
+						"headers": _parse_headers(completed[2]),
+						"size": written,
+						"resumed": resumed,
+					})
 
 	_in_flight -= 1
 	req.download_file = ""
@@ -487,7 +548,65 @@ func download_to_file(
 	if resume_target != "" and FileAccess.file_exists(resume_target):
 		DirAccess.remove_absolute(resume_target)
 
+	if out.ok and (out.value as Dictionary).get("retry_in_memory", false):
+		return await _download_in_memory(url, dest_path, range_start, headers)
+
 	return out
+
+
+## Whether [HTTPRequest] on this platform actually writes [code]download_file[/code].
+##
+## Assumed true and demoted on the first counter-example, which is the only honest
+## default: every platform this family has run on but one does write it, and the one
+## that does not says so by leaving no file behind.
+static var _engine_writes_downloads: bool = true
+
+
+## [method download_to_file] for a platform whose HTTP client will not write one.
+##
+## The body comes back in memory and is written here, through [DotPaths] -- which is
+## what flushes the web filesystem, and is why this works where the engine's own writer
+## did not. The cost is the whole object in RAM at once, which is what a content object
+## is sized for: dot-cloud addresses files, not packs, and the largest here is a map mesh.
+func _download_in_memory(
+	url: String,
+	dest_path: String,
+	range_start: int,
+	headers: Dictionary
+) -> DotResult:
+	var merged := headers.duplicate()
+
+	if range_start > 0:
+		merged["Range"] = "bytes=%d-" % range_start
+
+	var res := await request(HTTPClient.METHOD_GET, url, PackedByteArray(), merged)
+
+	if not res.ok:
+		return res
+
+	var response: Dictionary = res.value
+	var status := int(response.get("status", 0))
+	var body: PackedByteArray = response.get("body", PackedByteArray())
+
+	# A server that ignores Range answers 200 with the whole resource, so the body
+	# REPLACES what is on disk; 206 means it continues it. Getting this backwards writes
+	# the file's first half twice and is invisible until a hash check.
+	var resumed := status == 206
+
+	var written := (
+		DotPaths.append_bytes(dest_path, body) if resumed and range_start > 0
+		else DotPaths.write_bytes(dest_path, body)
+	)
+
+	if not written.ok:
+		return written
+
+	return DotResult.success({
+		"status": status,
+		"headers": response.get("headers", {}),
+		"size": DotPaths.file_size(dest_path),
+		"resumed": resumed,
+	})
 
 
 ## Asks whether a URL supports resuming, with a HEAD request.

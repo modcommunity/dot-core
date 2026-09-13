@@ -301,6 +301,40 @@ static func read_json(path: String) -> DotResult:
 	return DotResult.success(json.data)
 
 
+## Appends bytes to a file, creating it if it is not there.
+##
+## [b]Not [method write_bytes] with the old contents prepended[/b] — this exists for a
+## resumed download, where the caller holds only the tail and the head is already on
+## disk. `FileAccess.WRITE` would truncate the head, which is the exact mistake this
+## is here to make impossible.
+##
+## No [param atomic] option: a partial file has no consistent state to preserve. It is
+## verified by hash before anything reads it, so a torn append is discarded the same
+## way a corrupt download is.
+static func append_bytes(path: String, bytes: PackedByteArray) -> DotResult:
+	var parent := ensure_parent_dir(path)
+	if not parent.ok:
+		return parent
+
+	var existing := file_size(path)
+	var f := FileAccess.open(
+		path, FileAccess.READ_WRITE if existing >= 0 else FileAccess.WRITE
+	)
+
+	if f == null:
+		return DotResult.failure(DotError.from_engine(
+			FileAccess.get_open_error(), "opening '%s' to append to" % path
+		))
+
+	f.seek_end()
+	f.store_buffer(bytes)
+	f.close()
+
+	DotWeb.sync_filesystem()
+
+	return DotResult.success(file_size(path))
+
+
 ## Writes bytes, creating parents and flushing the web filesystem.
 ##
 ## [param atomic] writes to a sibling [code].tmp[/code] and renames, so a crash
