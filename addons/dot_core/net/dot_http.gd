@@ -199,7 +199,8 @@ func request(
 	method: int,
 	path: String,
 	body: PackedByteArray = PackedByteArray(),
-	headers: Dictionary = {}
+	headers: Dictionary = {},
+	decode_text: bool = true
 ) -> DotResult:
 	var url := resolve_url(path)
 	var header_list := _build_headers(headers)
@@ -210,7 +211,7 @@ func request(
 	while attempt <= max_retries:
 		attempt += 1
 
-		last = await _attempt(method, url, body, header_list)
+		last = await _attempt(method, url, body, header_list, decode_text)
 
 		if last.ok:
 			var v: Dictionary = last.value
@@ -242,7 +243,8 @@ func _attempt(
 	method: int,
 	url: String,
 	body: PackedByteArray,
-	header_list: PackedStringArray
+	header_list: PackedStringArray,
+	decode_text: bool = true
 ) -> DotResult:
 	var req := _acquire()
 	if req == null:
@@ -265,7 +267,7 @@ func _attempt(
 		)
 	else:
 		var completed: Array = await req.request_completed
-		out = _interpret(completed, url)
+		out = _interpret(completed, url, decode_text)
 
 	_in_flight -= 1
 	_release(req)
@@ -273,7 +275,9 @@ func _attempt(
 
 
 ## Turns [signal HTTPRequest.request_completed]'s four arguments into a result.
-func _interpret(completed: Array, url: String) -> DotResult:
+func _interpret(
+	completed: Array, url: String, decode_text: bool = true
+) -> DotResult:
 	var result: int = completed[0]
 	var status: int = completed[1]
 	var raw_headers: PackedStringArray = completed[2]
@@ -301,12 +305,30 @@ func _interpret(completed: Array, url: String) -> DotResult:
 			"%d > %d bytes" % [body.size(), max_response_bytes]
 		)
 
-	return DotResult.success({
+	# [b]Decoded only when somebody might read it.[/b] `body_text` is a convenience for
+	# JSON and plain-text responses, and building it unconditionally means every BINARY
+	# response is also run through a UTF-8 decode: a second copy of the bytes as a String,
+	# and an engine error per file --
+	#
+	#     Unicode parsing error, some characters were replaced with <?> (U+FFFD):
+	#     Invalid UTF-8 leading byte (89)
+	#
+	# 0x89 being the first byte of a PNG. Harmless to the data, which is hashed and
+	# verified either way, and neither harmless to read nor to a phone's memory: dot-cloud
+	# fetches content objects through here now, so a 15 MB map was held twice.
+	#
+	# Off for a caller that knows its payload is bytes. Default on, because every existing
+	# caller reads it and a silent absence would be worse than the decode.
+	var out := {
 		"status": status,
 		"headers": headers,
 		"body": body,
-		"body_text": body.get_string_from_utf8(),
-	})
+	}
+
+	if decode_text:
+		out["body_text"] = body.get_string_from_utf8()
+
+	return DotResult.success(out)
 
 
 ## Maps [enum HTTPRequest.Result] to a [DotError].
@@ -579,7 +601,7 @@ func _download_in_memory(
 	if range_start > 0:
 		merged["Range"] = "bytes=%d-" % range_start
 
-	var res := await request(HTTPClient.METHOD_GET, url, PackedByteArray(), merged)
+	var res := await request(HTTPClient.METHOD_GET, url, PackedByteArray(), merged, false)
 
 	if not res.ok:
 		return res
