@@ -105,6 +105,14 @@ Use them **anywhere either side is a `Variant` whose type you do not control**: 
 file, a wire message, a saved document, a sentinel. Ordinary comparisons between two
 values of a declared type stay as they are; wrapping those would be noise.
 
+### A `JavaScriptObject` is not an `Object`. Use `.name` and `.name(args)`.
+
+Everything `DotWeb.get_global` hands back is a `JavaScriptObject`, and it forwards **every** member access to the JavaScript object behind it. So `obj.get("hidden")` does not read a property: it invokes a method called `get` on `document`, which does not have one, and the browser answers `TypeError: obj[method] is not a function`. `obj.call("addEventListener", …)` fails the same way, for a method called `call`. Both are the spelling every other Godot `Object` takes, both parse, both are silent off-web, and neither reaches any headless check.
+
+Read properties with `.hidden`. Call methods with `.addEventListener(…)`. The bridge singleton itself is an ordinary `Object`, so `bridge().call("get_interface", name)` inside this file is correct and is not the same thing.
+
+**This tree has paid for it twice** — dot-auth's web handoff first, then `DotWeb.watch_visibility`, which attached no listener at all and made the browser-tab keepalive a no-op that passed 237 checks. The rule lives here now rather than in one consumer's margin.
+
 ### Signals from worker threads must be deferred.
 
 `DotJob._emit_on_main_thread()` exists because GDScript resumes an awaiting
@@ -218,6 +226,29 @@ disk showed it. dot-auth's issuer speaks HTTP in GDScript for the same reason.
 - Channel constants: each file that logs declares `const CHANNEL := "…"` and
   passes it, so channel levels can be tuned per subsystem
   (`DotLog.set_channel_level("net", DotLog.Level.DEBUG)`).
+- **`print` and `push_error` are not logging.** `DotLog` is for anything at runtime an
+  operator might read: it has a level, a channel and fields, it is greppable, and it
+  reaches the log file and whatever the records are shipped to. `print` is a program's
+  *output* — a CLI tool's stdout, a console echoing the line the operator typed — which
+  is not a log and must not be levelled or filtered away. `push_error` is for a
+  **programmer** error that wants the Errors dock and a stack: an abstract method not
+  overridden, a null argument, a static class somebody instantiated. The test is who is
+  expected to act — an operator, or the person editing the file. `push_warning` for a
+  runtime condition is always wrong: see below for what the engine staples to it.
+- **`DotLog` mirrors only ERROR and above into the engine.** `push_warning` /
+  `push_error` are how a record reaches the editor's Errors dock and a crash
+  report, and in a debug build the engine appends an `at:` line and a full
+  GDScript backtrace to each one — **with no way to suppress that per call**
+  (`Engine.print_error_messages = false` is the only switch and it silences real
+  runtime errors too). At WARN that turned every expected, recoverable warning
+  into eight lines of stderr that read like a crash, duplicating a `WRN` line
+  this class had already printed. `mirror_min_level` is that threshold; set it to
+  `Level.WARN` while hunting one specific warning's origin.
+- **Anything beyond a rotating file is [dot-log](../dot-log)**, which registers
+  one sink and owns everything downstream of it: an in-memory ring, syslog, a SQL
+  table, and batched HTTP to the log services, with the gating, redaction and
+  back pressure in front of all of them. `DotLogSink` stays here because a
+  project whose only dependency is dot-core still needs a log file.
 - `describe() -> Dictionary` on anything with runtime state, for `status`-style
   console commands and bug reports. `describe_lines() -> PackedStringArray` where
   the output is meant to be read by a human in a terminal.

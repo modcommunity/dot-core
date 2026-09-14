@@ -288,3 +288,74 @@ static func is_https_page() -> bool:
 
 	var v: Variant = eval("window.location.protocol === 'https:' ? 1 : 0", true)
 	return int(v if v != null else 0) == 1
+
+
+## Whether the page is on screen, as [code]document.hidden[/code] reports it.
+##
+## [b]True off-web, and that is the useful answer rather than a placeholder.[/b] The
+## question a caller is really asking is "is my main loop about to stop", and on a
+## desktop or mobile build the answer is no: a window behind another window, or
+## minimised, still runs its frames. Only a browser stops the loop outright.
+static func is_page_visible() -> bool:
+	var doc: Variant = get_global("document")
+	if doc == null:
+		return true
+
+	# Read with `.hidden`, never `.get("hidden")`. A [JavaScriptObject] routes both
+	# `get` and `call` straight through to the JS object as method invocations, so
+	# `.get("hidden")` looks for a `get` method on `document`, does not find one, and
+	# fails with "obj[method] is not a function" — an error that reads like the bridge
+	# is broken when it is only being asked the wrong way. dot-auth's handoff says the
+	# same thing about the same trap.
+	var hidden: Variant = doc.hidden
+	if hidden == null:
+		return true
+	return not bool(hidden)
+
+
+## Calls [param callable] with a single [code]bool[/code] — visible — whenever the
+## page is shown or hidden.
+##
+## [b]This is the only warning a web build gets that it is about to stop running.[/b]
+## A browser drives the Godot main loop from [code]requestAnimationFrame[/code], and
+## for a hidden tab it stops calling it altogether: [code]_process[/code] stops,
+## every [Timer] stops, and — the part that costs a player their game — the
+## multiplayer peer is never polled again, so nothing is sent and nothing is read
+## while the socket stays open. The `visibilitychange` event fires on the way into
+## that, with the page still live, which is the last moment anything can be done
+## about it.
+##
+## The listener is a JS-to-wasm call, not a frame callback, so the [Callable] runs
+## even though the loop is stopping. Work done in it must be synchronous and must
+## not [code]await[/code]: there is no next frame to resume on.
+##
+## [param name] identifies the rooted callback — see [method create_callback] — so
+## registering twice under one name replaces rather than stacks. Returns false
+## off-web, where there is nothing to watch.
+static func watch_visibility(name: String, callable: Callable) -> bool:
+	var doc: Variant = get_global("document")
+	if doc == null:
+		return false
+
+	var cb: Variant = create_callback(
+		name,
+		func(_args: Array) -> void:
+			callable.call(is_page_visible())
+	)
+	if cb == null:
+		return false
+
+	# Called directly rather than through `.call("addEventListener", ...)`, for the
+	# reason given in [method is_page_visible]: `.call` on a [JavaScriptObject] would
+	# look for a `call` method on `document` itself.
+	doc.addEventListener("visibilitychange", cb)
+	return true
+
+
+## Removes a listener registered by [method watch_visibility] and drops its root.
+static func unwatch_visibility(name: String) -> void:
+	var doc: Variant = get_global("document")
+	if doc != null and _callbacks.has(name):
+		doc.removeEventListener("visibilitychange", _callbacks[name])
+
+	release_callback(name)

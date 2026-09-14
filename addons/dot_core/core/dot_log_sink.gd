@@ -173,7 +173,10 @@ func _format(record: Dictionary) -> String:
 			Time.get_datetime_string_from_system(true, true)
 		)
 
-	parts.append(DotLog.LEVEL_TAGS[int(record.get("level", 2))])
+	# level_column rather than LEVEL_TAGS directly: the level is always written, and how
+	# wide it is written is DotLog's decision, so a process that chose the spelled-out
+	# style does not get one thing in its console and another in its file.
+	parts.append(DotLog.level_column(int(record.get("level", 2))))
 
 	var channel: String = record.get("channel", "")
 	if channel != "":

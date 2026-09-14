@@ -33,7 +33,7 @@ Requires Godot 4.7 or newer.
 | **`DotScheduler` / `DotJob`** | Long work in slices. Worker threads where available, a per-frame time budget where not. |
 | **`DotTransport`** | Swappable multiplayer transport. WebSocket serves browser and native clients from one listener; ENet is lighter but browser-incompatible. `DotTransportAuto` picks and logs why. |
 | **`DotHttp`** | `HTTPRequest`-based client with retries, jittered backoff, `Retry-After`, range-resumed downloads and connection pooling. Works in the browser sandbox. |
-| **`DotLog` / `DotLogSink`** | Levelled, channelled logging with structured fields, rotating files and UDP forwarding. |
+| **`DotLog` / `DotLogSink`** | Levelled, channelled logging with structured fields, rotating files and UDP forwarding. Only ERROR and above are mirrored into the engine's own output (`mirror_min_level`), because a debug build appends an unsuppressible backtrace to every one and a recoverable warning then reads as a crash. [dot-log](https://github.com/modcommunity/dot-log) is the sink layer for everything beyond a file. |
 | **`DotPaths`** | Path sanitisation that *refuses* traversal rather than cleaning it, atomic writes, and web filesystem flushing. |
 | **`DotHash`** | SHA-256, HMAC, constant-time comparison, base64url, CSPRNG tokens. |
 | **`DotRandomStream` and friends** | Randomness a second machine can reproduce. A draw is a pure function of (key, index), so two peers that draw in a different order do not diverge and adding a feature does not change yesterday's replay. `DotRandomTable` for weighted picks with pity, `DotRandomSchedule` for events in ticks, `DotRandomManager` for the named streams a game hands out. |
