@@ -773,7 +773,26 @@ func _acquire() -> HTTPRequest:
 
 	var req := HTTPRequest.new()
 	req.timeout = timeout_sec
-	req.accept_gzip = accept_gzip
+
+	# [b]Never on web, whatever the setting says, because the browser has already done
+	# it.[/b] `_build_headers` declines to send `Accept-Encoding` there -- a browser
+	# refuses the header outright -- but it sends its OWN, which JavaScript cannot
+	# override, so a CDN compresses the response anyway and the browser transparently
+	# decodes it. Godot then sees the `Content-Encoding: gzip` header on a body that is
+	# already plain and inflates it a second time:
+	#
+	#     ERROR: Condition "err != 0 && err != 1" is true. Returning: FAILED
+	#         at: _process (core/io/stream_peer_gzip.cpp:117)
+	#
+	# and the download fails with nothing anywhere naming compression. It reached a
+	# player as "Could not download the content manifest" on a manifest that curl fetches
+	# in one try -- `application/json` being exactly what a CDN compresses by default and
+	# a content object, being `application/octet-stream`, exactly what it does not. So it
+	# broke the small file that decides everything and left the big ones alone.
+	#
+	# Nothing is lost. The browser negotiated and performed the encoding; this only stops
+	# the engine from undoing work that was already undone.
+	req.accept_gzip = accept_gzip and not OS.has_feature("web")
 	req.max_redirects = max_redirects
 	if download_chunk_size > 0:
 		req.download_chunk_size = download_chunk_size
