@@ -296,13 +296,28 @@ static func at(
 	_emit(level, channel, message, fields)
 
 
-## Logs a [DotResult] failure at ERROR, or nothing at all on success.
+## Logs a [DotResult] failure, or nothing at all on success.
 ##
 ## Collapses the extremely common three-line "if not res.ok: log; return" into
 ## one call at the sites where the caller has nothing to add.
-static func result(channel: String, what: String, res: DotResult) -> void:
+##
+## [b][param level] is not decoration, and the default is not always right.[/b] ERROR
+## means the operation failed and somebody is going to want to know why; a great many
+## refusals in this family are not that. An optional subsystem that is not installed, a
+## query provider on a server with no query listener, a backbone that nobody configured —
+## each is a [DotResult] that is not [code]ok[/code] and a *configuration* rather than a
+## fault, and reporting one at ERROR teaches an operator to scroll past the level that
+## means something. Pass [constant Level.DEBUG] or [constant Level.WARN] where that is what
+## it is. [constant Level.OFF] is refused for the reason [method at] refuses it: it is a
+## threshold and not a severity.
+static func result(
+	channel: String, what: String, res: DotResult, level: int = Level.ERROR
+) -> void:
 	if res == null or res.ok:
 		return
+	if level < Level.TRACE or level >= Level.OFF:
+		push_error("DotLog.result() with a level that is not one of the six: %d" % level)
+		level = Level.ERROR
 	var fields := {"code": res.code()}
 	if res.error != null:
 		if res.error.detail != "":
@@ -310,7 +325,7 @@ static func result(channel: String, what: String, res: DotResult) -> void:
 		if res.error.http_status != 0:
 			fields["http"] = res.error.http_status
 	_emit(
-		Level.ERROR,
+		level,
 		channel,
 		"%s: %s" % [what, res.error.message if res.error != null else "failed"],
 		fields
