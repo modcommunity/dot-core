@@ -25,6 +25,7 @@ const CODE_PARSE := "parse"                  ## Malformed payload.
 const CODE_INVALID := "invalid"              ## Well-formed but semantically wrong.
 const CODE_INTEGRITY := "integrity"          ## Hash or signature mismatch.
 const CODE_VERSION := "version"              ## Incompatible protocol/content version.
+const CODE_CONFLICT := "conflict"            ## Two different things claim one identity.
 
 # --- Authorization ---------------------------------------------------------
 const CODE_AUTH := "auth"                    ## Not authenticated.
