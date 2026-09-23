@@ -13,7 +13,9 @@ extends RefCounted
 ## because a content-addressed store whose addresses collide on demand is not a
 ## store.
 
-const CHANNEL := "hash"
+# No log channel: pure static hashing. The one engine failure it can meet (an HMAC
+# context that will not start) is a push_error, because the person who can fix it is
+# the one editing the code; everything else returns a value.
 
 ## Bytes hashed per [method DotJob._step].
 ##

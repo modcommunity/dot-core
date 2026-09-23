@@ -17,7 +17,9 @@ extends RefCounted
 ##    path (passing it to an OS call, printing it in a support message) is wrong
 ##    on two of the three.
 
-const CHANNEL := "paths"
+# No log channel: static filesystem helpers returning a DotResult. The caller knows what
+# the file was for and whether its absence matters -- a missing bindings file is normal,
+# a missing ban list is not -- and this class cannot tell those apart.
 
 ## Path segments that are never legal in content-supplied relative paths, on any
 ## platform. Checked case-insensitively without extension because Windows

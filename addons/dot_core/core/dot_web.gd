@@ -14,7 +14,9 @@ extends RefCounted
 ## Everything here degrades to a no-op or a failed [DotResult] off-web, so
 ## callers can use it unguarded.
 
-const CHANNEL := "web"
+# No log channel: static bridges to the browser, each of which is a no-op or a failed
+# DotResult off the web. Whether "not in a browser" or "no quota API" matters is the
+# caller's decision, and on every desktop build it is the ordinary case.
 
 static var _bridge: Object = null
 static var _bridge_looked_up: bool = false
