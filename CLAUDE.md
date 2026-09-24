@@ -196,7 +196,7 @@ done
 
 # 2. It actually works at runtime.
 godot --headless --path . res://examples/capability_report.tscn
-godot --headless --path . res://examples/http_selftest.tscn   # 35 checks, exits non-zero
+godot --headless --path . res://examples/http_selftest.tscn   # 36 checks, exits non-zero
 godot --headless --path . res://examples/value_selftest.tscn  # 27 checks, exits non-zero
 ```
 

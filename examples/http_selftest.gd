@@ -31,7 +31,10 @@ const PORT_LAST := 28330
 const BODY := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ\
 abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-const CHECKS := 35
+const CHECKS := 36
+
+## The scratch directory. Removed at the start of every run and at the end.
+const SCRATCH := "user://http_selftest"
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
@@ -70,6 +73,12 @@ func _run() -> void:
 		get_tree().quit(1)
 		return
 
+	# [b]Every file here is written fresh each run.[/b] They used to be left behind, so from
+	# the second run on `replace_absent.bin` already existed and "works when there is
+	# nothing to replace" was replacing something — a check that quietly stopped testing
+	# the case it names. See docs/testing.md.
+	DotPaths.remove_tree(SCRATCH)
+
 	_http = DotHttp.new()
 	# Retries would turn a deliberate 500 into three of them and hide which
 	# attempt the assertions are about.
@@ -83,6 +92,7 @@ func _run() -> void:
 	await _test_range_not_satisfiable()
 	_test_append_file()
 	_test_replace_file()
+	DotPaths.remove_tree(SCRATCH)
 
 	print("")
 	print("%d passed, %d failed" % [_passed, _failed])
@@ -294,6 +304,7 @@ func _test_replace_file() -> void:
 
 	_write(src, "fresh")
 	var absent := _scratch("replace_absent.bin")
+	_check(not FileAccess.file_exists(absent), "there really is nothing there to replace")
 	res = DotPaths.replace_file(absent, src)
 	_check(res.ok and _read(absent) == "fresh", "and works when there is nothing to replace")
 	_done()
@@ -378,8 +389,8 @@ func _answer(c: StreamPeerTCP, raw: String) -> void:
 # --- Scratch files ---------------------------------------------------------
 
 func _scratch(name: String) -> String:
-	DotPaths.ensure_dir("user://http_selftest")
-	return "user://http_selftest".path_join(name)
+	DotPaths.ensure_dir(SCRATCH)
+	return SCRATCH.path_join(name)
 
 
 func _write(path: String, text: String) -> void:
