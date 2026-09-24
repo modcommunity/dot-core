@@ -33,9 +33,17 @@ abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 const CHECKS := 35
 
+## Sections entered against sections that ran to their last line, and against this. A
+## runtime error inside a section aborts that function and nothing says so; a section that
+## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
+## total is the other half — see docs/testing.md.
+const SECTIONS := 7
+
 var _passed := 0
 var _failed := 0
 var _failures := PackedStringArray()
+var _entered := 0
+var _completed := 0
 
 var _server := TCPServer.new()
 var _clients: Array[StreamPeerTCP] = []
@@ -82,6 +90,13 @@ func _run() -> void:
 	for line in _failures:
 		print("  FAIL  %s" % line)
 
+	print("%d of %d sections ran to their last line" % [_completed, _entered])
+	if _entered != SECTIONS or _completed != _entered:
+		print("ERROR: %d sections entered and %d completed, %d expected. One aborted or was skipped." % [
+			_entered, _completed, SECTIONS
+		])
+		get_tree().quit(1)
+		return
 	# The total the section counter cannot be. A runtime error inside a section aborts
 	# that function, and the counter is satisfied because the section had already
 	# announced itself. See docs/testing.md.
@@ -97,7 +112,7 @@ func _run() -> void:
 # --- Downloads -------------------------------------------------------------
 
 func _test_plain_download() -> void:
-	_group("a download with no range at all")
+	_section("a download with no range at all")
 
 	var dest := _scratch("plain.bin")
 	_mode = "range"
@@ -111,10 +126,11 @@ func _test_plain_download() -> void:
 		_check(not bool(d["resumed"]), "and does not claim to have resumed")
 	_check(_read(dest) == BODY, "and writes the whole body")
 	_check(not FileAccess.file_exists(dest + ".resume"), "leaving no sibling behind")
+	_done()
 
 
 func _test_resume_joins() -> void:
-	_group("a resumed download")
+	_section("a resumed download")
 
 	# The shape dot-cloud produces: an interrupted transfer left a prefix on
 	# disk and its length is the offset asked for.
@@ -147,10 +163,11 @@ func _test_resume_joins() -> void:
 		"got %d bytes: %s" % [got.length(), got.substr(0, 24)])
 	_check(not FileAccess.file_exists(dest + ".resume"),
 		"and the sibling it staged through is cleaned up")
+	_done()
 
 
 func _test_resume_ignored_range() -> void:
-	_group("a resume against a host that ignores Range")
+	_section("a resume against a host that ignores Range")
 
 	# Plenty of static hosts and proxies answer 200 with the whole body. The
 	# response is a complete file, so appending it would give the prefix twice.
@@ -173,10 +190,11 @@ func _test_resume_ignored_range() -> void:
 		"and the file is the resource once, not its prefix twice",
 		"got %d bytes, expected %d" % [got.length(), BODY.length()])
 	_check(not FileAccess.file_exists(dest + ".resume"), "leaving no sibling behind")
+	_done()
 
 
 func _test_resume_failure_preserves_partial() -> void:
-	_group("a resume that fails mid-transfer")
+	_section("a resume that fails mid-transfer")
 
 	# The reason the staging file is worth its complexity: a resume that writes
 	# straight into the partial destroys it on the way to failing, and the next
@@ -194,10 +212,11 @@ func _test_resume_failure_preserves_partial() -> void:
 		"%d bytes" % _read(dest).length())
 	_check(not FileAccess.file_exists(dest + ".resume"),
 		"and the staging file does not accumulate beside it")
+	_done()
 
 
 func _test_range_not_satisfiable() -> void:
-	_group("a resume the server answers 416")
+	_section("a resume the server answers 416")
 
 	var dest := _scratch("over.bin")
 	_write(dest, BODY)
@@ -211,12 +230,13 @@ func _test_range_not_satisfiable() -> void:
 			"with a code the caller can branch on", res.code())
 	_check(_read(dest) == BODY, "and leaves the local file alone")
 	_check(not FileAccess.file_exists(dest + ".resume"), "leaving no sibling behind")
+	_done()
 
 
 # --- The filesystem primitive ----------------------------------------------
 
 func _test_append_file() -> void:
-	_group("DotPaths.append_file")
+	_section("DotPaths.append_file")
 
 	var dest := _scratch("append.bin")
 	var src := _scratch("append.src")
@@ -254,10 +274,11 @@ func _test_append_file() -> void:
 	_check(res.ok and DotPaths.file_size(dest) == 4 + big.length(),
 		"streams a source larger than its chunk without losing any of it",
 		"%d bytes" % DotPaths.file_size(dest))
+	_done()
 
 
 func _test_replace_file() -> void:
-	_group("DotPaths.replace_file")
+	_section("DotPaths.replace_file")
 
 	var dest := _scratch("replace.bin")
 	var src := _scratch("replace.src")
@@ -275,6 +296,7 @@ func _test_replace_file() -> void:
 	var absent := _scratch("replace_absent.bin")
 	res = DotPaths.replace_file(absent, src)
 	_check(res.ok and _read(absent) == "fresh", "and works when there is nothing to replace")
+	_done()
 
 
 # --- The server ------------------------------------------------------------
@@ -373,6 +395,16 @@ func _read(path: String) -> String:
 
 
 # --- Assertions ------------------------------------------------------------
+
+func _section(title: String) -> void:
+	_entered += 1
+	_group(title)
+
+
+## A section reached its last line. See [constant SECTIONS].
+func _done() -> void:
+	_completed += 1
+
 
 func _check(condition: bool, what: String, detail: String = "") -> bool:
 	if condition:
