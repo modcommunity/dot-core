@@ -141,6 +141,18 @@ Three things about the splitmix64 mixer are load-bearing and **all three fail si
 
 **`mix4` and `unit_from` are public on purpose.** A subsystem whose draw is a pure function of several integers has nowhere to keep a stream object and will not allocate one per pellet. Given no shared entry point it writes its own mixer, which is how the family got two. The seed is public, deliberately: a client can compute every number the server will, so anything that must be secret from a player belongs behind a value they do not have.
 
+## Which addon API a build has: `DotAddonApi`
+
+**A delivered pack's scripts compile against the HOST's addons**, so a pack written against a newer addon than the client shell or server has does not fail with a sentence: it fails to parse, mid-load, with an identifier that "is not declared in the current scope". `DotAddonApi` turns that into *"This game needs dot-net API level 3 or newer; this server has level 2."*, asked before a single script in the pack is loaded (dot-cloud asks it between download and mount).
+
+**The number is an API level, not the release version, and that choice is the point.** The tag's semver is honest only in a release: dot-ci stamps it into `plugin.cfg`, but a developer checkout is a symlink whose `plugin.cfg` says 0.1.0 whatever it holds, `plugin.cfg` is not a resource so an exported build does not carry it, and a tag moves for a bug fix that changes no API — "needs 0.4.1" would refuse a 0.4.0 host that runs the pack perfectly. A level committed in the addon's own source is the same number in all three places, because it is code.
+
+**The rule, for every addon:** `addons/<addon>/<addon>_api.gd` holds `const LEVEL` and `const OLDEST` (dot-core's is `dot_core_api.gd`, no `class_name`, so sixty addons do not add sixty globals). Bump `LEVEL` when you **add** anything a game could call. Raise `OLDEST` to the new `LEVEL` when you **remove or change** something a game could have called, because every pack built before that no longer compiles here. An addon with no api file is at level 1 — the level everything was at when the scheme began (2026-09-26) — so adopting it touched no addon that had nothing to say.
+
+**A pack says what it needs in `requires.json` at its root**, `{"format": 1, "addons": {"dot_net": 3}}`, and nobody keeps it by hand: `addons/dot_core/tools/dot_requires.gd` derives it from the game's own files (every global class declared under `res://addons/<x>/` that a script, scene or resource names, and every literal `res://addons/<x>/` path), at the levels the building checkout has — "built against", which is conservative on purpose. dot-ci's `package.sh --pack` writes it into the pack; a game that commits its own keeps control of it and the release audits it instead (`--check`), failing on an addon used and not declared or a level above what the build has.
+
+`overrides` exists because a client and a server in one process share one set of addon files, so "an older client" can only ever be a claim; `addon_api_selftest` (36 checks) asserts the sentences, not just `CODE_VERSION`.
+
 ## Platform constraints this codebase encodes
 
 | Constraint | Where it lives |
@@ -198,6 +210,7 @@ done
 godot --headless --path . res://examples/capability_report.tscn
 godot --headless --path . res://examples/http_selftest.tscn   # 36 checks, exits non-zero
 godot --headless --path . res://examples/value_selftest.tscn  # 27 checks, exits non-zero
+godot --headless --path . res://examples/addon_api_selftest.tscn  # 36 checks, exits non-zero
 ```
 
 The second one matters. Parse-clean GDScript can still be wrong in ways only
@@ -280,6 +293,10 @@ addons/dot_core/
     dot_rate_limiter.gd  Token bucket.
     dot_semver.gd        Version compare that does not sort 0.10 below 0.9.
     dot_value.gd         Comparisons that are total. Read the next section.
+    dot_addon_api.gd     API levels, requires.json, and the sentence when a pack needs more.
+  dot_core_api.gd        dot-core's own API level. Every addon may have one.
+  tools/
+    dot_requires.gd      Derives or audits a game's requires.json. dot-ci runs it.
   net/
     dot_transport.gd           Base + address parsing (incl. bracketed IPv6).
     dot_transport_websocket.gd Serves browser + native from one listener.
