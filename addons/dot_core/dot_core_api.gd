@@ -6,5 +6,6 @@ extends RefCounted
 ## raised to LEVEL when something a game could have called is removed or changes meaning,
 ## because every pack built before that no longer compiles against this addon.
 
-const LEVEL := 1
+# 2: DotTransportDual, DotDualPeer, DotUdpDemux (WebSocket + ENet in one server).
+const LEVEL := 2
 const OLDEST := 1

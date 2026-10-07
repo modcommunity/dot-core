@@ -60,7 +60,7 @@ func _test_what_this_build_has() -> void:
 	_check(DotAddonApi.installed("dot_core"), "dot-core is installed")
 	_check(not DotAddonApi.installed("dot_no_such_addon"), "an addon that is not here is not installed")
 	_check(not DotAddonApi.installed("../dot_core"), "and a name that walks out of addons/ is not an addon")
-	_check(api.level_of("dot_core") == 1, "dot-core's level is read from its api file (%d)" % api.level_of("dot_core"))
+	_check(api.level_of("dot_core") == _core_level(), "dot-core's level is read from its api file (%d)" % api.level_of("dot_core"))
 	_check(api.level_of("dot_no_such_addon") == 0, "an absent addon has level 0")
 	_check(DotAddonApi.display_name("dot_player_controller") == "dot-player-controller", "and it is named the way a person names it")
 
@@ -162,13 +162,13 @@ func _test_a_mounted_pack() -> void:
 	_check(api.check_mounted(none_dir, "client").ok, "a pack with no file needs nothing that can be checked")
 
 	var f := FileAccess.open(file_path, FileAccess.WRITE)
-	f.store_string(DotAddonApi.encode({"dot_core": 2}))
+	f.store_string(DotAddonApi.encode({"dot_core": _core_level() + 1}))
 	f.close()
 
 	var refused := api.check_mounted(SCRATCH, "client")
-	_check(not refused.ok and refused.error.message.contains("this client has level 1"), "one asking for more than this build has is refused", str(refused.error) if not refused.ok else "")
+	_check(not refused.ok and refused.error.message.contains("this client has level %d" % _core_level()), "one asking for more than this build has is refused", str(refused.error) if not refused.ok else "")
 
-	api.overrides["dot_core"] = 2
+	api.overrides["dot_core"] = _core_level() + 1
 	_check(api.check_mounted(SCRATCH + "/", "client").ok, "and passes on a build that has it, trailing slash or not")
 
 	DirAccess.remove_absolute(file_path)
@@ -187,7 +187,7 @@ func _test_deriving_and_auditing() -> void:
 	_check(derived.is_empty(), "this project, with its examples skipped, uses no addon (%s)" % str(derived))
 
 	var with_examples := DotAddonApi.derive("res://", PackedStringArray(["addons", ".godot"]))
-	_check(with_examples.get("dot_core") == 1, "with them, it uses dot-core at this build's level (%s)" % str(with_examples))
+	_check(with_examples.get("dot_core") == _core_level(), "with them, it uses dot-core at this build's level (%s)" % str(with_examples))
 
 	var missing := DotAddonApi.audit({}, {"dot_net": 2})
 	_check(missing.size() == 1 and missing[0].contains("not declared"), "an addon used and not declared is reported")
@@ -215,3 +215,9 @@ func _check(ok: bool, what: String, detail: String = "") -> void:
 	else:
 		_failed += 1
 		print("  FAIL  %s%s" % [what, "" if detail == "" else "  -- " + detail])
+
+
+## dot-core's level as its api file says, read directly. A literal here failed the day
+## the level first moved, which is a check of the number rather than of the reading.
+func _core_level() -> int:
+	return int(load("res://addons/dot_core/dot_core_api.gd").get("LEVEL"))

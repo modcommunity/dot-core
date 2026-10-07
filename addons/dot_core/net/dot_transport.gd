@@ -11,20 +11,19 @@ extends Resource
 ## decision, not a code decision, so it belongs in a [Resource] an operator can
 ## swap without touching a script.
 ##
-## [b]The consequence you cannot design around.[/b] A single listening socket
-## speaks one protocol. A server that must accept browser clients must listen on
-## WebSocket, and then its desktop clients also speak WebSocket. There is no
-## "ENet for desktop, WebSocket for web" on one port; running both means two
-## listeners and two [MultiplayerAPI] instances, which is a different (and much
-## larger) program than this addon is. So:
+## [b]One socket speaks one protocol[/b], so a server for both audiences listens
+## twice: [DotTransportDual] puts WebSocket on TCP and ENet on UDP behind one
+## [MultiplayerPeer], and the match above it never knows which a peer came in on.
 ##
 ## [codeblock]
-## browser clients needed?  ->  DotTransportWebSocket, everywhere
-## desktop/mobile only?     ->  DotTransportENet, for the lower overhead
+## browsers and native clients ->  DotTransportDual (dot-server's default)
+## browser clients only        ->  DotTransportWebSocket
+## desktop/mobile only         ->  DotTransportENet, for the lower overhead
 ## [/codeblock]
 ##
-## [DotTransportAuto] picks between them from what the build can do, which is the
-## right default for a project that has not decided yet.
+## A CLIENT always uses one: [DotTransportENet] or [DotTransportWebSocket], chosen by
+## dot-server's client link (UDP first on a native build, WebSocket as the fallback),
+## or [DotTransportAuto] for a project that has not decided.
 ##
 ## Subclasses implement [method _create_server] and [method _create_client] and
 ## return a [MultiplayerPeer] wrapped in a [DotResult].

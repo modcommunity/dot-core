@@ -163,19 +163,19 @@ Three things about the splitmix64 mixer are load-bearing and **all three fail si
 | Web builds may have no threads | `DotScheduler` slices on the main thread inside a frame budget when they do not |
 | A mounted PCK can never be unmounted, on any platform | `DotPlatform.can_unmount_packs()` returns false; see dot-cloud |
 | A browser tab cannot listen for connections | `DotTransport.create_server()` refuses early with an explanatory error |
-| One listening socket speaks one protocol | see below |
+| One listening socket speaks one protocol | `DotTransportDual` listens twice behind one peer; see below |
 
 ### The transport decision
 
-A server that must accept browser clients listens on WebSocket, and then *its
-desktop clients also speak WebSocket*. There is no "ENet for desktop, WebSocket
-for web" on one port. Running both means two listeners and two `MultiplayerAPI`
-instances.
+One listening socket speaks one protocol, so a server that serves browsers (WebSocket, TCP) **and** native clients (ENet, UDP) listens on both. `DotTransportDual` does that behind one `MultiplayerPeer` (`DotDualPeer`, a `MultiplayerPeerExtension`): it polls both backends, merges their peers into one id space and routes each send by the target's backend, so `SceneMultiplayer`, dot-net and the games see one peer. It is dot-server's default (`transport_mode: dual`). Before it (until 2026-10-07) every client, native included, spoke WebSocket, and desktop players had TCP's head-of-line blocking on every snapshot.
 
-`DotTransportAuto.require_web_clients` defaults to `true` for that reason. With
-it off, a desktop-only server picks ENet and every browser client silently fails
-to connect — the most confusing failure in the family, because nothing looks
-misconfigured from the server's side.
+Three things about it are load-bearing:
+
+- **Peer ids can collide.** ENet clients pick their own id, WebSocket clients are given one, both random. A newcomer whose id the other backend already holds is disconnected, not renumbered: a renumbered client would believe its own id is one the server never uses. One in ~30 million per connect at a full server; the reconnect draws a fresh id.
+- **ENet cannot share its socket with A2S/DQP** — Godot binds no receive hook on `ENetConnection` — and the game's UDP port answers queries by default. So `DotUdpDemux` owns the public UDP port: datagrams a registered handler claims (A2S `FF FF FF FF`, DQP `DQP1`) go to it, everything else is relayed to an ENet host on loopback through **one relay socket per remote client** (one shared socket would make every client one ENet peer). A relay is only opened for an ENet connect header (peer id 0xFFF), and capped, so a spoofed flood cannot open a socket per source. A compressed connect whose first four bytes happen to be `FF FF FF FF` (one in 65536) is lost to the query handler and ENet retransmits it.
+- **The relay hides the client's address from ENet**, which sees 127.0.0.1 for everybody. `DotDualPeer.get_peer_address` maps it back; bans, rate limits and logs must use that, never ENet's own `get_remote_address`.
+
+ENet failing in any way (no ENet in the build, a busy port) degrades to WebSocket only with a WARN, never a failed start. ENet is cleartext: dot-server's client link never sends a bearer secret over it (see dot-server's CLAUDE.md). `DotTransportAuto.require_web_clients` still defaults to `true` for projects that use Auto on a server.
 
 ## Layered configuration
 
@@ -211,6 +211,7 @@ godot --headless --path . res://examples/capability_report.tscn
 godot --headless --path . res://examples/http_selftest.tscn   # 36 checks, exits non-zero
 godot --headless --path . res://examples/value_selftest.tscn  # 27 checks, exits non-zero
 godot --headless --path . res://examples/addon_api_selftest.tscn  # 36 checks, exits non-zero
+godot --headless --path . res://examples/dual_transport_selftest.tscn  # 28 checks: real WS + ENet clients, a query on the shared port
 ```
 
 The second one matters. Parse-clean GDScript can still be wrong in ways only
@@ -302,6 +303,9 @@ addons/dot_core/
     dot_transport_websocket.gd Serves browser + native from one listener.
     dot_transport_enet.gd      Lower overhead, no browsers. Dynamic ENet access.
     dot_transport_auto.gd      Picks one and logs why.
+    dot_transport_dual.gd      WebSocket + ENet in one server. dot-server's default.
+    dot_dual_peer.gd           The MultiplayerPeerExtension that merges the two.
+    dot_udp_demux.gd           One UDP port for ENet, A2S and DQP; relays ENet via loopback.
     dot_http.gd                HTTPRequest wrapper: retries, resume, pooling.
   random/
     dot_random_stream.gd   A key and an index. Splits by name, mirrors by adopt.
