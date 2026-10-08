@@ -408,6 +408,20 @@ func apply_cli(prefix_override: String = "") -> PackedStringArray:
 	if prefix == "":
 		return PackedStringArray()
 
+	# Every argument begins with "--", so a prefix without it matches nothing and every
+	# flag is dropped without even an unknown-key warning. Thirteen configs in eleven
+	# addons shipped like that (`"economy-"`), each with a README documenting a flag
+	# that did nothing.
+	if not prefix.begins_with("--"):
+		var script: Script = get_script()
+		var who := String(script.get_global_name())
+		if who == "":
+			who = script.resource_path.get_file()
+		push_error(
+			"%s.cli_prefix() is '%s', which matches no argument: it must begin with '--'."
+				% [who, prefix]
+		)
+
 	var args := PackedStringArray()
 	args.append_array(OS.get_cmdline_args())
 	args.append_array(OS.get_cmdline_user_args())
