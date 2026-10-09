@@ -10,8 +10,8 @@ extends Node
 ## godot --headless --path . res://examples/dual_transport_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 8
-const CHECKS := 34
+const SECTIONS := 9
+const CHECKS := 37
 
 const PORT := 47391
 
@@ -49,6 +49,7 @@ func _run() -> void:
 	await _test_enet_port_busy_degrades()
 	await _test_enet_server_bandwidth()
 	await _test_enet_peer_timeout()
+	await _test_shutdown_reaches_enet()
 
 	if _server != null:
 		_server.close()
@@ -385,6 +386,46 @@ func _pump_frames(n: int) -> void:
 func _collect(peer: MultiplayerPeer, into: Array[String]) -> void:
 	while peer.get_available_packet_count() > 0:
 		into.append(peer.get_packet().get_string_from_utf8())
+
+
+## A server closing behind the demux must tell its ENet clients. Closing the ENet host
+## sends each peer a disconnect, but to its loopback relay; the dual peer closed the demux
+## in the same call, so nothing left, and a native client noticed only at its own peer
+## timeout -- 33.8 s in dot-server-deploy's reconnect suite once that was raised to 30 s.
+func _test_shutdown_reaches_enet() -> void:
+	_section("A server that shuts down tells its ENet clients at once")
+
+	var port := PORT + 40
+	var t := DotTransportDual.new()
+	var made := t.create_server(port, "127.0.0.1")
+	var shared := made.ok and (made.value as DotDualPeer).demux != null
+	_check(shared, "a dual server with its UDP port shared")
+	if not shared:
+		return
+	var server := made.value as DotDualPeer
+	var client := DotTransportENet.new().create_client("127.0.0.1", port).value as MultiplayerPeer
+	var joined := false
+	var deadline := Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline and not joined:
+		server.poll()
+		client.poll()
+		# Both ends: the client says CONNECTED a poll before the server has the peer, and
+		# a server that does not know a peer yet has nobody to say goodbye to.
+		joined = client.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED \
+			and int(server.peer_counts().get("enet", 0)) == 1
+		await get_tree().process_frame
+	_check(joined, "the ENet client joins through the demux")
+
+	server.close()
+	var started := Time.get_ticks_msec()
+	var gone := false
+	while Time.get_ticks_msec() - started < 3000 and not gone:
+		client.poll()
+		gone = client.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED
+		await get_tree().process_frame
+	var took := Time.get_ticks_msec() - started
+	_check(gone and took < 1000, "and learns the server closed in %d ms, not at its peer timeout" % took)
+	client.close()
 
 
 func _section(title: String) -> void:

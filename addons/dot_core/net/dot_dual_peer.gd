@@ -369,10 +369,32 @@ func _disconnect_peer(peer: int, force: bool) -> void:
 		_on_disconnected(peer, backend)
 
 
+## [b]Tell every ENet client the server is going, through the demux, before closing it.[/b]
+## Behind the demux an ENet "send" reaches only that client's loopback relay, and only
+## pump_out() puts it on the public socket. Closing the ENet host and then the demux in one
+## call sent nothing: not dot-server's reliable DISCONNECT queued just before, not ENet's own
+## disconnect. A native client learned the server was gone only from its peer timeout --
+## 33.8 s in dot-server-deploy's reconnect suite once dot-core raised that to 30 s, on every
+## restart, with the shutdown reason never shown. So each ENet peer is disconnected
+## gracefully, the host is serviced so the queued reliable data and the disconnects leave,
+## and the demux forwards them, a few times over a few milliseconds. A shutdown can afford it.
+func _say_goodbye_through_demux() -> void:
+	for id: int in _backend_of.keys():
+		if _backend_of[id] == Backend.ENET:
+			enet.disconnect_peer(id, false)
+
+	for i in 4:
+		enet.poll()
+		demux.pump_out()
+		OS.delay_usec(2000)
+
+
 func _close() -> void:
 	if _closed:
 		return
 	_closed = true
+	if enet != null and demux != null:
+		_say_goodbye_through_demux()
 	for inner in [websocket, enet]:
 		if inner != null:
 			inner.close()
