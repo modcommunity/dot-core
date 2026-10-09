@@ -10,8 +10,8 @@ extends Node
 ## godot --headless --path . res://examples/dual_transport_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 7
-const CHECKS := 30
+const SECTIONS := 8
+const CHECKS := 34
 
 const PORT := 47391
 
@@ -48,6 +48,7 @@ func _run() -> void:
 	await _test_disconnect_closes_relay()
 	await _test_enet_port_busy_degrades()
 	await _test_enet_server_bandwidth()
+	await _test_enet_peer_timeout()
 
 	if _server != null:
 		_server.close()
@@ -278,6 +279,82 @@ func _test_enet_server_bandwidth() -> void:
 	_check(sent > 100 and got >= sent * 9 / 10, "and the server receives its packets (%d of %d)" % [got, sent])
 	client.close()
 	server.close()
+
+
+func _test_enet_peer_timeout() -> void:
+	_section("A peer that goes quiet for eight seconds is kept, not dropped at ENet's five")
+
+	# ENet's own numbers first, as the control: the same eight seconds must cost the client,
+	# or this section could not tell the two apart.
+	var stock := DotTransportENet.new()
+	stock.peer_timeout_limit = 32
+	stock.peer_timeout_min_ms = 5000
+	stock.peer_timeout_max_ms = 30000
+	var dropped := await _quiet_client(stock, PORT + 21)
+	_check(dropped[0], "with ENet's defaults (32, 5 s) the server drops it (%s)" % dropped[1])
+
+	var kept := await _quiet_client(DotTransportENet.new(), PORT + 22)
+	_check(not kept[0], "with the transport's defaults the server keeps it (%s)" % kept[1])
+	_check(int(kept[2]) > 0 and int(kept[2]) == int(kept[3]),
+		"and the client gets every reliable packet once it is back (%d of %d)" % [kept[2], kept[3]])
+	_check(DotTransportENet.new().describe().has("peer_timeout"), "describe() says what the timeouts are")
+
+
+## Connects a client, has the server send it a reliable packet every 100 ms, and stops
+## polling the client for eight seconds -- as a stalled process or a dead patch of wifi
+## does -- then polls it for two more. Returns [dropped, why, received, sent].
+func _quiet_client(server_transport: DotTransportENet, port: int) -> Array:
+	var res := server_transport.create_server(port, "127.0.0.1")
+	if not res.ok:
+		return [true, "could not listen on %d" % port, 0, 0]
+	var server := res.value as ENetMultiplayerPeer
+	var lost := [false]
+	var joined := [false]
+	server.peer_disconnected.connect(func(_id: int) -> void: lost[0] = true)
+	server.peer_connected.connect(func(_id: int) -> void: joined[0] = true)
+	# A temporary transport, as most callers make one: the timeouts must still land after
+	# it is gone.
+	var client := DotTransportENet.new().create_client("127.0.0.1", port).value as ENetMultiplayerPeer
+	var deadline := Time.get_ticks_msec() + 3000
+	# Both ends: the client reports connected one step before the server has finished the
+	# handshake, and a client that stopped polling there would leave the server with no peer
+	# to time out at all.
+	while not (joined[0] and client.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED) \
+			and Time.get_ticks_msec() < deadline:
+		server.poll()
+		client.poll()
+		OS.delay_msec(5)
+
+	var sent := 0
+	var got := 0
+	var quiet_until := Time.get_ticks_msec() + 8000
+	# Afterwards, until everything has arrived or twenty seconds: eight seconds of silence
+	# has doubled ENet's resend interval to several seconds, so the backlog comes in late.
+	var end := quiet_until + 20000
+	var next_send := 0
+	while Time.get_ticks_msec() < end and not (lost[0] and Time.get_ticks_msec() >= quiet_until) \
+			and not (sent > 0 and got >= sent):
+		var now := Time.get_ticks_msec()
+		server.poll()
+		if now >= next_send and not lost[0] and Time.get_ticks_msec() < quiet_until:
+			server.set_target_peer(0)
+			server.transfer_mode = MultiplayerPeer.TRANSFER_MODE_RELIABLE
+			server.put_packet(PackedByteArray([sent % 256]))
+			sent += 1
+			next_send = now + 100
+		if now >= quiet_until:
+			client.poll()
+			while client.get_available_packet_count() > 0:
+				client.get_packet()
+				got += 1
+		OS.delay_msec(5)
+		if Time.get_ticks_msec() % 50 == 0:
+			await get_tree().process_frame
+
+	var back_in := Time.get_ticks_msec() - quiet_until
+	client.close()
+	server.close()
+	return [lost[0], ("dropped" if lost[0] else "still connected, backlog in %.1f s" % (back_in / 1000.0)), got, sent]
 
 
 # --- Helpers ---------------------------------------------------------------

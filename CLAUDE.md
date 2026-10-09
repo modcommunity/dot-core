@@ -176,6 +176,7 @@ Three things about it are load-bearing:
 - **The relay hides the client's address from ENet**, which sees 127.0.0.1 for everybody. `DotDualPeer.get_peer_address` maps it back; bans, rate limits and logs must use that, never ENet's own `get_remote_address`.
 
 - **A server's ENet advertised six bytes a second (fixed 2026-10-09).** The engine's `ENetMultiplayerPeer.create_server` hands its channel argument to ENet as the host's incoming bandwidth and always passes 0 as the channel limit, so `DotTransportENet` passing its four channels told every native client the server takes 6 B/s. The client's ENet throttled to 1/32 within a second of traffic: most of its unreliable packets (its commands) were dropped for up to twenty seconds after connecting. `_create_server` now passes 0 there; channels are unaffected. Found by game-arena's `headless_lossy`; `dual_transport_selftest` measures the throttle on a real pair (armed: 110 of 247 packets with the old call).
+- **ENet dropped a player on a bad patch, not a dead link (fixed 2026-10-09).** ENet's own peer timeouts (limit 32, minimum 5 s) disconnect a peer once one reliable command has been resent with its timeout doubled five times and five seconds have passed (`thirdparty/enet/protocol.c`). A resend fails if the data or its acknowledgement is lost, so at 20% loss each way that is about one reliable command in five hundred, and game-arena's `headless_lossy` watched the server drop a player who was still sending every tick about one run in four (its "still connected" check asked only the client, which had not noticed). `DotTransportENet.peer_timeout_limit / _min_ms / _max_ms` (1024 / 10 s / 30 s) are set on every peer as it connects, so only "a reliable command unacknowledged for 30 s" ends a connection; dot-server's `client_timeout_sec` (60 s) already decides when a silent client is gone. `dual_transport_selftest`'s quiet-client section stops polling a client for 8 s: ENet's numbers drop it, the transport's keep it and deliver the whole backlog (3.8 s after it is back).
 
 ENet failing in any way (no ENet in the build, a busy port) degrades to WebSocket only with a WARN, never a failed start. ENet is cleartext: dot-server's client link never sends a bearer secret over it (see dot-server's CLAUDE.md). `DotTransportAuto.require_web_clients` still defaults to `true` for projects that use Auto on a server.
 
@@ -213,7 +214,7 @@ godot --headless --path . res://examples/capability_report.tscn
 godot --headless --path . res://examples/http_selftest.tscn   # 36 checks, exits non-zero
 godot --headless --path . res://examples/value_selftest.tscn  # 27 checks, exits non-zero
 godot --headless --path . res://examples/addon_api_selftest.tscn  # 36 checks, exits non-zero
-godot --headless --path . res://examples/dual_transport_selftest.tscn  # 30 checks: real WS + ENet clients, a query on the shared port, the server's bandwidth
+godot --headless --path . res://examples/dual_transport_selftest.tscn  # 34 checks: real WS + ENet clients, a query on the shared port, the server's bandwidth, peer timeouts
 ```
 
 The second one matters. Parse-clean GDScript can still be wrong in ways only

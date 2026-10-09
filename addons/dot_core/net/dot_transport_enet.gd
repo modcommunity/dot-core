@@ -36,6 +36,30 @@ const ENET_MAX_PEERS := 4095
 ## means two clients cannot run on one machine.
 @export var client_local_port: int = 0
 
+@export_group("Timeouts")
+
+## When ENet gives up on a peer that is not acknowledging reliable traffic, applied to every
+## peer on both ends as it connects ([code]ENetPacketPeer.set_timeout[/code]).
+##
+## [b]ENet's own defaults drop a player on a bad patch, not on a dead link.[/b] They are a
+## limit of 32 and a minimum of 5 s: once one reliable command has been resent with its
+## timeout doubled five times, and five seconds have passed, the peer is disconnected
+## (thirdparty/enet/protocol.c, the `timeoutLimit` test). A resend fails if the data OR its
+## acknowledgement is lost, so at 20% loss each way that is a 36% chance per try and six
+## in a row is about one reliable command in five hundred: game-arena's headless_lossy saw
+## the server drop a player who was still sending every tick about one run in four. A
+## server here already decides for itself when a silent client is gone
+## (dot-server's client_timeout_sec, 60 s), so the transport's job is only to notice a
+## link that is really dead. The limit is set high enough that only
+## [member peer_timeout_max_ms] decides: a reliable command unacknowledged that long.
+@export_range(1, 65536, 1) var peer_timeout_limit: int = 1024
+
+## See [member peer_timeout_limit]. Only matters when the limit is reached first.
+@export_range(1000, 120000, 500) var peer_timeout_min_ms: int = 10000
+
+## A reliable command unacknowledged for this long ends the connection, whatever else.
+@export_range(1000, 120000, 500) var peer_timeout_max_ms: int = 30000
+
 @export_group("Compression")
 
 ## ENet's built-in compression mode.
@@ -127,6 +151,7 @@ func _create_server(port: int, bind_address: String) -> DotResult:
 		)
 
 	_apply_compression(peer)
+	_apply_timeouts_on_connect(peer)
 	return DotResult.success(peer as MultiplayerPeer)
 
 
@@ -167,6 +192,7 @@ func _create_client(address: String, port: int) -> DotResult:
 		)
 
 	_apply_compression(peer)
+	_apply_timeouts_on_connect(peer)
 	return DotResult.success(peer as MultiplayerPeer)
 
 
@@ -195,8 +221,34 @@ func _apply_compression(peer: Object) -> void:
 	)
 
 
+## Gives every peer [member peer_timeout_limit] and friends as it connects. On a server that
+## is each client; on a client, the server (id 1). Connected rather than applied once,
+## because a peer's [code]ENetPacketPeer[/code] exists only from its connection on.
+func _apply_timeouts_on_connect(peer: Object) -> void:
+	if not peer.has_signal("peer_connected") or not peer.has_method("get_peer"):
+		return
+
+	# A weak reference and a static function, not a lambda: a lambda capturing the peer and
+	# connected to the peer's own signal is a reference cycle, and every server and client
+	# made here leaked at exit. Static because the transport is often a temporary
+	# (`DotTransportENet.new().create_client(...)`) that is gone before anybody connects.
+	peer.connect("peer_connected", DotTransportENet._set_peer_timeout.bind(weakref(peer),
+		peer_timeout_limit, peer_timeout_min_ms, peer_timeout_max_ms))
+
+
+static func _set_peer_timeout(id: int, peer_ref: WeakRef, limit: int, low: int, high: int) -> void:
+	var peer: Object = peer_ref.get_ref()
+	if peer == null:
+		return
+
+	var packet_peer: Object = peer.call("get_peer", id)
+	if packet_peer != null and packet_peer.has_method("set_timeout"):
+		packet_peer.call("set_timeout", limit, low, high)
+
+
 func describe() -> Dictionary:
 	var d := super.describe()
 	d["channels"] = channel_count
 	d["compression"] = compression_mode
+	d["peer_timeout"] = [peer_timeout_limit, peer_timeout_min_ms, peer_timeout_max_ms]
 	return d
