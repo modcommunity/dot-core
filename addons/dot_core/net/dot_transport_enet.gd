@@ -101,11 +101,22 @@ func _create_server(port: int, bind_address: String) -> DotResult:
 	if bind_address != "" and bind_address != "*":
 		peer.call("set_bind_ip", bind_address)
 
+	# [b]0 channels, on purpose, and it is not a channel count.[/b] The engine's
+	# `create_server` hands its channel argument to ENet as the host's INCOMING
+	# BANDWIDTH and passes 0 as the channel limit (`create_host_bound(bind_ip, port,
+	# max_clients, 0, max_channels + SYSCH_MAX, out_bandwidth)`), and `in_bandwidth`
+	# is never used. With our four channels a server told every client it could take
+	# six bytes a second, and the client's ENet believed it: its throttle limit fell to
+	# 1/32 within the first second of traffic and most unreliable packets -- every
+	# client's commands -- were dropped until the server's own correction and then the
+	# throttle's slow climb, up to twenty seconds. Passing 0 changes only that slot: the
+	# channel limit is ENet's maximum either way, and a client still asks for
+	# `channel_count`. `dual_transport_selftest` measures it on a real pair.
 	var err: int = peer.call(
 		"create_server",
 		port,
 		max_clients,
-		channel_count,
+		0,
 		in_bandwidth,
 		out_bandwidth
 	)

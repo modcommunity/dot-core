@@ -10,8 +10,8 @@ extends Node
 ## godot --headless --path . res://examples/dual_transport_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 6
-const CHECKS := 28
+const SECTIONS := 7
+const CHECKS := 30
 
 const PORT := 47391
 
@@ -47,6 +47,7 @@ func _run() -> void:
 	await _test_query_on_shared_port()
 	await _test_disconnect_closes_relay()
 	await _test_enet_port_busy_degrades()
+	await _test_enet_server_bandwidth()
 
 	if _server != null:
 		_server.close()
@@ -235,6 +236,48 @@ func _test_enet_port_busy_degrades() -> void:
 	if res.ok:
 		(res.value as MultiplayerPeer).close()
 	squatter.close()
+
+
+## Armed by passing `channel_count` to `create_server` again: the throttle limit falls to
+## 1 within a second of traffic and two thirds of the client's packets are dropped.
+func _test_enet_server_bandwidth() -> void:
+	_section("A server's ENet does not tell its clients to throttle")
+
+	var t := DotTransportENet.new()
+	var res := t.create_server(PORT + 20, "127.0.0.1")
+	if not res.ok:
+		_check(false, "an ENet server listens on %d" % (PORT + 20))
+		_check(false, "and keeps its client's packets")
+		return
+	var server := res.value as ENetMultiplayerPeer
+	# Through the transport too, so both ends agree about compression.
+	var made := DotTransportENet.new().create_client("127.0.0.1", PORT + 20)
+	var client := made.value as ENetMultiplayerPeer if made.ok else ENetMultiplayerPeer.new()
+	var sent := 0
+	var got := 0
+	var lowest := 32
+	# Two seconds of a command-sized unreliable packet every frame: ENet's bandwidth
+	# throttle runs once a second, so one pass is not enough to see it.
+	var deadline := Time.get_ticks_msec() + 2000
+	while Time.get_ticks_msec() < deadline:
+		server.poll()
+		client.poll()
+		if client.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+			client.set_target_peer(1)
+			client.transfer_mode = MultiplayerPeer.TRANSFER_MODE_UNRELIABLE
+			client.put_packet(PackedByteArray([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]))
+			sent += 1
+			var to_server := client.get_peer(1)
+			if to_server != null:
+				lowest = mini(lowest, int(to_server.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_LIMIT)))
+		while server.get_available_packet_count() > 0:
+			server.get_packet()
+			got += 1
+		OS.delay_msec(8)
+	_check(sent > 100 and lowest == 32, "the client's throttle limit stays at full (lowest %d over %d packets)" % [lowest, sent])
+	_check(sent > 100 and got >= sent * 9 / 10, "and the server receives its packets (%d of %d)" % [got, sent])
+	client.close()
+	server.close()
 
 
 # --- Helpers ---------------------------------------------------------------

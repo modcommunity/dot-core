@@ -175,6 +175,8 @@ Three things about it are load-bearing:
 - **ENet cannot share its socket with A2S/DQP** — Godot binds no receive hook on `ENetConnection` — and the game's UDP port answers queries by default. So `DotUdpDemux` owns the public UDP port: datagrams a registered handler claims (A2S `FF FF FF FF`, DQP `DQP1`) go to it, everything else is relayed to an ENet host on loopback through **one relay socket per remote client** (one shared socket would make every client one ENet peer). A relay is only opened for an ENet connect header (peer id 0xFFF), and capped, so a spoofed flood cannot open a socket per source. A compressed connect whose first four bytes happen to be `FF FF FF FF` (one in 65536) is lost to the query handler and ENet retransmits it.
 - **The relay hides the client's address from ENet**, which sees 127.0.0.1 for everybody. `DotDualPeer.get_peer_address` maps it back; bans, rate limits and logs must use that, never ENet's own `get_remote_address`.
 
+- **A server's ENet advertised six bytes a second (fixed 2026-10-09).** The engine's `ENetMultiplayerPeer.create_server` hands its channel argument to ENet as the host's incoming bandwidth and always passes 0 as the channel limit, so `DotTransportENet` passing its four channels told every native client the server takes 6 B/s. The client's ENet throttled to 1/32 within a second of traffic: most of its unreliable packets (its commands) were dropped for up to twenty seconds after connecting. `_create_server` now passes 0 there; channels are unaffected. Found by game-arena's `headless_lossy`; `dual_transport_selftest` measures the throttle on a real pair (armed: 110 of 247 packets with the old call).
+
 ENet failing in any way (no ENet in the build, a busy port) degrades to WebSocket only with a WARN, never a failed start. ENet is cleartext: dot-server's client link never sends a bearer secret over it (see dot-server's CLAUDE.md). `DotTransportAuto.require_web_clients` still defaults to `true` for projects that use Auto on a server.
 
 ## Layered configuration
@@ -211,7 +213,7 @@ godot --headless --path . res://examples/capability_report.tscn
 godot --headless --path . res://examples/http_selftest.tscn   # 36 checks, exits non-zero
 godot --headless --path . res://examples/value_selftest.tscn  # 27 checks, exits non-zero
 godot --headless --path . res://examples/addon_api_selftest.tscn  # 36 checks, exits non-zero
-godot --headless --path . res://examples/dual_transport_selftest.tscn  # 28 checks: real WS + ENet clients, a query on the shared port
+godot --headless --path . res://examples/dual_transport_selftest.tscn  # 30 checks: real WS + ENet clients, a query on the shared port, the server's bandwidth
 ```
 
 The second one matters. Parse-clean GDScript can still be wrong in ways only
