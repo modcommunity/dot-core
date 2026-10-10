@@ -180,6 +180,8 @@ Three things about it are load-bearing:
 
 - **A server's shutdown never reached its native clients (fixed 2026-10-09).** Behind the demux, an ENet "send" reaches the client's loopback relay and only `pump_out()` puts it on the public socket; `DotDualPeer._close` closed the ENet host and then the demux in one call, so neither dot-server's reliable DISCONNECT nor ENet's own disconnect ever left. Hidden while ENet's peer timeout was 5 s; once it became 30 s, dot-server-deploy's `reconnect` measured a native client noticing a restart after 33.8 s. `_say_goodbye_through_demux` now disconnects each ENet peer gracefully, services the host and pumps the demux a few times before closing (6 ms in `reconnect`). `dual_transport_selftest`'s shutdown section, armed: 3 s without the fix, 0 ms with it.
 
+- **`DotMeteredPeer`** wraps any peer and counts bytes and packets per channel (dot-server's client link uses it; dot-menu's net_stat draws it). A WebSocket peer reports every packet on channel 0, so a browser cannot split arrivals by channel. A wrapper connects its inner peer's signals to methods, never lambdas capturing itself, or the two peers hold each other and neither socket is freed.
+
 ENet failing in any way (no ENet in the build, a busy port) degrades to WebSocket only with a WARN, never a failed start. ENet is cleartext: dot-server's client link never sends a bearer secret over it (see dot-server's CLAUDE.md). `DotTransportAuto.require_web_clients` still defaults to `true` for projects that use Auto on a server.
 
 ## Layered configuration
@@ -216,7 +218,7 @@ godot --headless --path . res://examples/capability_report.tscn
 godot --headless --path . res://examples/http_selftest.tscn   # 36 checks, exits non-zero
 godot --headless --path . res://examples/value_selftest.tscn  # 27 checks, exits non-zero
 godot --headless --path . res://examples/addon_api_selftest.tscn  # 36 checks, exits non-zero
-godot --headless --path . res://examples/dual_transport_selftest.tscn  # 37 checks: real WS + ENet clients, a query on the shared port, the server's bandwidth, peer timeouts, a shutdown
+godot --headless --path . res://examples/dual_transport_selftest.tscn  # 48 checks: real WS + ENet clients, a metered client, a query on the shared port, the server's bandwidth, peer timeouts, a shutdown
 ```
 
 The second one matters. Parse-clean GDScript can still be wrong in ways only
@@ -310,6 +312,7 @@ addons/dot_core/
     dot_transport_auto.gd      Picks one and logs why.
     dot_transport_dual.gd      WebSocket + ENet in one server. dot-server's default.
     dot_dual_peer.gd           The MultiplayerPeerExtension that merges the two.
+    dot_metered_peer.gd        Any peer, counted per channel. A client link wraps its peer in one.
     dot_udp_demux.gd           One UDP port for ENet, A2S and DQP; relays ENet via loopback.
     dot_http.gd                HTTPRequest wrapper: retries, resume, pooling.
   random/

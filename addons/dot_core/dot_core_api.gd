@@ -7,5 +7,6 @@ extends RefCounted
 ## because every pack built before that no longer compiles against this addon.
 
 # 2: DotTransportDual, DotDualPeer, DotUdpDemux (WebSocket + ENet in one server).
-const LEVEL := 2
+# 3: DotMeteredPeer (any MultiplayerPeer, counted per channel; what net_stat draws).
+const LEVEL := 3
 const OLDEST := 1

@@ -10,8 +10,8 @@ extends Node
 ## godot --headless --path . res://examples/dual_transport_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 9
-const CHECKS := 37
+const SECTIONS := 10
+const CHECKS := 48
 
 const PORT := 47391
 
@@ -44,6 +44,7 @@ func _run() -> void:
 	await _test_listen()
 	await _test_both_clients_join()
 	await _test_routing()
+	await _test_metered_clients()
 	await _test_query_on_shared_port()
 	await _test_disconnect_closes_relay()
 	await _test_enet_port_busy_degrades()
@@ -172,6 +173,83 @@ func _test_routing() -> void:
 	_check(seen.get("from-enet", [0])[0] == en_id, "the server hears the ENet client as itself")
 	_check(seen.get("from-enet", [0, -1])[1] == 1, "on the channel it sent on")
 	_check(seen.get("from-ws", [0])[0] == ws_id, "and the WebSocket client as itself")
+
+
+## [DotMeteredPeer] behind a real [SceneMultiplayer], on both transports: what net_stat
+## draws is only worth drawing if the wrapper is invisible to everything above it. The
+## SceneMultiplayer half is the one that matters — it decides "connected" from the
+## wrapper's status and its peer_connected(1), and a wrapper that got either wrong would
+## be a client that never finishes connecting, with nothing in the log.
+func _test_metered_clients() -> void:
+	_section("A metered client is counted, and SceneMultiplayer cannot tell it is there")
+
+	var before := _connected_ids.size()
+	var ws_res := DotTransportWebSocket.new().create_client("ws://127.0.0.1:%d" % PORT)
+	var en_res := DotTransportENet.new().create_client("127.0.0.1", PORT)
+	if not (ws_res.ok and en_res.ok):
+		_check(false, "both metered clients are created")
+		return
+	var ws := DotMeteredPeer.wrap(ws_res.value) as DotMeteredPeer
+	var en := DotMeteredPeer.wrap(en_res.value) as DotMeteredPeer
+	_check(DotMeteredPeer.wrap(ws) == ws, "wrapping a meter again is the same meter")
+
+	var api := SceneMultiplayer.new()
+	var joined := [false]
+	api.connected_to_server.connect(func() -> void: joined[0] = true)
+	api.multiplayer_peer = en
+	await _pump_until(func() -> bool:
+		api.poll()
+		ws.poll()
+		return joined[0] and _connected_ids.size() >= before + 2)
+	_check(joined[0], "SceneMultiplayer saw the metered ENet client connect")
+	_check(_connected_ids.size() == before + 2, "the server saw both join")
+
+	var ws_id := ws.get_unique_id()
+	_check(ws_id > 1 and _server.backend_name(ws_id) == "websocket", "the meter reports the inner peer's id")
+
+	# SceneMultiplayer is let go of here: the packets below are raw, and it would read
+	# them as commands.
+	api.multiplayer_peer = null
+	var en_id := en.get_unique_id()
+	_server.transfer_channel = DotTransport.Channel.STATE
+	for id in [ws_id, en_id]:
+		_server.set_target_peer(id)
+		_server.put_packet(PackedByteArray([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
+	_server.transfer_channel = 0
+	var got := {}
+	await _pump_until(func() -> bool:
+		for p: DotMeteredPeer in [ws, en]:
+			p.poll()
+			while p.get_available_packet_count() > 0:
+				got[p.transport_name()] = "%d@%d" % [p.get_packet_channel(), p.get_packet().size()]
+		return got.size() >= 2)
+	_check(got.get("enet", "") == "1@10" and en.bytes_in_by_channel[1] == 10 and en.packets_in >= 1,
+		"over ENet a packet arrives whole on its channel, and is counted there (%s)" % [got])
+	# [b]WebSocket has no channels.[/b] Godot's WebSocket peer is one ordered stream and
+	# reports every packet on channel 0, so a browser cannot split what it receives by
+	# channel at all — net_stat says so rather than drawing a breakdown it does not have.
+	_check(got.get("websocket", "") == "0@10" and ws.bytes_in == 10 and ws.bytes_in_by_channel[0] == 10,
+		"over WebSocket it arrives whole on channel 0, whatever it was sent on (%s)" % [got])
+
+	ws.transfer_channel = 6
+	ws.set_target_peer(1)
+	var _sent := ws.put_packet(PackedByteArray([0, 0, 0]))
+	_check(ws.bytes_out == 3 and ws.bytes_out_by_channel.size() == 7 and ws.bytes_out_by_channel[6] == 3,
+		"a send is counted out, on a channel past the four it started with")
+
+	_check(ws.transport_name() == "websocket" and en.transport_name() == "enet", "each names its transport")
+	_check(ws.transport_stats().has("queued"), "a WebSocket says what it has not sent yet (%s)" % [ws.transport_stats()])
+	_check(en.transport_stats().has("loss") and en.get_peer(1) != null,
+		"ENet says its loss, and get_peer still reaches the server (%s)" % [en.transport_stats()])
+
+	en.note_rtt(40.0)
+	en.note_rtt(60.0)
+	_check(is_equal_approx(en.rtt_jitter_ms, 5.0), "jitter moves a quarter of the way to each difference")
+
+	var left := _disconnected_ids.size()
+	en.close()
+	ws.close()
+	await _pump_until(func() -> bool: return _disconnected_ids.size() >= left + 2, 8.0)
 
 
 func _test_query_on_shared_port() -> void:
