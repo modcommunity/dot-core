@@ -53,7 +53,7 @@ Prints what the build can do and self-tests the pieces that need no network. Run
 
 **Nothing hardcodes a scene path.** Anything that needs a host node exports a `DotNodeRef`.
 
-**Browser constraints are load-bearing, not edge cases.** No UDP, no `HTTPClient`, no threads by default, an IndexedDB filesystem needing explicit flushes, and no way to unmount a resource pack. See [CLAUDE.md](CLAUDE.md) for where each one is handled.
+**Browser constraints are load-bearing, not edge cases.** No UDP, no `HTTPClient`, no threads by default, an IndexedDB filesystem needing explicit flushes, and no way to unmount a resource pack. See [docs/transports.md](docs/transports.md#where-each-constraint-lives) for where each one is handled.
 
 ## Licence
 
