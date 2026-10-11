@@ -29,7 +29,7 @@ extends Node
 ## [b]On CORS.[/b] In a browser, every response header this class can read and
 ## every cross-origin request it can make is subject to the server's CORS policy.
 ## A request that works on desktop and fails on web with no useful error is
-## almost always CORS; see dot-cloud's CLAUDE.md for the headers a content host
+## almost always CORS; see dot-cloud's docs/store.md for the headers a content host
 ## must send.
 
 const CHANNEL := "http"

@@ -200,7 +200,7 @@ static func can_mount_packs() -> bool:
 ## file table stays merged into the virtual filesystem for the process
 ## lifetime. This is the single hardest constraint on hot-swapping content and
 ## the reason dot-cloud namespaces every game under its own path prefix instead
-## of unmounting; see dot-cloud's CLAUDE.md.
+## of unmounting; see dot-cloud's docs/mounting.md.
 static func can_unmount_packs() -> bool:
 	return false
 
