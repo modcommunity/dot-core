@@ -6,10 +6,11 @@
 
 These wrote their own instead of using this one. Two of them hand-rolled the same algorithm this file implements, worse.
 
-- **Converted** (they now use `random/`): dot-spawn (it had folded its key in with `hash()`) and dot-combat (`DotSpread` had cleared the top bit of each splitmix constant to make them fit, so it mixed but was no longer the algorithm it named).
-- **Not converted yet; reason unknown**: dot-map, dot-vote and dot-2d.
-- **Not converted yet**: dot-team's `DotTeamRotation._roll` (`hash(String(key))` plus a splitmix-style finaliser using arithmetic `>>` with no mask, two of the traps below).
-- **Not converted, deliberately at the time**: dot-procedural-generation's `DotProcGenRandom`, a counter-based splittable stream written as a second implementation because randomness was then a separate repository and only dot-core may be a hard dependency. That reason no longer holds now that this lives in dot-core.
+- **Converted** (they now use `random/`): dot-spawn (it had folded its key in with `hash()`), dot-combat (`DotSpread` had cleared the top bit of each splitmix constant to make them fit, so it mixed but was no longer the algorithm it named), dot-team (`DotTeamRotation._roll` mixed Godot's 32-bit `hash(String)`, which is not promised stable across engine versions; 2026-10-10) and dot-procedural-generation (`DotProcGenRandom` is now a wrapper; it turned out to be bit-identical, so no map changed; 2026-10-10).
+- **Deliberately not converted:**
+  - **dot-map** (`DotMapRotation`'s random pick) and **dot-vote** (the ballot fill and the random tie break) use the engine's `RandomNumberGenerator` with an explicit seed that is advanced deterministically, never reseeded from the clock. That is already reproducible on every machine; it is not a hand-rolled mixer, so converting buys nothing. dot-vote's `empty_rng` (`randomize()`) is the one clock-seeded draw, and it is used only when nothing else decides.
+  - **dot-team's roster** (`rebalance`) passes a seeded `RandomNumberGenerator` to `DotTeamBalance.choose_victim`, a public signature; server-only (`authoritative`), so a client never has to agree with it.
+  - **dot-2d's `Dot2DScatter._hash`** is a hand-rolled SplitMix64 with the constants masked to 63 bits. It stays because pellet positions are derived from the slot index on both ends and never sent: changing the mixer moves every pellet, and a server and a client shell on different dot-2d builds would disagree about the field. Convert it only in a release that bumps dot-2d's API level and rebuilds the shell in the same step.
 
 ## The one idea
 
