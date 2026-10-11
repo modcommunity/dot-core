@@ -53,6 +53,10 @@ extends RefCounted
 ## The file a pack carries at its root to say what it needs.
 const REQUIREMENTS_FILE := "requires.json"
 
+## The file a game commits to ask LESS of an addon than it was built against, because it
+## asks the host for the newer API before using it. See [method apply_floors].
+const FLOOR_FILE := "requires.floor.json"
+
 ## Where addons live, in a build and in a checkout alike.
 const ADDONS_ROOT := "res://addons"
 
@@ -171,22 +175,25 @@ static func version_of(addon: String) -> String:
 
 ## Reads a requirements document. Returns `{addon: level}`.
 ##
+## [param file_name] is only what the messages call it: a [constant FLOOR_FILE] has the
+## same shape.
+##
 ## Strict about shape and lenient about nothing else: this is read off a pack a server
 ## handed to a client, so a level that is not a positive integer is a malformed file, not
 ## a zero.
-static func parse(text: String) -> DotResult:
+static func parse(text: String, file_name: String = REQUIREMENTS_FILE) -> DotResult:
 	var json := JSON.new()
 	if json.parse(text) != OK:
 		return DotResult.fail(
 			DotError.CODE_PARSE,
-			"The game's %s is not valid JSON." % REQUIREMENTS_FILE,
+			"The game's %s is not valid JSON." % file_name,
 			json.get_error_message()
 		)
 
 	if not (json.data is Dictionary):
 		return DotResult.fail(
 			DotError.CODE_PARSE,
-			"The game's %s is not a JSON object." % REQUIREMENTS_FILE
+			"The game's %s is not a JSON object." % file_name
 		)
 
 	var doc: Dictionary = json.data
@@ -195,14 +202,14 @@ static func parse(text: String) -> DotResult:
 		return DotResult.fail(
 			DotError.CODE_VERSION,
 			"This game describes its requirements in a newer way than this build reads.",
-			"%s format %s, this build reads %d" % [REQUIREMENTS_FILE, str(format), FORMAT]
+			"%s format %s, this build reads %d" % [file_name, str(format), FORMAT]
 		)
 
 	var raw: Variant = doc.get("addons", {})
 	if not (raw is Dictionary):
 		return DotResult.fail(
 			DotError.CODE_PARSE,
-			"The game's %s has no addon table." % REQUIREMENTS_FILE
+			"The game's %s has no addon table." % file_name
 		)
 
 	var out := {}
@@ -213,7 +220,7 @@ static func parse(text: String) -> DotResult:
 		if not _is_addon_name(addon):
 			return DotResult.fail(
 				DotError.CODE_PARSE,
-				"The game's %s names an addon that cannot exist." % REQUIREMENTS_FILE,
+				"The game's %s names an addon that cannot exist." % file_name,
 				addon
 			)
 
@@ -221,7 +228,7 @@ static func parse(text: String) -> DotResult:
 			return DotResult.fail(
 				DotError.CODE_PARSE,
 				"The game's %s gives %s a level that is not a positive whole number."
-					% [REQUIREMENTS_FILE, addon],
+					% [file_name, addon],
 				str(level)
 			)
 
@@ -347,7 +354,9 @@ static func _is_addon_name(addon: String) -> bool:
 ##
 ## The level recorded is the level THIS build has: "built against". A pack built today
 ## asks for today's levels, which is conservative -- it may run on an older host that has
-## everything it actually calls -- and a game that knows better commits its own file.
+## everything it actually calls. A game that guards an addon's newer API names it in
+## [constant FLOOR_FILE] ([method apply_floors]); one that knows better about everything
+## commits its own requires.json.
 ## Needs the project imported, so the global class list is populated.
 static func derive(
 	root: String = "res://",
@@ -398,6 +407,87 @@ static func audit(requirements: Dictionary, derived: Dictionary) -> PackedString
 		elif int(requirements[addon]) > int(derived[addon]):
 			out.append("%s is declared at %d and this build has %d"
 				% [addon, int(requirements[addon]), int(derived[addon])])
+	return out
+
+
+# --- Floors: what a game guards -------------------------------------------
+
+## [param derived] with each addon [param floors] names lowered to its floor.
+##
+## [b]Why a game asks for less than it was built against.[/b] [method derive] records the
+## BUILD's level of every addon a game uses, which is right for a call the game makes
+## unconditionally: on an older host it would not compile. But a game can also ask the
+## host first -- `DotAddonApi.build_level("dot_ui") >= 2` -- and keep an older path for an
+## older host. Its pack still asks for level 2, so that older host refuses it before the
+## check ever runs, and the older path is dead code. A game names those addons in
+## [constant FLOOR_FILE] at the lowest level its older path runs on, and only those are
+## lowered: every other addon stays derived, so the list still keeps itself.
+##
+## A floor at or above the derived level changes nothing; an addon the game does not use
+## is not added. [method floor_audit] is what refuses a floor that cannot be honoured.
+static func apply_floors(derived: Dictionary, floors: Dictionary) -> Dictionary:
+	var out := derived.duplicate()
+	for key in floors.keys():
+		var addon := str(key)
+		if out.has(addon):
+			out[addon] = mini(int(out[addon]), int(floors[key]))
+	return out
+
+
+## Which of a game's floors cannot be honoured, against [method derive] and [method guarded].
+## Empty is sound.
+##
+## - An addon the game does not use: a floor left behind by code that was removed.
+## - A floor above what this build has: a promise about a level nobody built against.
+## - A floor below the OLDEST this build supports: the pack was compiled against an API
+##   that dropped that level, and a host at this build's own level would refuse it.
+## - An addon no file asks the level of: nothing runs an older path, so on an older host
+##   the newer call fails to parse -- exactly what requires.json exists to prevent.
+##
+## [param oldest] stands in for [method build_oldest] per addon, for a test.
+static func floor_audit(
+	floors: Dictionary, derived: Dictionary, guards: Dictionary, oldest: Dictionary = {}
+) -> PackedStringArray:
+	var out := PackedStringArray()
+	var names: Array = floors.keys()
+	names.sort()
+	for key in names:
+		var addon := str(key)
+		var floor_level := int(floors[key])
+
+		if not derived.has(addon):
+			out.append("%s has a floor and the game does not use it" % addon)
+			continue
+
+		var have := int(derived[addon])
+		if floor_level > have:
+			out.append("%s has a floor of %d, above the %d this build has" % [addon, floor_level, have])
+			continue
+
+		var lowest := int(oldest[addon]) if oldest.has(addon) else build_oldest(addon)
+		if floor_level < lowest:
+			out.append("%s has a floor of %d, below %d, the oldest level this build supports; a host at this build's level would refuse the pack"
+				% [addon, floor_level, lowest])
+			continue
+
+		if floor_level < have and not guards.has(addon):
+			out.append('%s has a floor of %d and no file asks the host for its level (DotAddonApi.build_level("%s")), so nothing runs an older path'
+				% [addon, floor_level, addon])
+	return out
+
+
+## Every addon a project's own files ask the host's level of, by name:
+## `build_level("dot_ui")` or `level_of("dot_ui")`. The evidence [method floor_audit] wants
+## that a floor has an older path behind it. Same files as [method derive].
+static func guarded(
+	root: String = "res://",
+	skip_dirs: PackedStringArray = PackedStringArray(["addons", "examples", "tools", ".godot", ".github", "screenshots"])
+) -> Dictionary:
+	var out := {}
+	var ask := RegEx.create_from_string("\\b(?:build_level|level_of)\\s*\\(\\s*\"([a-z0-9_]+)\"")
+	for file in _source_files(root, skip_dirs):
+		for m in ask.search_all(FileAccess.get_file_as_string(file)):
+			out[m.get_string(1)] = true
 	return out
 
 

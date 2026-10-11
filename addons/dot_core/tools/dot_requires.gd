@@ -15,7 +15,14 @@ extends SceneTree
 ##     -- --check requires.json
 ## [/codeblock]
 ##
-## Exit codes: 0 ok, 1 a committed file is incomplete or overstated, 2 usage or I/O.
+## [b]Floors.[/b] Writing or printing, a [code]requires.floor.json[/code] at the project
+## root lowers the addons it names to the levels it gives, for a game that asks the host's
+## level before using that addon's newer API (see [method DotAddonApi.apply_floors]). A
+## floor [method DotAddonApi.floor_audit] refuses fails the run. A committed requires.json
+## is the whole answer and floors are not applied to it.
+##
+## Exit codes: 0 ok, 1 a committed file is incomplete or overstated or a floor is unsound,
+## 2 usage or I/O.
 ## The project has to have been imported first, or the global class list is empty and
 ## nothing is found -- which is refused rather than written, because an empty file would
 ## claim the game needs nothing.
@@ -39,7 +46,12 @@ func _init() -> void:
 	if derived.is_empty():
 		printerr("dot_requires: this project uses no addon this build has; nothing to require")
 
+	var floor_path := "res://" + DotAddonApi.FLOOR_FILE
+	var has_floors := FileAccess.file_exists(floor_path)
+
 	if check_path != "":
+		if has_floors:
+			printerr("dot_requires: %s is committed, so %s is not applied to it" % [check_path, DotAddonApi.FLOOR_FILE])
 		var abs_check := check_path if check_path.contains("://") else "res://" + check_path
 		if not FileAccess.file_exists(abs_check):
 			printerr("dot_requires: no such file: %s" % abs_check)
@@ -57,6 +69,27 @@ func _init() -> void:
 			printerr("dot_requires: %s covers the %d addons this game uses" % [check_path, derived.size()])
 		quit(1 if not problems.is_empty() else 0)
 		return
+
+	if has_floors:
+		var floors_read := DotAddonApi.parse(FileAccess.get_file_as_string(floor_path), DotAddonApi.FLOOR_FILE)
+		if not floors_read.ok:
+			printerr("dot_requires: %s" % str(floors_read.error))
+			quit(1)
+			return
+		var floors := floors_read.value as Dictionary
+		var unsound := DotAddonApi.floor_audit(floors, derived, DotAddonApi.guarded())
+		for p in unsound:
+			printerr("dot_requires: %s: %s" % [DotAddonApi.FLOOR_FILE, p])
+		if not unsound.is_empty():
+			quit(1)
+			return
+		var names: Array = floors.keys()
+		names.sort()
+		for addon in names:
+			if int(floors[addon]) < int(derived[addon]):
+				printerr("dot_requires: %s built against level %d, asks for %d (guarded, %s)"
+					% [addon, int(derived[addon]), int(floors[addon]), DotAddonApi.FLOOR_FILE])
+		derived = DotAddonApi.apply_floors(derived, floors)
 
 	var text := DotAddonApi.encode(derived)
 

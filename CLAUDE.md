@@ -13,7 +13,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | [docs/README.md](docs/README.md) | the index |
 | [docs/engine-traps.md](docs/engine-traps.md) | comparing a `Variant`, touching `DotWeb`, emitting from a thread, `DotLog`'s engine mirror |
 | [docs/transports.md](docs/transports.md) | anything in `net/`, a platform constraint, `DotHttp` |
-| [docs/addon-api.md](docs/addon-api.md) | adding to or removing from any addon's API; `requires.json` |
+| [docs/addon-api.md](docs/addon-api.md) | adding to or removing from any addon's API; `requires.json`; `requires.floor.json` for a game that guards a newer level |
 | [docs/randomness.md](docs/randomness.md) | anything in `random/`, or writing a seeded draw anywhere |
 
 ## Layout
@@ -29,7 +29,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | `core/dot_config.gd` | layered configuration base |
 | `core/dot_job.gd`, `dot_scheduler.gd`, `dot_hash_job.gd` | sliceable work, frame budget and worker pool, chunked file hashing |
 | `core/dot_hash.gd`, `dot_rate_limiter.gd`, `dot_semver.gd`, `dot_value.gd` | SHA-256/HMAC/constant-time compare/base64url; token bucket; versions that do not sort 0.10 below 0.9; total comparisons |
-| `core/dot_addon_api.gd`, `dot_core_api.gd`, `tools/dot_requires.gd` | API levels and the refusal sentence; dot-core's own level; derives or audits a game's `requires.json` |
+| `core/dot_addon_api.gd`, `dot_core_api.gd`, `tools/dot_requires.gd` | API levels and the refusal sentence; dot-core's own level; derives or audits a game's `requires.json`, lowered by its `requires.floor.json` |
 | `net/` | `dot_transport*.gd` (base with address parsing incl. bracketed IPv6, websocket, enet, auto, dual), `dot_dual_peer.gd`, `dot_udp_demux.gd`, `dot_metered_peer.gd`, `dot_http.gd` |
 | `random/` | `dot_random_stream.gd`, `_table.gd`, `_schedule.gd`, `_config.gd`, `_manager.gd` (the node a game holds; the only thing that knows the seed) |
 | `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest` |
@@ -51,6 +51,7 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 - A peer wrapper connects its inner peer's signals to methods, never self-capturing lambdas. [transports](docs/transports.md#dotmeteredpeer)
 - Every write to `user://` calls `DotWeb.sync_filesystem()`.
 - Add to an addon's API: bump its `LEVEL`. Remove or change: raise `OLDEST` to `LEVEL`. The api file has no `class_name`. [api](docs/addon-api.md#the-rule-for-every-addon)
+- A game guarding an addon's newer level names it in `requires.floor.json`, or its pack still asks for the built level and an older host refuses it before the guard runs. [floors](docs/addon-api.md#requiresfloorjson-asking-less-of-an-addon-the-game-guards)
 - A seeded draw is a pure function of (key, index); derive streams by name. Splitmix constants are signed decimals, `>>` needs `_unsigned_shift`, and `String.hash()` is not a stable seed. [randomness](docs/randomness.md)
 - `DotConfig` unknown keys warn, never fail; `sensitive_keys()` blocks environment and argv.
 - Set `require_type` on a `DotNodeRef` a host configures by path: a type error at boot beats a null call mid-session.

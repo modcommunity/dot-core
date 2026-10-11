@@ -8,5 +8,7 @@ extends RefCounted
 
 # 2: DotTransportDual, DotDualPeer, DotUdpDemux (WebSocket + ENet in one server).
 # 3: DotMeteredPeer (any MultiplayerPeer, counted per channel; what net_stat draws).
-const LEVEL := 3
+# 4: DotAddonApi.FLOOR_FILE, apply_floors, floor_audit, guarded, and parse's file_name
+#    (a game asking less of an addon whose newer API it guards).
+const LEVEL := 4
 const OLDEST := 1

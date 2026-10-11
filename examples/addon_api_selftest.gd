@@ -10,8 +10,8 @@ extends Node
 ## that a player reads "this server has level 2" instead of a parse error, so a check that
 ## the refusal is CODE_VERSION and nothing else would pass for a refusal nobody can read.
 
-const SECTIONS := 6
-const CHECKS := 36
+const SECTIONS := 7
+const CHECKS := 50
 
 const SCRATCH := "user://addon_api_selftest"
 
@@ -35,6 +35,7 @@ func _run() -> void:
 	_test_the_refusals_read_as_sentences()
 	_test_a_mounted_pack()
 	_test_deriving_and_auditing()
+	_test_floors()
 
 	print("")
 	print("%d of %d sections finished, %d passed, %d failed" % [_finished, _entered, _passed, _failed])
@@ -194,6 +195,57 @@ func _test_deriving_and_auditing() -> void:
 	var over := DotAddonApi.audit({"dot_net": 5}, {"dot_net": 2})
 	_check(over.size() == 1 and over[0].contains("declared at 5"), "and so is a level above what this build has")
 	_check(DotAddonApi.audit({"dot_net": 1}, {"dot_net": 2}).is_empty(), "a lower level is a game that knows better, and is fine")
+
+	_done()
+
+
+func _test_floors() -> void:
+	_section("a game's floors: asking less of an addon it guards")
+
+	var derived := {"dot_ui": 2, "dot_net": 3, "dot_core": 3}
+	var lowered := DotAddonApi.apply_floors(derived, {"dot_ui": 1, "dot_vote": 1})
+	_check(lowered.get("dot_ui") == 1, "a floored addon is asked for at its floor (%s)" % str(lowered))
+	_check(lowered.get("dot_net") == 3 and lowered.get("dot_core") == 3, "every other addon stays derived")
+	_check(not lowered.has("dot_vote"), "and a floor on an addon the game does not use adds nothing")
+	_check(DotAddonApi.apply_floors(derived, {"dot_ui": 5}).get("dot_ui") == 2, "a floor above the build changes nothing")
+	_check(derived.get("dot_ui") == 2, "and the derived table is not touched")
+
+	var guards := {"dot_ui": true}
+	var oldest := {"dot_ui": 1, "dot_net": 1, "dot_core": 1}
+	_check(DotAddonApi.floor_audit({"dot_ui": 1}, derived, guards, oldest).is_empty(), "a guarded floor in range is sound")
+
+	var unused := DotAddonApi.floor_audit({"dot_vote": 1}, derived, guards, oldest)
+	_check(unused.size() == 1 and unused[0].contains("does not use"), "a floor on an unused addon is stale", str(unused))
+	var above := DotAddonApi.floor_audit({"dot_ui": 3}, derived, guards, oldest)
+	_check(above.size() == 1 and above[0].contains("above the 2"), "a floor above the build is refused", str(above))
+	var below := DotAddonApi.floor_audit({"dot_ui": 1}, derived, guards, {"dot_ui": 2})
+	_check(below.size() == 1 and below[0].contains("would refuse"), "a floor below the build's oldest is refused, because a current host would refuse the pack", str(below))
+	var unguarded := DotAddonApi.floor_audit({"dot_net": 2}, derived, guards, oldest)
+	_check(unguarded.size() == 1 and unguarded[0].contains("no file asks"), "a floor nothing guards is refused", str(unguarded))
+	_check(DotAddonApi.floor_audit({"dot_net": 3}, derived, {}, oldest).is_empty(), "a floor at the build's level needs no guard: it lowers nothing")
+
+	# guarded() reads the same files derive() does, so a scratch project stands in for a game.
+	var dir := SCRATCH + "/floors"
+	DirAccess.make_dir_recursive_absolute(dir + "/game")
+	DirAccess.make_dir_recursive_absolute(dir + "/examples")
+	var game := FileAccess.open(dir + "/game/a.gd", FileAccess.WRITE)
+	game.store_string('var x := DotAddonApi.build_level("dot_ui") >= 2\nvar y := api.level_of( "dot_lighting" )\n')
+	game.close()
+	var example := FileAccess.open(dir + "/examples/b.gd", FileAccess.WRITE)
+	example.store_string('var z := DotAddonApi.build_level("dot_net")\n')
+	example.close()
+	var found := DotAddonApi.guarded(dir)
+	_check(found.has("dot_ui") and found.has("dot_lighting"), "guarded() finds build_level and level_of by name (%s)" % str(found))
+	_check(not found.has("dot_net"), "and skips examples/, as derive() does")
+	DirAccess.remove_absolute(dir + "/game/a.gd")
+	DirAccess.remove_absolute(dir + "/examples/b.gd")
+	DirAccess.remove_absolute(dir + "/game")
+	DirAccess.remove_absolute(dir + "/examples")
+	DirAccess.remove_absolute(dir)
+	DirAccess.remove_absolute(SCRATCH)
+
+	var named := DotAddonApi.parse("[]", DotAddonApi.FLOOR_FILE)
+	_check(not named.ok and named.error.message.contains(DotAddonApi.FLOOR_FILE), "a floor file that is not a table is named as itself", str(named.error) if not named.ok else "")
 
 	_done()
 
