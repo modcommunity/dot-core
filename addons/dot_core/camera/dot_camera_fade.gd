@@ -301,12 +301,27 @@ func _step(delta: float) -> int:
 
 func _apply(entry: Dictionary, amount: float) -> void:
 	entry["amount"] = amount
+	var hidden: Dictionary = entry.get("hidden", {})
+	entry["hidden"] = hidden
 
 	for ref in entry["meshes"]:
 		var mesh := (ref as WeakRef).get_ref() as GeometryInstance3D
 
-		if mesh != null:
-			mesh.transparency = amount
+		if mesh == null:
+			continue
+
+		mesh.transparency = amount
+
+		# Fully faded is also not drawn. `transparency` alone left an unshaded figure drawn
+		# as a grey slab at 1.0 (mg-wipeout's stand-ins at the lens); only what this fade hid
+		# is shown again, so a mesh the game hid stays hidden.
+		var id := mesh.get_instance_id()
+		if amount >= 0.99 and mesh.visible:
+			mesh.visible = false
+			hidden[id] = true
+		elif amount < 0.99 and hidden.has(id):
+			mesh.visible = true
+			hidden.erase(id)
 
 
 static func _meshes(root: Node) -> Array:
