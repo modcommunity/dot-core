@@ -12,12 +12,13 @@ Every third-person view in the family used one, and the first play test (2026-10
 
 ## The look-ahead: smooth without being late
 
-One sweep along the line as it is gives the hard limit, applied on every frame: the camera is never further out than it. Four more sweep the line as it will be over the next `look_ahead` seconds (0.2), extrapolated from how the pivot and the wanted point moved since the last frame; the nearest answer, as a fraction of its own line, is where the camera eases toward (`pull_in_time` 0.1 s). A pillar the view is swinging toward has already brought the camera in when the hard limit arrives, and a camera standing still rests exactly at the hard limit, because every predicted line is the current one.
+One sweep along the line as it is gives the hard limit, applied on every frame: the camera is never further out than it. Eight more sweep the line as it will be at four moments over the next `look_ahead` seconds (0.2), read two ways from how the line moved since the last frame: turned about the pivot at the rate it turned (an orbit; a straight-line extrapolation of the camera's end cuts the corner of the arc and misses the pillar the arc meets) and slid in a straight line (a strafe past a pillar); the nearest answer, as a fraction of its own line, is where the camera eases toward (`pull_in_time` 0.1 s). A pillar the view is swinging toward has already brought the camera in when the hard limit arrives, and a camera standing still rests exactly at the hard limit, because every predicted line is the current one.
 
 Two things that were tried first and are wrong:
 
 - **A wider sphere as the early warning.** It rests the camera in front of every wall by the difference in radius, and much further in front of a surface met at a glancing angle (a low ceiling with the camera pitched up came in by 0.7 m).
 - **One look-ahead sample at the end of the interval.** A line moving at a running pace steps right over a 0.6 m pillar between now and 0.2 s from now; the samples have to cover the interval.
+- **Only a straight-line extrapolation.** Flown round wipeout's machinery it let one 0.53 m cut through in 5,580 frames; the orbit is a turn.
 
 Only an obstacle that appears faster than the look-ahead (a door slamming behind the head, a teleport) makes the hard limit cut, and a cut is the right answer there. `last_snap()` reports how far the hard limit cut the eased answer. Going back out is slower (`ease_out_time` 0.3 s), because a camera that springs out the moment a pillar is passed swings in and out along a colonnade. A pivot that moved more than `cut_distance` (4 m) between calls is a cut and starts at the answer.
 

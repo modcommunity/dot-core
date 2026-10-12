@@ -53,7 +53,8 @@ var radius: float = 0.2
 ## How far ahead, in seconds, the second sweep looks along the way the line is moving.
 var look_ahead: float = 0.2
 
-## How many lines over [member look_ahead] are swept. Each is one shape cast and one ray.
+## How many moments over [member look_ahead] are swept, each along two predicted lines (a
+## turn and a slide). Each line is one shape cast and one ray.
 const LOOK_AHEAD_SAMPLES := 4
 
 ## Seconds to close about two-thirds of the way in toward a nearer limit.
@@ -149,19 +150,34 @@ func resolve(pivot: Vector3, wanted: Vector3, delta: float) -> Vector3:
 		# Standing still, every sample is this line and the camera rests at the hard limit,
 		# not in front of it.
 		var pivot_step := (pivot - _last_pivot) / delta
-		var wanted_step := (wanted - _last_wanted_point) / delta
+		# The line turns about the pivot more than it slides: a camera orbiting a head is
+		# a rotation, and extrapolating its end in a straight line cuts the corner of the
+		# arc and misses the pillar the arc meets. So the offset is turned at the rate it
+		# turned, and stretched at the rate it stretched.
+		var offset_last := _last_wanted_point - _last_pivot
+		var axis := offset_last.cross(offset)
+		var turn_rate := offset_last.angle_to(offset) / delta if axis.length_squared() > 1e-10 else 0.0
+		axis = axis.normalized() if turn_rate != 0.0 else Vector3.UP
+		var stretch_rate := (length - offset_last.length()) / delta
 
 		for i in range(1, LOOK_AHEAD_SAMPLES + 1):
 			var seconds := look_ahead * float(i) / float(LOOK_AHEAD_SAMPLES)
 			var pivot_ahead := pivot + pivot_step * seconds
-			var wanted_ahead := wanted + wanted_step * seconds
-			var soon_length := pivot_ahead.distance_to(wanted_ahead)
-
-			if pivot_ahead.distance_to(pivot) > cut_distance or soon_length < 0.0001:
+			if pivot_ahead.distance_to(pivot) > cut_distance:
 				break
-
-			var soon := clear_length(space, pivot_ahead, wanted_ahead, radius + skin, mask, _excluded)
-			target = minf(target, soon / soon_length * length)
+			var reach := maxf(length + stretch_rate * seconds, 0.0)
+			# Both readings of the motion: turning about the pivot (an orbit), and the end
+			# sliding in a straight line (a strafe past a pillar). Each catches what the
+			# other cuts the corner of; the nearer answer wins.
+			for wanted_ahead in [
+				pivot_ahead + direction.rotated(axis, turn_rate * seconds) * reach,
+				wanted + (wanted - _last_wanted_point) / delta * seconds,
+			]:
+				var soon_length := pivot_ahead.distance_to(wanted_ahead)
+				if soon_length < 0.0001:
+					continue
+				var soon := clear_length(space, pivot_ahead, wanted_ahead, radius + skin, mask, _excluded)
+				target = minf(target, soon / soon_length * length)
 
 	if cut:
 		_distance = target
