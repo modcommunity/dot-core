@@ -12,8 +12,8 @@ extends Node3D
 ## godot --headless --path . res://examples/camera_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 6
-const CHECKS := 24
+const SECTIONS := 7
+const CHECKS := 28
 
 const WORLD := 1
 const PEOPLE := 2
@@ -42,6 +42,7 @@ func _run() -> void:
 	await _test_scripted_path()
 	await _test_boom_excludes_its_body()
 	await _test_fade()
+	_test_fade_without_colliders()
 	_test_clip_view()
 
 	_line("")
@@ -203,7 +204,7 @@ func _fly(look_ahead: float) -> Dictionary:
 		var t := float(i) / 480.0
 		mount.position = Vector3(28.0 + 50.0 * t, 1.6, 0.0)
 		boom.rotation.y = sin(t * TAU * 2.0) * 0.9
-		boom._place(delta)
+		boom.place(delta)
 
 		var at := camera.global_position
 		var wanted := boom.global_transform * boom.wanted_local()
@@ -340,6 +341,48 @@ func _test_fade() -> void:
 	focus.queue_free()
 	between.queue_free()
 	aside.queue_free()
+
+
+func _test_fade_without_colliders() -> void:
+	_section("Characters with no collider fade through bodies_fn")
+
+	var camera := Camera3D.new()
+	camera.position = Vector3(-60.0, 1.6, 4.0)
+	add_child(camera)
+	var fade := DotCameraFade.new()
+	var figures: Array = []
+	fade.bodies_fn = func() -> Array: return figures
+	camera.add_child(fade)
+
+	var figure := Node3D.new()
+	var mesh := MeshInstance3D.new()
+	mesh.mesh = BoxMesh.new()
+	figure.add_child(mesh)
+	figure.position = Vector3(-60.0, 0.0, 2.0)
+	add_child(figure)
+	figures.append(figure)
+
+	for i in 30:
+		fade.update(camera.global_position, Vector3(-60.0, 1.6, 0.0), 1.0 / 60.0)
+	_check(mesh.transparency > 0.6, "one on the line to the focus is faded (%.2f)" % mesh.transparency)
+
+	figure.position = Vector3(-60.0, 0.2, 4.2)
+	for i in 30:
+		fade.update(camera.global_position, camera.global_position, 1.0 / 60.0)
+	_check(mesh.transparency > 0.95, "one walking into a first-person camera is hidden (%.2f)" % mesh.transparency)
+
+	figure.position = Vector3(-60.0, 0.0, 6.0)
+	for i in 60:
+		fade.update(camera.global_position, camera.global_position, 1.0 / 60.0)
+	_check(mesh.transparency == 0.0, "a step away and it is back (%.2f)" % mesh.transparency)
+
+	figure.position = Vector3(-60.0, 0.0, 3.0)
+	for i in 60:
+		fade.update(camera.global_position, camera.global_position, 1.0 / 60.0)
+	_check(mesh.transparency == 0.0, "and a metre off, in first person, it is left alone")
+
+	camera.queue_free()
+	figure.queue_free()
 
 
 func _test_clip_view() -> void:

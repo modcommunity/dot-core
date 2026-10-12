@@ -38,7 +38,7 @@ extends Node
 var focus: Node3D = null
 
 ## Metres round the camera inside which a body is hidden outright.
-@export var near: float = 0.45
+@export var near: float = 0.25
 
 ## Radius of the line between the camera and the focus.
 @export var line_radius: float = 0.25
@@ -55,6 +55,17 @@ var focus: Node3D = null
 ## [code](collider: Object) -> Node[/code]: whose meshes fade for a hit. Default: the
 ## collider itself.
 var root_fn: Callable = Callable()
+
+## [code]() -> Array[/code] of [Node3D]s: characters that are not in the physics space at
+## all (a game whose players collide analytically, or whose remote figures have no
+## collider on a client). Each is taken as an upright capsule of [member body_radius] and
+## [member body_height] standing on its origin, and its own meshes fade. Used as well as
+## [member collision_mask], not instead.
+var bodies_fn: Callable = Callable()
+
+## The capsule [member bodies_fn]'s characters are taken as.
+@export var body_radius: float = 0.35
+@export var body_height: float = 1.8
 
 var _excluded: Array[RID] = []
 # instance id -> {"root": WeakRef, "meshes": Array, "amount": float, "target": float}
@@ -99,20 +110,23 @@ func _process(delta: float) -> void:
 ## Returns how many bodies are faded or fading.
 func update(camera_position: Vector3, focus_position: Vector3, delta: float) -> int:
 	var world := _world()
-
-	if world == null or collision_mask == 0:
-		release()
-		return 0
-
-	var space := world.direct_space_state
 	var wanted: Dictionary = {}
 
-	for collider in _near(space, camera_position):
-		wanted[collider] = 1.0
+	if world != null and collision_mask != 0:
+		var space := world.direct_space_state
 
-	for collider in _line(space, camera_position, focus_position):
-		if not wanted.has(collider):
-			wanted[collider] = faded
+		for collider in _near(space, camera_position):
+			wanted[collider] = 1.0
+
+		for collider in _line(space, camera_position, focus_position):
+			if not wanted.has(collider):
+				wanted[collider] = faded
+
+	if bodies_fn.is_valid():
+		_analytic(camera_position, focus_position, wanted)
+
+	if wanted.is_empty() and _fading.is_empty():
+		return 0
 
 	for collider in wanted:
 		_target(collider as Object, float(wanted[collider]))
@@ -137,6 +151,36 @@ func release() -> void:
 
 func _exit_tree() -> void:
 	release()
+
+
+## The same two tests against upright capsules, for characters with no collider.
+func _analytic(camera_position: Vector3, focus_position: Vector3, wanted: Dictionary) -> void:
+	var offset := focus_position - camera_position
+	var length := offset.length() - focus_clearance
+	var line_end := camera_position + offset.normalized() * maxf(length, 0.0)
+
+	for node in bodies_fn.call():
+		var body := node as Node3D
+
+		if body == null or not is_instance_valid(body) or not body.is_inside_tree() or not body.visible:
+			continue
+
+		var feet := body.global_position
+		var low := feet + Vector3.UP * body_radius
+		var high := feet + Vector3.UP * maxf(body_height - body_radius, body_radius)
+		var on_axis := Geometry3D.get_closest_point_to_segment(camera_position, low, high)
+
+		if on_axis.distance_to(camera_position) < near + body_radius:
+			wanted[body] = 1.0
+			continue
+
+		if length <= line_radius * 2.0:
+			continue
+
+		var pair := Geometry3D.get_closest_points_between_segments(camera_position, line_end, low, high)
+
+		if (pair[0] as Vector3).distance_to(pair[1] as Vector3) < line_radius + body_radius:
+			wanted[body] = faded
 
 
 func _near(space: PhysicsDirectSpaceState3D, at: Vector3) -> Array:

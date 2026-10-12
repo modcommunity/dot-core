@@ -23,7 +23,8 @@ extends Node3D
 ## it. The sweep and the easing are [DotCameraProbe]'s; read it for why there are two.
 ##
 ## Children are placed once a frame at a late priority, after whatever moved the pivot;
-## [method force_update] places them now (a cut, a teleport, a test).
+## [method force_update] places them now (a cut, a teleport, a test), and [method place]
+## is the same step for a caller that turns [member auto_place] off.
 
 ## How far behind the pivot the camera wants to be.
 @export var spring_length: float = 3.0:
@@ -46,6 +47,10 @@ extends Node3D
 		collision_mask = value
 		if probe != null:
 			probe.collision_mask = value
+
+## Whether the boom places its children itself, once a frame. A rig that moves the pivot
+## and wants the camera placed in the same call sets this false and calls [method place].
+@export var auto_place: bool = true
 
 var probe: DotCameraProbe = null
 
@@ -102,16 +107,19 @@ func get_hit_length() -> float:
 
 
 func _process(delta: float) -> void:
-	_place(delta)
+	if auto_place:
+		place(delta)
 
 
 ## Places the children now, without easing: after a cut.
 func force_update() -> void:
 	probe.reset()
-	_place(0.0)
+	place(0.0)
 
 
-func _place(delta: float) -> void:
+## Places the children for a frame of [param delta] seconds. Called by the boom itself
+## unless [member auto_place] is off.
+func place(delta: float) -> void:
 	if not is_inside_tree():
 		return
 
