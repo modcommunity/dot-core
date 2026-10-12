@@ -53,6 +53,8 @@ var _refusing: bool = false
 var _closed: bool = false
 
 var _collisions: int = 0
+## The ENet peer whose peer_disconnected is being emitted right now, or 0.
+var _enet_departing: int = 0
 
 
 func setup(p_websocket: MultiplayerPeer, p_enet: MultiplayerPeer, p_demux: DotUdpDemux) -> void:
@@ -175,7 +177,12 @@ func _on_disconnected(id: int, backend: int) -> void:
 			demux.release_relay_port(int(_relay_port_of[id]))
 		_relay_port_of.erase(id)
 
+	# ENet emits this before it drops the peer from its own table; see _send_enet_except.
+	var outer_departing := _enet_departing
+	if backend == Backend.ENET:
+		_enet_departing = id
 	peer_disconnected.emit(id)
+	_enet_departing = outer_departing
 
 
 func _inner(backend: int) -> MultiplayerPeer:
@@ -276,6 +283,10 @@ func _put_packet_script(buffer: PackedByteArray) -> Error:
 		var backend := backend_of(target)
 		if backend == Backend.NONE:
 			return ERR_INVALID_PARAMETER
+		if backend == Backend.ENET and not _enet_sendable(target):
+			# Leaving: its disconnect event is on its way. ENet drops a send to a peer that is
+			# disconnecting without a word, and so does this.
+			return OK
 		return _send(_inner(backend), target, buffer)
 
 	# 0 is everybody; -id is everybody but id. Each backend gets the broadcast, and
@@ -286,7 +297,11 @@ func _put_packet_script(buffer: PackedByteArray) -> Error:
 		var inner := _inner(backend)
 		if inner == null:
 			continue
-		var err := _send(inner, target if backend == excluded_backend else 0, buffer)
+		var err := OK
+		if backend == Backend.ENET and backend == excluded_backend:
+			err = _send_enet_except(-target, buffer)
+		else:
+			err = _send(inner, target if backend == excluded_backend else 0, buffer)
 		if err != OK:
 			result = err
 	return result
@@ -297,6 +312,47 @@ func _send(inner: MultiplayerPeer, target: int, buffer: PackedByteArray) -> Erro
 	inner.transfer_mode = _transfer_mode
 	inner.set_target_peer(target)
 	return inner.put_packet(buffer)
+
+
+## [b]Whether ENet can still take a packet for this peer.[/b] A client's disconnect frees its
+## peer's channels inside ENet the moment the datagram is read, but the peer stays in
+## ENetMultiplayerPeer's table until its DISCONNECT event is dispatched, and ENet dispatches
+## one event per service step. Two clients leaving in the same poll -- a suite's teardown, a
+## round's end, a box's network blip -- leave the second in the table with no channels while
+## the first's peer_disconnected runs, and everything that handler sends to the second
+## ("player left", chat presence, a despawn) hit "Unable to send packet on channel N, max
+## channels: 0" from the engine, once per send. Asking the peer first is the only place the
+## state is visible: ENet's own broadcast skips such a peer, its targeted send and its
+## all-but-one loop do not.
+func _enet_sendable(peer_id: int) -> bool:
+	var packet_peer: Object = enet.call("get_peer", peer_id)
+	return packet_peer != null and int(packet_peer.call("get_channels")) > 0
+
+
+## Everybody on ENet but [param excluded]. ENet's own all-but-one loop sends to every peer in
+## its table, including one that is leaving ([method _enet_sendable]) and the one whose
+## peer_disconnected is running: ENet emits that before it removes the peer, whose packet
+## peer is already null ("Parameter "peer" is null"). When either is in the table this sends
+## to each live peer itself. Not always: one engine broadcast flushes the host once, a send
+## per peer flushes it per peer.
+func _send_enet_except(excluded: int, buffer: PackedByteArray) -> Error:
+	var live: Array[int] = []
+	var leaving := _enet_departing != 0 and _enet_departing != excluded
+	for id: int in _backend_of:
+		if _backend_of[id] != Backend.ENET or id == excluded:
+			continue
+		if _enet_sendable(id):
+			live.append(id)
+		else:
+			leaving = true
+	if not leaving:
+		return _send(enet, -excluded, buffer)
+	var result := OK
+	for id in live:
+		var err := _send(enet, id, buffer)
+		if err != OK:
+			result = err
+	return result
 
 
 func _get_max_packet_size() -> int:

@@ -49,6 +49,7 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 - `DotLog` mirrors only ERROR and above into the engine; never `push_warning` a runtime condition. [traps](docs/engine-traps.md#push_warning-staples-a-backtrace-on)
 - Never name `ENetMultiplayerPeer`, `WebRTCMultiplayerPeer` or another template-optional class: reach it through `ClassDB.instantiate` and `Object.call`. [transports](docs/transports.md#where-each-constraint-lives)
 - Behind `DotUdpDemux` ENet sees 127.0.0.1: use `DotDualPeer.get_peer_address` for bans, limits and logs. [transports](docs/transports.md#dottransportdual)
+- A `DotDualPeer` send to an ENet peer checks it still has channels: ENet emits `peer_disconnected` before dropping a peer, and a second leaver has none. [transports](docs/transports.md#dottransportdual)
 - ENet's incoming bandwidth is 0 and its peer timeouts are the transport's (30 s), not ENet's. [transports](docs/transports.md#dottransportdual)
 - A peer wrapper connects its inner peer's signals to methods, never self-capturing lambdas. [transports](docs/transports.md#dotmeteredpeer)
 - Every write to `user://` calls `DotWeb.sync_filesystem()`.

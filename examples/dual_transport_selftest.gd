@@ -10,8 +10,8 @@ extends Node
 ## godot --headless --path . res://examples/dual_transport_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 10
-const CHECKS := 48
+const SECTIONS := 11
+const CHECKS := 54
 
 const PORT := 47391
 
@@ -47,6 +47,7 @@ func _run() -> void:
 	await _test_metered_clients()
 	await _test_query_on_shared_port()
 	await _test_disconnect_closes_relay()
+	await _test_leaving_together()
 	await _test_enet_port_busy_degrades()
 	await _test_enet_server_bandwidth()
 	await _test_enet_peer_timeout()
@@ -302,6 +303,105 @@ func _test_disconnect_closes_relay() -> void:
 	_check(_disconnected_ids.has(en_id), "the server saw the ENet client leave")
 	_check(_server.demux.relay_count() == 0, "and its relay is gone")
 	_check(_server.peer_counts() == {"websocket": 1, "enet": 0}, "the WebSocket client is still there")
+
+
+## The engine's own lines, caught by a [Logger]: a send to a leaving ENet peer is not an error
+## anything returns, only a line on stderr ("Unable to send packet on channel N, max channels:
+## 0" for the one still leaving, "Parameter "peer" is null" for the one already gone).
+class SendWatch:
+	extends Logger
+
+	var _mutex := Mutex.new()
+	var _count := 0
+
+	func _log_error(
+		_function: String, _file: String, _line: int, code: String, rationale: String,
+		_editor_notify: bool, _error_type: int, _script_backtraces: Array[ScriptBacktrace],
+	) -> void:
+		var text := code + " " + rationale
+		if text.contains("Unable to send packet") or text.contains("Parameter \"peer\" is null"):
+			_mutex.lock()
+			_count += 1
+			_mutex.unlock()
+
+	func _log_message(_message: String, _error: bool) -> void:
+		pass
+
+	func count() -> int:
+		_mutex.lock()
+		var n := _count
+		_mutex.unlock()
+		return n
+
+
+## Armed by deleting the [method DotDualPeer._enet_sendable] checks in _put_packet_script:
+## the watch then counts the engine's errors, which is what every voice_<game>.log in
+## dot-server-deploy carried at a client's disconnect. Deleting only the _enet_departing
+## line in _send_enet_except arms it too (the all-but-the-second-leaver send).
+func _test_leaving_together() -> void:
+	_section("Two ENet clients leaving in one poll: the first one's handler sends to the second")
+
+	var port := PORT + 50
+	var t := DotTransportDual.new()
+	var made := t.create_server(port, "127.0.0.1")
+	if not made.ok or (made.value as DotDualPeer).demux == null:
+		_check(false, "a dual server with its UDP port shared")
+		return
+	var server := made.value as DotDualPeer
+	var a := DotTransportENet.new().create_client("127.0.0.1", port).value as MultiplayerPeer
+	var b := DotTransportENet.new().create_client("127.0.0.1", port).value as MultiplayerPeer
+	var deadline := Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline and int(server.peer_counts().get("enet", 0)) < 2:
+		server.poll()
+		a.poll()
+		b.poll()
+		await get_tree().process_frame
+	_check(int(server.peer_counts().get("enet", 0)) == 2, "two ENet clients join")
+
+	# What a game does when a player leaves: tell everybody else, one by one, all-but-one
+	# and all at once. Every other peer it still knows of is the second leaver.
+	# Read now: a closed ENet client has no id to give.
+	var ids: Array[int] = [a.get_unique_id(), b.get_unique_id()]
+	var left: Array[int] = []
+	var results: Array[int] = []
+	var on_left := func(id: int) -> void:
+		left.append(id)
+		for other: int in ids:
+			if other == id or left.has(other):
+				continue
+			for channel in [0, 2]:
+				server.transfer_channel = channel
+				server.set_target_peer(other)
+				results.append(server.put_packet("left".to_utf8_buffer()))
+			server.set_target_peer(-id)
+			results.append(server.put_packet("left".to_utf8_buffer()))
+			server.set_target_peer(-other)
+			results.append(server.put_packet("left".to_utf8_buffer()))
+			server.set_target_peer(0)
+			results.append(server.put_packet("left".to_utf8_buffer()))
+		server.transfer_channel = 0
+	server.peer_disconnected.connect(on_left)
+
+	var watch := SendWatch.new()
+	OS.add_logger(watch)
+	# Both goodbyes on the wire before the server reads either.
+	a.close()
+	b.close()
+	OS.delay_msec(50)
+	deadline = Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline and left.size() < 2:
+		server.poll()
+		await get_tree().process_frame
+	OS.remove_logger(watch)
+
+	_check(left.size() == 2, "the server saw both leave")
+	_check(results.size() >= 5, "the first leaver's handler sent to the second (%d sends)" % results.size())
+	_check(watch.count() == 0, "and the engine logged no send to a leaving peer (%d)" % watch.count())
+	_check(results.all(func(r: int) -> bool: return r == OK), "every one of those sends reports OK, as ENet's own drop does")
+	_check(server.peer_counts() == {"websocket": 0, "enet": 0}, "both are gone from the merged table")
+	# The handler holds the server; leave it connected and the two keep each other alive.
+	server.peer_disconnected.disconnect(on_left)
+	server.close()
 
 
 func _test_enet_port_busy_degrades() -> void:
