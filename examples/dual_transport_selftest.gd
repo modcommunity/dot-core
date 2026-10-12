@@ -11,7 +11,7 @@ extends Node
 ## [/codeblock]
 
 const SECTIONS := 11
-const CHECKS := 54
+const CHECKS := 56
 
 const PORT := 47391
 
@@ -456,6 +456,18 @@ func _test_enet_server_bandwidth() -> void:
 		OS.delay_msec(8)
 	_check(sent > 100 and lowest == 32, "the client's throttle limit stays at full (lowest %d over %d packets)" % [lowest, sent])
 	_check(sent > 100 and got >= sent * 9 / 10, "and the server receives its packets (%d of %d)" % [got, sent])
+	# The packet throttle (DotTransportENet.packet_throttle_deceleration): set on both ends as
+	# they connect, so a late acknowledgement never makes either drop its own unreliable
+	# packets. What it costs without is measured in dot-net's relay_demo, section 4.
+	var client_side := client.get_peer(1)
+	var server_side: ENetPacketPeer = null
+	for p in server.host.get_peers():
+		server_side = p
+	var decel_client := int(client_side.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_DECELERATION)) if client_side != null else -1
+	var decel_server := int(server_side.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_DECELERATION)) if server_side != null else -1
+	_check(decel_client == 0 and decel_server == 0,
+		"neither end's packet throttle falls on a late acknowledgement (deceleration %d and %d)" % [decel_client, decel_server])
+	_check(DotTransportENet.new().describe().has("packet_throttle"), "describe() says what the throttle is")
 	client.close()
 	server.close()
 

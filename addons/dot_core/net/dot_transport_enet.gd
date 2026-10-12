@@ -22,6 +22,11 @@ extends DotTransport
 ## ENet's own limit. Exceeding it is a configuration error, not a resource one.
 const ENET_MAX_PEERS := 4095
 
+## ENet's own throttle settings (ENET_PEER_PACKET_THROTTLE_*), for a control or a reset.
+const ENET_DEFAULT_THROTTLE_INTERVAL_MS := 5000
+const ENET_DEFAULT_THROTTLE_ACCELERATION := 2
+const ENET_DEFAULT_THROTTLE_DECELERATION := 2
+
 @export_group("ENet")
 
 ## Channels to allocate. See [enum DotTransport.Channel].
@@ -59,6 +64,36 @@ const ENET_MAX_PEERS := 4095
 
 ## A reliable command unacknowledged for this long ends the connection, whatever else.
 @export_range(1000, 120000, 500) var peer_timeout_max_ms: int = 30000
+
+@export_group("Packet throttle")
+
+## How far ENet's packet throttle falls on each late acknowledgement, out of 32; 0, the
+## default here, means it never falls. Applied to every peer as it connects, with
+## [member packet_throttle_interval_ms] and [member packet_throttle_acceleration], and ENet
+## sends the setting to the far end, so a client and a server each fix both directions.
+##
+## [b]ENet's throttle drops unreliable packets at the SENDER, and it reads a slow frame as
+## congestion.[/b] Every acknowledgement of a reliable command is a round-trip sample, timed
+## when the sender next services the host. One longer than the last interval's lowest round
+## trip plus twice its variance takes 2 off the throttle; one at or under that lowest adds 2;
+## and an unreliable packet goes out only when a rotating counter is under the throttle
+## (thirdparty/enet/peer.c `enet_peer_throttle`, protocol.c's `packetThrottleCounter`). On a
+## path whose round trip barely varies (a steady 60 ms each way) the variance is a few
+## milliseconds, so a burst of reliable data -- a joiner's level, a new house -- acknowledged
+## across one long frame at either end (a level being built, a module loading) takes the
+## throttle to 0 in a second, and it climbs back 2 per lucky sample: mg-look-at-me's client
+## delivered 2-10% of its commands and received 2-10% of its snapshots through dot-net's relay
+## at 0% loss, while game-arena, sending no burst, passed. Loopback never shows it: there the
+## round trip is under its own variance, which pins the throttle at full. Nothing in the
+## family wants it: state sent unreliably is superseded by the next tick's, dot-net budgets
+## its own bytes per client, and a command dropped by the sender is a tick the server plays
+## on the previous one. [constant ENET_DEFAULT_THROTTLE_DECELERATION] puts ENet's back, which
+## is what mg-look-at-me's `headless_lossy -- --stock-throttle` does as the control.
+@export_range(0, 32, 1) var packet_throttle_deceleration: int = 0
+
+## See [member packet_throttle_deceleration]. ENet's defaults.
+@export_range(0, 32, 1) var packet_throttle_acceleration: int = ENET_DEFAULT_THROTTLE_ACCELERATION
+@export_range(100, 60000, 100) var packet_throttle_interval_ms: int = ENET_DEFAULT_THROTTLE_INTERVAL_MS
 
 @export_group("Compression")
 
@@ -221,7 +256,8 @@ func _apply_compression(peer: Object) -> void:
 	)
 
 
-## Gives every peer [member peer_timeout_limit] and friends as it connects. On a server that
+## Gives every peer [member peer_timeout_limit] and friends, and the packet throttle's
+## settings ([member packet_throttle_deceleration]), as it connects. On a server that
 ## is each client; on a client, the server (id 1). Connected rather than applied once,
 ## because a peer's [code]ENetPacketPeer[/code] exists only from its connection on.
 func _apply_timeouts_on_connect(peer: Object) -> void:
@@ -233,10 +269,12 @@ func _apply_timeouts_on_connect(peer: Object) -> void:
 	# made here leaked at exit. Static because the transport is often a temporary
 	# (`DotTransportENet.new().create_client(...)`) that is gone before anybody connects.
 	peer.connect("peer_connected", DotTransportENet._set_peer_timeout.bind(weakref(peer),
-		peer_timeout_limit, peer_timeout_min_ms, peer_timeout_max_ms))
+		peer_timeout_limit, peer_timeout_min_ms, peer_timeout_max_ms,
+		[packet_throttle_interval_ms, packet_throttle_acceleration, packet_throttle_deceleration]))
 
 
-static func _set_peer_timeout(id: int, peer_ref: WeakRef, limit: int, low: int, high: int) -> void:
+static func _set_peer_timeout(id: int, peer_ref: WeakRef, limit: int, low: int, high: int,
+		throttle: Array = []) -> void:
 	var peer: Object = peer_ref.get_ref()
 	if peer == null:
 		return
@@ -245,10 +283,15 @@ static func _set_peer_timeout(id: int, peer_ref: WeakRef, limit: int, low: int, 
 	if packet_peer != null and packet_peer.has_method("set_timeout"):
 		packet_peer.call("set_timeout", limit, low, high)
 
+	# See packet_throttle_deceleration. ENet sends it to the far end as well.
+	if packet_peer != null and throttle.size() == 3 and packet_peer.has_method("throttle_configure"):
+		packet_peer.call("throttle_configure", int(throttle[0]), int(throttle[1]), int(throttle[2]))
+
 
 func describe() -> Dictionary:
 	var d := super.describe()
 	d["channels"] = channel_count
 	d["compression"] = compression_mode
 	d["peer_timeout"] = [peer_timeout_limit, peer_timeout_min_ms, peer_timeout_max_ms]
+	d["packet_throttle"] = [packet_throttle_interval_ms, packet_throttle_acceleration, packet_throttle_deceleration]
 	return d

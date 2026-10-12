@@ -38,7 +38,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 
 ## Running and testing
 
-The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything)), which dot-ci runs on every push. Then every scene in `examples/`; each selftest exits non-zero on failure. `dual_transport_selftest` runs real WebSocket and ENet clients, a metered client, a query on the shared port, the server's bandwidth, peer timeouts and a shutdown. **Run `capability_report` on each export target**: it reports whether that build has threads, UDP and a storage quota. A dot-core change touches every consumer: re-run `--import` in projects that link it after adding a `class_name`.
+The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything)), which dot-ci runs on every push. Then every scene in `examples/`; each selftest exits non-zero on failure. `dual_transport_selftest` runs real WebSocket and ENet clients, a metered client, a query on the shared port, the server's bandwidth, the packet throttle's settings, peer timeouts and a shutdown. **Run `capability_report` on each export target**: it reports whether that build has threads, UDP and a storage quota. A dot-core change touches every consumer: re-run `--import` in projects that link it after adding a `class_name`.
 
 ## Rules that bite
 
@@ -51,6 +51,7 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 - Behind `DotUdpDemux` ENet sees 127.0.0.1: use `DotDualPeer.get_peer_address` for bans, limits and logs. [transports](docs/transports.md#dottransportdual)
 - A `DotDualPeer` send to an ENet peer checks it still has channels: ENet emits `peer_disconnected` before dropping a peer, and a second leaver has none. [transports](docs/transports.md#dottransportdual)
 - ENet's incoming bandwidth is 0 and its peer timeouts are the transport's (30 s), not ENet's. [transports](docs/transports.md#dottransportdual)
+- ENet's packet throttle deceleration is 0 on every peer: stock, a reliable burst over one long frame drops a client's commands and snapshots at the sender. [transports](docs/transports.md#dottransportdual)
 - A peer wrapper connects its inner peer's signals to methods, never self-capturing lambdas. [transports](docs/transports.md#dotmeteredpeer)
 - Every write to `user://` calls `DotWeb.sync_filesystem()`.
 - Add to an addon's API: bump its `LEVEL`. Remove or change: raise `OLDEST` to `LEVEL`. The api file has no `class_name`. [api](docs/addon-api.md#the-rule-for-every-addon)
