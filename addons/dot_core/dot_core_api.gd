@@ -10,5 +10,7 @@ extends RefCounted
 # 3: DotMeteredPeer (any MultiplayerPeer, counted per channel; what net_stat draws).
 # 4: DotAddonApi.FLOOR_FILE, apply_floors, floor_audit, guarded, and parse's file_name
 #    (a game asking less of an addon whose newer API it guards).
-const LEVEL := 4
+# 5: camera/: DotCameraProbe, DotCameraBoom, DotCameraFade (cameras that stay out of the
+#    level and fade the people between them and what they look at).
+const LEVEL := 5
 const OLDEST := 1

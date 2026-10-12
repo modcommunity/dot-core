@@ -15,6 +15,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | [docs/transports.md](docs/transports.md) | anything in `net/`, a platform constraint, `DotHttp` |
 | [docs/addon-api.md](docs/addon-api.md) | adding to or removing from any addon's API; `requires.json`; `requires.floor.json` for a game that guards a newer level |
 | [docs/randomness.md](docs/randomness.md) | anything in `random/`, or writing a seeded draw anywhere |
+| [docs/camera.md](docs/camera.md) | anything in `camera/`, or any camera that is not a player's own eyes |
 
 ## Layout
 
@@ -32,7 +33,8 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | `core/dot_addon_api.gd`, `dot_core_api.gd`, `tools/dot_requires.gd` | API levels and the refusal sentence; dot-core's own level; derives or audits a game's `requires.json`, lowered by its `requires.floor.json` |
 | `net/` | `dot_transport*.gd` (base with address parsing incl. bracketed IPv6, websocket, enet, auto, dual), `dot_dual_peer.gd`, `dot_udp_demux.gd`, `dot_metered_peer.gd`, `dot_http.gd` |
 | `random/` | `dot_random_stream.gd`, `_table.gd`, `_schedule.gd`, `_config.gd`, `_manager.gd` (the node a game holds; the only thing that knows the seed) |
-| `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest` |
+| `camera/` | `dot_camera_probe.gd` (a swept sphere from a pivot, eased in ahead of an obstacle and out behind it), `dot_camera_boom.gd` (the `SpringArm3D` replacement built on it), `dot_camera_fade.gd` (fades characters between the camera and its focus, hides one at the camera) |
+| `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest`, `camera_selftest` |
 
 ## Running and testing
 
@@ -53,6 +55,7 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 - Add to an addon's API: bump its `LEVEL`. Remove or change: raise `OLDEST` to `LEVEL`. The api file has no `class_name`. [api](docs/addon-api.md#the-rule-for-every-addon)
 - A game guarding an addon's newer level names it in `requires.floor.json`, or its pack still asks for the built level and an older host refuses it before the guard runs. [floors](docs/addon-api.md#requiresfloorjson-asking-less-of-an-addon-the-game-guards)
 - A seeded draw is a pure function of (key, index); derive streams by name. Splitmix constants are signed decimals, `>>` needs `_unsigned_shift`, and `String.hash()` is not a stable seed. [randomness](docs/randomness.md)
+- A camera that is not a player's own eyes goes through `DotCameraProbe` (or `DotCameraBoom`), never `SpringArm3D`; characters are faded by `DotCameraFade`, never collided with; a "never inside" check flies the same path with no probe and requires it to fail. [camera](docs/camera.md)
 - `DotConfig` unknown keys warn, never fail; `sensitive_keys()` blocks environment and argv.
 - Set `require_type` on a `DotNodeRef` a host configures by path: a type error at boot beats a null call mid-session.
 
