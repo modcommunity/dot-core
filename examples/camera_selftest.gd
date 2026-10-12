@@ -12,8 +12,8 @@ extends Node3D
 ## godot --headless --path . res://examples/camera_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 7
-const CHECKS := 28
+const SECTIONS := 8
+const CHECKS := 31
 
 const WORLD := 1
 const PEOPLE := 2
@@ -44,6 +44,7 @@ func _run() -> void:
 	await _test_fade()
 	_test_fade_without_colliders()
 	_test_clip_view()
+	_test_check_helper()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -397,6 +398,20 @@ func _test_clip_view() -> void:
 
 	var none := DotCameraProbe.new(null, WORLD)
 	_check(none.clip_view(Vector3.ZERO, Transform3D(basis, Vector3(0, 0, 3))).origin.z == 3.0, "a probe with no world returns what it was asked")
+
+
+func _test_check_helper() -> void:
+	_section("DotCameraCheck, the games' tool, is armed")
+
+	var near_pillars := DotCameraCheck.fly(get_world_3d(), DotCameraCheck.orbit_path(Vector3(34.0, 1.6, 1.0)), Vector3(0.45, 0.35, 2.6), WORLD)
+	_line("    " + DotCameraCheck.summary(near_pillars))
+	_check(DotCameraCheck.passed(near_pillars), "an orbit beside a pillar passes: armed and never inside")
+
+	var open := DotCameraCheck.fly(get_world_3d(), DotCameraCheck.orbit_path(Vector3(0.0, 1.6, -30.0)), Vector3(0.45, 0.35, 2.6), WORLD)
+	_check(not DotCameraCheck.passed(open), "an orbit in the open fails: it never went near a wall, so it proved nothing")
+
+	var total := DotCameraCheck.add(DotCameraCheck.add({}, near_pillars), open)
+	_check(int(total["frames"]) == int(near_pillars["frames"]) + int(open["frames"]), "flights add up")
 
 
 # --- reporting ---------------------------------------------------------------------------
