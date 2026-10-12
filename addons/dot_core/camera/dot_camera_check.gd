@@ -47,6 +47,43 @@ static func walk_path(
 	return out
 
 
+## Eye points worth flying round, found rather than listed: a grid over [param bounds],
+## dropped onto whatever floor is there, kept where the eye is clear and a wall is within
+## [param near] metres in some direction (an open floor proves nothing), at most
+## [param count] of them, nearest walls first.
+static func pivots_near_walls(
+	world: World3D, bounds: AABB, mask: int, eye_height: float = 1.6,
+	step: float = 3.0, near: float = 3.0, count: int = 40
+) -> Array[Vector3]:
+	var space := world.direct_space_state
+	var found: Array = []
+	var x := bounds.position.x
+	while x <= bounds.end.x:
+		var z := bounds.position.z
+		while z <= bounds.end.z:
+			var top := Vector3(x, bounds.end.y, z)
+			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(top, Vector3(x, bounds.position.y, z), mask))
+			if not hit.is_empty():
+				var eye: Vector3 = (hit["position"] as Vector3) + Vector3.UP * eye_height
+				if not DotCameraProbe.is_inside(space, eye, 0.3, mask):
+					var nearest := INF
+					for i in 8:
+						var angle := TAU * float(i) / 8.0
+						var to := eye + Vector3(sin(angle), 0.0, cos(angle)) * near
+						var wall := space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, to, mask))
+						if not wall.is_empty():
+							nearest = minf(nearest, eye.distance_to(wall["position"] as Vector3))
+					if nearest < near:
+						found.append([nearest, eye])
+			z += step
+		x += step
+	found.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	var out: Array[Vector3] = []
+	for entry in found.slice(0, count):
+		out.append(entry[1])
+	return out
+
+
 ## Flies a fresh [DotCameraProbe] along [param path]: each transform is a pivot and the
 ## view's axes, and the camera wants to be at `origin + basis * offset`. Returns the counts.
 static func fly(

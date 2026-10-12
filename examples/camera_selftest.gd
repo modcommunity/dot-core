@@ -13,7 +13,7 @@ extends Node3D
 ## [/codeblock]
 
 const SECTIONS := 8
-const CHECKS := 31
+const CHECKS := 32
 
 const WORLD := 1
 const PEOPLE := 2
@@ -76,6 +76,9 @@ func _build_level() -> void:
 	# A colonnade along a corridor at z = 2.2, x from 30 to 60, every 4 m.
 	for i in 8:
 		_box(Vector3(30.0 + 4.0 * i, 1.5, 2.2), Vector3(0.6, 3.0, 0.6))
+
+	# A floor under the colonnade, for pivots_near_walls to stand eyes on.
+	_box(Vector3(46.0, -0.25, 0.0), Vector3(40.0, 0.5, 12.0))
 
 	# A ceiling low over x = 70..74.
 	_box(Vector3(72.0, 2.4, 0.0), Vector3(4.0, 0.3, 8.0))
@@ -409,6 +412,9 @@ func _test_check_helper() -> void:
 
 	var open := DotCameraCheck.fly(get_world_3d(), DotCameraCheck.orbit_path(Vector3(0.0, 1.6, -30.0)), Vector3(0.45, 0.35, 2.6), WORLD)
 	_check(not DotCameraCheck.passed(open), "an orbit in the open fails: it never went near a wall, so it proved nothing")
+
+	var found := DotCameraCheck.pivots_near_walls(get_world_3d(), AABB(Vector3(26.0, -1.0, -3.0), Vector3(40.0, 5.0, 4.0)), WORLD, 1.6, 2.0, 3.0, 10)
+	_check(found.size() > 0 and found.size() <= 10 and found.all(func(p: Vector3) -> bool: return not _inside(p, 0.3)), "pivots_near_walls finds clear eyes beside the colonnade (%d)" % found.size())
 
 	var total := DotCameraCheck.add(DotCameraCheck.add({}, near_pillars), open)
 	_check(int(total["frames"]) == int(near_pillars["frames"]) + int(open["frames"]), "flights add up")
