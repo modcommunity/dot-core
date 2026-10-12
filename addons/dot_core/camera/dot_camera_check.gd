@@ -91,6 +91,8 @@ static func fly(
 		worst_snap = maxf(worst_snap, probe.last_snap())
 		if probe.last_snap() > 0.3:
 			snaps += 1
+			if OS.get_environment("CAMERA_DEBUG") != "":
+				print("    snap %.2f m at frame %d: pivot %s wanted %s got %s, hard %.2f" % [probe.last_snap(), frames.size(), pivot, wanted, got, float(probe.describe()["hard_limit"])])
 
 		frames.append({"pivot": pivot, "wanted": wanted, "got": got, "basis": t.basis})
 

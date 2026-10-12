@@ -55,7 +55,7 @@ var look_ahead: float = 0.2
 
 ## How many moments over [member look_ahead] are swept, each along two predicted lines (a
 ## turn and a slide). Each line is one shape cast and one ray.
-const LOOK_AHEAD_SAMPLES := 4
+const LOOK_AHEAD_SAMPLES := 6
 
 ## Seconds to close about two-thirds of the way in toward a nearer limit.
 var pull_in_time: float = 0.1
@@ -141,6 +141,9 @@ func resolve(pivot: Vector3, wanted: Vector3, delta: float) -> Vector3:
 	var hard := clear_length(space, pivot, wanted, radius + skin, mask, _excluded)
 	var cut := _distance < 0.0 or pivot.distance_to(_last_pivot) > cut_distance
 	var target := hard
+	# The slowest steady pull-in, in metres a second, that is inside every predicted limit
+	# by the moment it is predicted for.
+	var pace := 0.0
 
 	if not cut and delta > 0.0 and look_ahead > 0.0:
 		# Where the line will be if it keeps moving as it has, sampled at several points
@@ -177,13 +180,23 @@ func resolve(pivot: Vector3, wanted: Vector3, delta: float) -> Vector3:
 				if soon_length < 0.0001:
 					continue
 				var soon := clear_length(space, pivot_ahead, wanted_ahead, radius + skin, mask, _excluded)
-				target = minf(target, soon / soon_length * length)
+				var limit := soon / soon_length * length
+				target = minf(target, limit)
+				if _distance > limit:
+					pace = maxf(pace, (_distance - limit) / seconds)
 
 	if cut:
 		_distance = target
 	else:
 		var time := pull_in_time if target < _distance else ease_out_time
-		_distance = lerpf(_distance, target, 1.0 - exp(-maxf(delta, 0.0) / maxf(time, 0.001)))
+		var eased := lerpf(_distance, target, 1.0 - exp(-maxf(delta, 0.0) / maxf(time, 0.001)))
+		# Never late: every predicted limit is reached by the moment it was predicted for, at
+		# an even pace, when the ease alone would still be short of it. The ease alone aims
+		# at the nearest limit and gets there when it gets there; a pillar that arrives in a
+		# tenth of a second needs the camera in by then, not most of the way.
+		if pace > 0.0:
+			eased = minf(eased, _distance - pace * delta)
+		_distance = eased
 
 	var eased := _distance
 	_distance = clampf(_distance, 0.0, minf(hard, length))
