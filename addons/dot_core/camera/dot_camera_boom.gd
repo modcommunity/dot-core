@@ -41,6 +41,12 @@ extends Node3D
 ## Sideways offset of the camera from the line behind the pivot (a shoulder).
 @export var side_offset: float = 0.0
 
+## Metres straight up (the world's up, not the boom's) added to where the camera wants to
+## be: a chase camera that looks over the head from above it, swept from a pivot at the eye.
+## A pivot raised above the head instead can itself be inside a low beam, and a sweep that
+## starts inside geometry does not see it.
+@export var lift: float = 0.0
+
 ## Layers the camera stops against.
 @export_flags_3d_physics var collision_mask: int = 1:
 	set(value):
@@ -96,9 +102,15 @@ func exclude_ancestors() -> void:
 		node = node.get_parent()
 
 
-## Where the camera would be with nothing in the way, in the boom's space.
+## Where the camera would be with nothing in the way, in the boom's space (without
+## [member lift], which is the world's up).
 func wanted_local() -> Vector3:
 	return Vector3(side_offset, 0.0, spring_length)
+
+
+## Where the camera would be with nothing in the way, in the world.
+func wanted_global() -> Vector3:
+	return global_transform * wanted_local() + Vector3.UP * lift
 
 
 ## The current length of the boom, after the level has pulled it in.
@@ -123,23 +135,20 @@ func place(delta: float) -> void:
 	if not is_inside_tree():
 		return
 
-	var local := wanted_local()
-	var full := local.length()
-
-	if full < 0.0001:
-		_length = 0.0
-		_set_children(Vector3.ZERO)
-		return
-
 	if probe.world == null:
 		probe.world = get_world_3d()
 
 	var pivot := global_position
-	var wanted := global_transform * local
-	var got := probe.resolve(pivot, wanted, delta)
+	var wanted := wanted_global()
 
+	if pivot.distance_to(wanted) < 0.0001:
+		_length = 0.0
+		_set_children(Vector3.ZERO)
+		return
+
+	var got := probe.resolve(pivot, wanted, delta)
 	_length = pivot.distance_to(got)
-	_set_children(local * (_length / full))
+	_set_children(global_transform.affine_inverse() * got)
 
 
 func _set_children(at: Vector3) -> void:
