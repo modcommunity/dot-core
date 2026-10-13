@@ -55,6 +55,8 @@ var _closed: bool = false
 var _collisions: int = 0
 ## The ENet peer whose peer_disconnected is being emitted right now, or 0.
 var _enet_departing: int = 0
+## The WebSocket peer whose peer_disconnected is being emitted right now, or 0.
+var _websocket_departing: int = 0
 
 
 func setup(p_websocket: MultiplayerPeer, p_enet: MultiplayerPeer, p_demux: DotUdpDemux) -> void:
@@ -177,12 +179,17 @@ func _on_disconnected(id: int, backend: int) -> void:
 			demux.release_relay_port(int(_relay_port_of[id]))
 		_relay_port_of.erase(id)
 
-	# ENet emits this before it drops the peer from its own table; see _send_enet_except.
-	var outer_departing := _enet_departing
+	# Both backends emit this before they drop the peer from their own table; see
+	# _send_enet_except and _send_websocket.
+	var outer_enet := _enet_departing
+	var outer_websocket := _websocket_departing
 	if backend == Backend.ENET:
 		_enet_departing = id
+	else:
+		_websocket_departing = id
 	peer_disconnected.emit(id)
-	_enet_departing = outer_departing
+	_enet_departing = outer_enet
+	_websocket_departing = outer_websocket
 
 
 func _inner(backend: int) -> MultiplayerPeer:
@@ -283,9 +290,9 @@ func _put_packet_script(buffer: PackedByteArray) -> Error:
 		var backend := backend_of(target)
 		if backend == Backend.NONE:
 			return ERR_INVALID_PARAMETER
-		if backend == Backend.ENET and not _enet_sendable(target):
+		if not _sendable(backend, target):
 			# Leaving: its disconnect event is on its way. ENet drops a send to a peer that is
-			# disconnecting without a word, and so does this.
+			# disconnecting without a word, and so does this, on either backend.
 			return OK
 		return _send(_inner(backend), target, buffer)
 
@@ -298,10 +305,12 @@ func _put_packet_script(buffer: PackedByteArray) -> Error:
 		if inner == null:
 			continue
 		var err := OK
-		if backend == Backend.ENET and backend == excluded_backend:
+		if backend == Backend.WEBSOCKET:
+			err = _send_websocket(-target if backend == excluded_backend else 0, buffer)
+		elif backend == excluded_backend:
 			err = _send_enet_except(-target, buffer)
 		else:
-			err = _send(inner, target if backend == excluded_backend else 0, buffer)
+			err = _send(inner, 0, buffer)
 		if err != OK:
 			result = err
 	return result
@@ -312,6 +321,51 @@ func _send(inner: MultiplayerPeer, target: int, buffer: PackedByteArray) -> Erro
 	inner.transfer_mode = _transfer_mode
 	inner.set_target_peer(target)
 	return inner.put_packet(buffer)
+
+
+func _sendable(backend: int, peer_id: int) -> bool:
+	return _enet_sendable(peer_id) if backend == Backend.ENET else _websocket_sendable(peer_id)
+
+
+## [b]Whether a WebSocket peer is still open.[/b] WebSocketMultiplayerPeer keeps a peer in its
+## table after its socket stops being open: one the server closed ([method _disconnect_peer]
+## without force) until the next poll, one whose send failed (a slow client's full outbound
+## buffer closes it) until the next poll, and one the poll found closed until its
+## peer_disconnected has been emitted. Every send to such a peer -- targeted, or reaching it
+## through the engine's broadcast loop, which does not ask -- logged the engine ERROR
+## "ready_state != STATE_OPEN", once per packet, at every WebSocket client's departure. A
+## peer that is not a WebSocketMultiplayerPeer's (a test's stand-in) is taken as open.
+func _websocket_sendable(peer_id: int) -> bool:
+	var server := websocket as WebSocketMultiplayerPeer
+	if server == null:
+		return true
+	var link := server.get_peer(peer_id)
+	return link != null and link.get_ready_state() == WebSocketPeer.STATE_OPEN
+
+
+## Everybody on WebSocket, or everybody but [param excluded] when it is not 0. The engine's
+## broadcast sends to every peer in its table, and while a peer is leaving that includes one
+## whose socket is closed: the peer whose peer_disconnected is running (the engine emits
+## before it erases) and any other found closed in the same poll. When one is in the table
+## this sends to each open peer itself; otherwise it is one engine broadcast.
+func _send_websocket(excluded: int, buffer: PackedByteArray) -> Error:
+	var live: Array[int] = []
+	var leaving := _websocket_departing != 0 and _websocket_departing != excluded
+	for id: int in _backend_of:
+		if _backend_of[id] != Backend.WEBSOCKET or id == excluded:
+			continue
+		if _websocket_sendable(id):
+			live.append(id)
+		else:
+			leaving = true
+	if not leaving:
+		return _send(websocket, -excluded, buffer)
+	var result := OK
+	for id in live:
+		var err := _send(websocket, id, buffer)
+		if err != OK:
+			result = err
+	return result
 
 
 ## [b]Whether ENet can still take a packet for this peer.[/b] A client's disconnect frees its

@@ -50,6 +50,7 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 - Never name `ENetMultiplayerPeer`, `WebRTCMultiplayerPeer` or another template-optional class: reach it through `ClassDB.instantiate` and `Object.call`. [transports](docs/transports.md#where-each-constraint-lives)
 - Behind `DotUdpDemux` ENet sees 127.0.0.1: use `DotDualPeer.get_peer_address` for bans, limits and logs. [transports](docs/transports.md#dottransportdual)
 - A `DotDualPeer` send to an ENet peer checks it still has channels: ENet emits `peer_disconnected` before dropping a peer, and a second leaver has none. [transports](docs/transports.md#dottransportdual)
+- A `DotDualPeer` send to a WebSocket peer checks it is `STATE_OPEN`, broadcasts included: the engine keeps closed peers in its table (and emits `peer_disconnected` before erasing) and its broadcast does not ask. [transports](docs/transports.md#dottransportdual)
 - ENet's incoming bandwidth is 0 and its peer timeouts are the transport's (30 s), not ENet's. [transports](docs/transports.md#dottransportdual)
 - ENet's packet throttle deceleration is 0 on every peer: stock, a reliable burst over one long frame drops a client's commands and snapshots at the sender. [transports](docs/transports.md#dottransportdual)
 - A peer wrapper connects its inner peer's signals to methods, never self-capturing lambdas. [transports](docs/transports.md#dotmeteredpeer)

@@ -10,8 +10,8 @@ extends Node
 ## godot --headless --path . res://examples/dual_transport_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 11
-const CHECKS := 56
+const SECTIONS := 12
+const CHECKS := 67
 
 const PORT := 47391
 
@@ -48,6 +48,7 @@ func _run() -> void:
 	await _test_query_on_shared_port()
 	await _test_disconnect_closes_relay()
 	await _test_leaving_together()
+	await _test_websocket_leaving()
 	await _test_enet_port_busy_degrades()
 	await _test_enet_server_bandwidth()
 	await _test_enet_peer_timeout()
@@ -305,9 +306,10 @@ func _test_disconnect_closes_relay() -> void:
 	_check(_server.peer_counts() == {"websocket": 1, "enet": 0}, "the WebSocket client is still there")
 
 
-## The engine's own lines, caught by a [Logger]: a send to a leaving ENet peer is not an error
-## anything returns, only a line on stderr ("Unable to send packet on channel N, max channels:
-## 0" for the one still leaving, "Parameter "peer" is null" for the one already gone).
+## The engine's own lines, caught by a [Logger]: a send to a leaving peer is not an error
+## anything returns, only a line on stderr. ENet: "Unable to send packet on channel N, max
+## channels: 0" for the one still leaving, "Parameter "peer" is null" for the one already gone.
+## WebSocket: "ready_state != STATE_OPEN" for any peer whose socket is no longer open.
 class SendWatch:
 	extends Logger
 
@@ -319,7 +321,11 @@ class SendWatch:
 		_editor_notify: bool, _error_type: int, _script_backtraces: Array[ScriptBacktrace],
 	) -> void:
 		var text := code + " " + rationale
-		if text.contains("Unable to send packet") or text.contains("Parameter \"peer\" is null"):
+		if (
+			text.contains("Unable to send packet")
+			or text.contains("Parameter \"peer\" is null")
+			or text.contains("ready_state != STATE_OPEN")
+		):
 			_mutex.lock()
 			_count += 1
 			_mutex.unlock()
@@ -401,6 +407,112 @@ func _test_leaving_together() -> void:
 	_check(server.peer_counts() == {"websocket": 0, "enet": 0}, "both are gone from the merged table")
 	# The handler holds the server; leave it connected and the two keep each other alive.
 	server.peer_disconnected.disconnect(on_left)
+	server.close()
+
+
+## Armed by making [method DotDualPeer._websocket_sendable] return true (the two leavers and
+## the server-closed peer fail), or by starting _send_websocket's [code]leaving[/code] at false
+## (the lone leaver fails): the watch then counts the engine's "ready_state != STATE_OPEN",
+## which every burst run and dot-server-deploy's lookatme_client logged as WebSocket clients left. Three ways a closed socket stays in the
+## engine's table: the leaver itself while its peer_disconnected runs (the engine emits before
+## it erases, so a plain "player left" broadcast hit it), a second client found closed in the
+## same poll, and a peer the server closed, until the next poll.
+func _test_websocket_leaving() -> void:
+	_section("WebSocket clients leaving: nothing is sent to a socket that is no longer open")
+
+	var port := PORT + 60
+	var made := DotTransportDual.new().create_server(port, "127.0.0.1")
+	if not made.ok:
+		_check(false, "a dual server")
+		return
+	var server := made.value as DotDualPeer
+	var clients: Array[MultiplayerPeer] = []
+	for i in 4:
+		clients.append(DotTransportWebSocket.new().create_client("ws://127.0.0.1:%d" % port).value)
+	var pump := func() -> void:
+		server.poll()
+		for c in clients:
+			c.poll()
+	var deadline := Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline and int(server.peer_counts().get("websocket", 0)) < 4:
+		pump.call()
+		await get_tree().process_frame
+	_check(int(server.peer_counts().get("websocket", 0)) == 4, "four WebSocket clients join")
+	var ids: Array[int] = []
+	for c in clients:
+		ids.append(c.get_unique_id())
+	var stayer := clients[3]
+
+	# What a game does when a player leaves: tell everybody, one by one, all-but-one and all.
+	var left: Array[int] = []
+	var results: Array[int] = []
+	var on_left := func(id: int) -> void:
+		left.append(id)
+		server.set_target_peer(0)
+		results.append(server.put_packet("left".to_utf8_buffer()))
+		server.set_target_peer(-id)
+		results.append(server.put_packet("left".to_utf8_buffer()))
+		for other: int in ids:
+			if other != id and not left.has(other):
+				server.set_target_peer(other)
+				results.append(server.put_packet("left".to_utf8_buffer()))
+	server.peer_disconnected.connect(on_left)
+
+	var watch := SendWatch.new()
+	OS.add_logger(watch)
+
+	# One leaves alone: only the leaver is closed, and the plain broadcast reached it.
+	clients[0].close()
+	deadline = Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline and left.size() < 1:
+		pump.call()
+		await get_tree().process_frame
+	_check(left.size() == 1, "the server saw the first one leave")
+	_check(watch.count() == 0, "and logged no send to its closed socket (%d)" % watch.count())
+
+	# Two leave in one poll: the first one's handler sends to the second.
+	clients[1].close()
+	clients[2].close()
+	OS.delay_msec(50)
+	deadline = Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline and left.size() < 3:
+		server.poll()
+		stayer.poll()
+		await get_tree().process_frame
+	_check(left.size() == 3, "the server saw the next two leave")
+	_check(watch.count() == 0, "and logged no send to either closed socket (%d)" % watch.count())
+	_check(results.all(func(r: int) -> bool: return r == OK), "every send reports OK (%d sends)" % results.size())
+
+	# The one still there heard everything: two broadcasts and one targeted send per leaver.
+	# The per-peer path still delivers.
+	var heard: Array[String] = []
+	deadline = Time.get_ticks_msec() + 2000
+	while Time.get_ticks_msec() < deadline and heard.size() < 9:
+		server.poll()
+		stayer.poll()
+		_collect(stayer, heard)
+		await get_tree().process_frame
+	_check(heard.size() == 9, "the client that stayed heard every broadcast and every send to it (%d)" % heard.size())
+	server.peer_disconnected.disconnect(on_left)
+
+	# The server closes one: it stays in the engine's table, closing, until the next poll.
+	var stayer_id := ids[3]
+	var before := watch.count()
+	server.disconnect_peer(stayer_id, false)
+	server.set_target_peer(stayer_id)
+	var targeted := server.put_packet("bye".to_utf8_buffer())
+	server.set_target_peer(0)
+	var broadcast := server.put_packet("bye".to_utf8_buffer())
+	_check(targeted == OK and broadcast == OK, "sends to a peer the server is closing report OK")
+	_check(watch.count() == before, "and the engine logged none of them (%d)" % (watch.count() - before))
+	deadline = Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline and int(server.peer_counts().get("websocket", 0)) > 0:
+		server.poll()
+		stayer.poll()
+		await get_tree().process_frame
+	OS.remove_logger(watch)
+	_check(server.peer_counts() == {"websocket": 0, "enet": 0}, "all four are gone from the merged table")
+	_check(watch.count() == 0, "no engine send error from the whole section (%d)" % watch.count())
 	server.close()
 
 
