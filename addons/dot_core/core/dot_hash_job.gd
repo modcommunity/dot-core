@@ -50,6 +50,12 @@ func _setup() -> void:
 		))
 		return
 
+	if not _file.is_open():
+		_finish(DotResult.fail(
+			DotError.CODE_IO, "The file closed as it was opened.", path
+		))
+		return
+
 	_total = _file.get_length()
 
 	_ctx = HashingContext.new()
@@ -65,8 +71,18 @@ func _step() -> bool:
 		return false
 
 	for _i in range(CHUNKS_PER_STEP):
-		if _file.eof_reached():
-			return _complete()
+		# [b]Never `eof_reached()`.[/b] It is the one [FileAccess] call the engine does
+		# not null-check: on a closed file it dereferences null and the process dies
+		# with signal 11, where every other call logs and returns. An empty read is the
+		# end of the file just as well. [member DotJob._lock] keeps other threads from
+		# closing the file under a step; this keeps a closed file from being a crash.
+		if not _file.is_open():
+			_finish(DotResult.fail(
+				DotError.CODE_IO,
+				"The file was closed while it was being hashed.",
+				path
+			))
+			return false
 
 		var chunk := _file.get_buffer(DotHash.CHUNK_SIZE)
 		if chunk.is_empty():

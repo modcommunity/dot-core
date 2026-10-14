@@ -124,6 +124,14 @@ func submit(job: DotJob) -> DotJob:
 	if job.is_settled():
 		return job
 
+	# Queued once, here or on any other scheduler: a job in the queue twice is a job two
+	# workers run at once. Answering with the job keeps `await run(job)` meaning the same
+	# thing the second time; the warning is there because a caller doing this is a bug.
+	if job._submitted:
+		DotLog.warn(CHANNEL, "job submitted twice; it runs once", {"job": job.name})
+		return job
+	job._submitted = true
+
 	if _threading_enabled() and job.is_thread_safe():
 		_mutex.lock()
 		_thread_queue.append(job)

@@ -56,6 +56,28 @@ var cancel_requested: bool = false
 
 var _last_reported_progress: float = -1.0
 
+## Held for the whole of a [method step] and of a settle, so no two threads are ever
+## inside one job at once.
+##
+## [b]Without it a second thread tears a job down under the first.[/b] A [DotHashJob]
+## run by two threads at once (or settled from the main thread while a worker stepped
+## it) had its [FileAccess] closed between the worker's `open` and its next call: the
+## worker logged `File must be opened before use` from `get_length` and then died in
+## `eof_reached`, which the engine does not null-check, taking a dedicated server down
+## mid map change. [Mutex] is recursive, so a settle from inside a step re-enters it.
+var _lock := Mutex.new()
+
+## How deep the holder of [member _lock] is in it. Only touched while holding it.
+var _held := 0
+
+## A settle waiting for the lock to be released before [signal finished] goes out, so
+## no listener is ever resumed inside the lock.
+var _unsent: DotResult = null
+
+## Set by [method DotScheduler.submit]. A job is queued once: a second submission, to
+## the same scheduler or another, would put two workers in it.
+var _submitted := false
+
 
 # --- Subclass hooks --------------------------------------------------------
 
@@ -110,22 +132,29 @@ func is_thread_safe() -> bool:
 ##
 ## Called by [DotScheduler]. Safe to call directly for a synchronous run, but
 ## prefer [method run_to_completion] which handles setup and cancellation.
+##
+## Thread-safe: a second thread stepping the same job waits for the first one's step
+## to end, and a job that settled meanwhile answers false without being touched.
 func step() -> bool:
+	_enter()
+
+	var more := false
+
 	if state == State.PENDING:
 		state = State.RUNNING
 		_setup()
 
-	if state != State.RUNNING:
-		return false
+	if state == State.RUNNING:
+		if cancel_requested:
+			_settle(
+				State.CANCELLED,
+				DotResult.fail(DotError.CODE_CANCELLED, "Cancelled.")
+			)
+		else:
+			more = _step()
 
-	if cancel_requested:
-		_settle(
-			State.CANCELLED,
-			DotResult.fail(DotError.CODE_CANCELLED, "Cancelled.")
-		)
-		return false
-
-	return _step()
+	_leave()
+	return more
 
 
 ## Runs the whole job on the calling thread, ignoring frame budget.
@@ -148,10 +177,20 @@ func run_to_completion(max_steps: int = 100_000_000) -> DotResult:
 	return result
 
 
+##
+## Safe from any thread, and never waits. A step running on another thread holds the
+## lock: the flag is set and that thread settles the job at its next step boundary.
+## Settling it from here instead was the race: a worker that had just taken a PENDING
+## job opened its file, and this thread's teardown closed it under the worker.
 func cancel() -> void:
-	if state == State.DONE or state == State.CANCELLED:
+	if is_settled():
 		return
 	cancel_requested = true
+
+	if not _lock.try_lock():
+		return
+	_held += 1
+
 	# A job that has not started yet will never be stepped, so settle it now
 	# rather than leaving a queued job whose `finished` signal never fires.
 	if state == State.PENDING:
@@ -159,6 +198,8 @@ func cancel() -> void:
 			State.CANCELLED,
 			DotResult.fail(DotError.CODE_CANCELLED, "Cancelled before start.")
 		)
+
+	_leave()
 
 
 func is_settled() -> bool:
@@ -188,13 +229,39 @@ func _finish(res: DotResult) -> void:
 	_settle(State.DONE, res)
 
 
+## Settles the job once; [method _teardown] runs under the lock, so never while another
+## thread is inside a step.
 func _settle(new_state: State, res: DotResult) -> void:
-	if is_settled():
-		return
-	state = new_state
-	result = res
-	_teardown()
-	_emit_on_main_thread(finished, res)
+	_enter()
+
+	if not is_settled():
+		state = new_state
+		result = res
+		_teardown()
+		_unsent = res
+
+	_leave()
+
+
+func _enter() -> void:
+	_lock.lock()
+	_held += 1
+
+
+## Releases one level of [member _lock], and sends [signal finished] once the last
+## level is released.
+func _leave() -> void:
+	_held -= 1
+
+	var send: DotResult = null
+	if _held == 0:
+		send = _unsent
+		_unsent = null
+
+	_lock.unlock()
+
+	if send != null:
+		_emit_on_main_thread(finished, send)
 
 
 ## True when the caller is the main thread.
