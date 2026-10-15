@@ -7,8 +7,8 @@ extends Node
 ## godot --headless --path . res://examples/collision_audit_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 7
-const CHECKS := 27
+const SECTIONS := 8
+const CHECKS := 30
 
 var _passed := 0
 var _failed := 0
@@ -24,6 +24,7 @@ func _ready() -> void:
 	_test_multimesh_gridmap()
 	_test_skipped()
 	_test_opt_out()
+	_test_anywhere()
 	_test_report()
 
 	_line("")
@@ -246,6 +247,26 @@ func _test_opt_out() -> void:
 	_check(found.has("Meta False"), "metadata false does not")
 	_check(found.has("Plain"), "an untagged sibling is still reported")
 	root.queue_free()
+
+
+func _test_anywhere() -> void:
+	_section("anywhere: a body in another subtree covers what it touches")
+	var root := Node3D.new()
+	var drawn := Node3D.new()
+	drawn.name = "Drawn"
+	var near := _mesh("Near")
+	var far := _mesh("Far")
+	far.position = Vector3(40, 0, 0)
+	drawn.add_child(near)
+	drawn.add_child(far)
+	root.add_child(drawn)
+	root.add_child(_body("Solid"))
+	var strict := DotCollisionAudit.audit(root).value as DotCollisionAudit
+	var loose := DotCollisionAudit.audit(root, true).value as DotCollisionAudit
+	_check(strict.count() == 2, "without the option both are reported: the body is not a sibling")
+	_check(loose.paths() == PackedStringArray(["Drawn/Far"]), "with it only the mesh nowhere near a shape is")
+	_check(loose.examined == 2, "both were examined")
+	root.free()
 
 
 func _test_report() -> void:

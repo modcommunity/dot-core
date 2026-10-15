@@ -49,12 +49,23 @@ var examined := 0
 ## How many were skipped by an opt-out.
 var opted_out := 0
 
+## Root-space bounds of every blocking shape, when auditing with [code]anywhere[/code]; null otherwise.
+var _shape_bounds: Variant = null
+
 
 ## Audit [param root] and everything under it. Fails with CODE_INVALID for a null or freed root.
-static func audit(root: Node) -> DotResult:
+## [param anywhere] also accepts a solid body anywhere under [param root] whose shape bounds
+## meet the node's bounds, for a level that keeps its drawing and its collision in separate
+## subtrees (a generated map: one body of shapes, one node of meshes). It is lenient by design,
+## a merged mesh is covered by any shape it touches, so it finds geometry with nothing near
+## it, not every wall missing a shape.
+static func audit(root: Node, anywhere := false) -> DotResult:
 	if root == null or not is_instance_valid(root):
 		return DotResult.failure(DotError.make(DotError.CODE_INVALID, "DotCollisionAudit.audit: no root node"))
 	var report := DotCollisionAudit.new()
+	if anywhere:
+		report._shape_bounds = []
+		report._collect_bounds(root, root)
 	report._walk(root, root, false)
 	return DotResult.success(report)
 
@@ -148,6 +159,8 @@ func _add(root: Node, node: Node, kind: String, why: String) -> void:
 ## side, but only when their bounds meet: in a flat level every box is every other box's
 ## sibling, and without the overlap test one body anywhere would cover the whole level.
 func _covered_by_body(node: Node) -> bool:
+	if _shape_bounds != null and _covered_anywhere(node):
+		return true
 	var up := node.get_parent()
 	while up != null:
 		if _blocks(up):
@@ -162,6 +175,42 @@ func _covered_by_body(node: Node) -> bool:
 			if sibling != node and _blocks(sibling) and _overlaps(node, sibling):
 				return true
 	return false
+
+
+func _covered_anywhere(node: Node) -> bool:
+	if not node is VisualInstance3D:
+		return false
+	var box := _root_transform(node) * (node as VisualInstance3D).get_aabb()
+	for b: AABB in _shape_bounds:
+		if box.grow(0.1).intersects(b):
+			return true
+	return false
+
+
+func _collect_bounds(node: Node, root: Node) -> void:
+	if _blocks(node):
+		var base := _root_transform(node)
+		for child in node.get_children():
+			if child is CollisionShape3D and not (child as CollisionShape3D).disabled and (child as CollisionShape3D).shape != null:
+				var cs := child as CollisionShape3D
+				var mesh := cs.shape.get_debug_mesh()
+				if mesh != null:
+					_shape_bounds.append(base * (cs.transform * mesh.get_aabb()))
+	for child in node.get_children():
+		_collect_bounds(child, root)
+
+
+## [param node]'s transform composed up through every Node3D parent. Shapes and meshes are
+## both taken this way, so the top of the chain is the same for both and cancels; a plain
+## Node between two Node3Ds is stepped over.
+static func _root_transform(node: Node) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	var up := node
+	while up != null:
+		if up is Node3D:
+			t = (up as Node3D).transform * t
+		up = up.get_parent()
+	return t
 
 
 ## True when a sibling body's shapes and the node's bounds meet, compared in the parent's
