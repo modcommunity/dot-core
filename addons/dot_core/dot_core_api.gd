@@ -12,5 +12,6 @@ extends RefCounted
 #    (a game asking less of an addon whose newer API it guards).
 # 5: camera/: DotCameraProbe, DotCameraBoom, DotCameraFade (cameras that stay out of the
 #    level and fade the people between them and what they look at).
-const LEVEL := 5
+# 6: DotCollisionAudit (visible level geometry nothing collides with; `dot_no_collision` opt-out).
+const LEVEL := 6
 const OLDEST := 1

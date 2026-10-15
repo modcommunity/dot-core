@@ -30,11 +30,12 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | `core/dot_config.gd` | layered configuration base |
 | `core/dot_job.gd`, `dot_scheduler.gd`, `dot_hash_job.gd` | sliceable work, frame budget and worker pool, chunked file hashing |
 | `core/dot_hash.gd`, `dot_rate_limiter.gd`, `dot_semver.gd`, `dot_value.gd` | SHA-256/HMAC/constant-time compare/base64url; token bucket; versions that do not sort 0.10 below 0.9; total comparisons |
+| `core/dot_collision_audit.gd` | `DotCollisionAudit.audit(root)`: visible meshes, CSG, GridMaps and MultiMeshes with no covering collision; opt out with metadata or group `dot_no_collision`, inherited; `examples/collision_audit_selftest` |
 | `core/dot_addon_api.gd`, `dot_core_api.gd`, `tools/dot_requires.gd` | API levels and the refusal sentence; dot-core's own level; derives or audits a game's `requires.json`, lowered by its `requires.floor.json` |
 | `net/` | `dot_transport*.gd` (base with address parsing incl. bracketed IPv6, websocket, enet, auto, dual), `dot_dual_peer.gd`, `dot_udp_demux.gd`, `dot_metered_peer.gd`, `dot_http.gd` |
 | `random/` | `dot_random_stream.gd`, `_table.gd`, `_schedule.gd`, `_config.gd`, `_manager.gd` (the node a game holds; the only thing that knows the seed) |
 | `camera/` | `dot_camera_probe.gd` (a swept sphere from a pivot, eased in ahead of an obstacle and out behind it), `dot_camera_boom.gd` (the `SpringArm3D` replacement built on it), `dot_camera_fade.gd` (fades characters between the camera and its focus, hides one at the camera; `bodies_fn` for characters with no collider), `dot_camera_check.gd` (flies a camera along a scripted path, armed), `dot_camera_tool.gd` (the base of every game's `tools/render_cameras.gd`) |
-| `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest`, `camera_selftest`, `scheduler_selftest` |
+| `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest`, `camera_selftest`, `scheduler_selftest`, `collision_audit_selftest` |
 
 ## Running and testing
 
