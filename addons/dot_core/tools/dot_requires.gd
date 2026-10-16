@@ -46,6 +46,10 @@ func _init() -> void:
 	if derived.is_empty():
 		printerr("dot_requires: this project uses no addon this build has; nothing to require")
 
+	var optional := DotAddonApi.derive_optional()
+	for addon in optional.keys():
+		printerr("dot_requires: %s is optional (reached only behind a presence check), not required" % addon)
+
 	var floor_path := "res://" + DotAddonApi.FLOOR_FILE
 	var has_floors := FileAccess.file_exists(floor_path)
 

@@ -11,7 +11,7 @@ extends Node
 ## the refusal is CODE_VERSION and nothing else would pass for a refusal nobody can read.
 
 const SECTIONS := 7
-const CHECKS := 50
+const CHECKS := 56
 
 const SCRATCH := "user://addon_api_selftest"
 
@@ -195,6 +195,45 @@ func _test_deriving_and_auditing() -> void:
 	var over := DotAddonApi.audit({"dot_net": 5}, {"dot_net": 2})
 	_check(over.size() == 1 and over[0].contains("declared at 5"), "and so is a level above what this build has")
 	_check(DotAddonApi.audit({"dot_net": 1}, {"dot_net": 2}).is_empty(), "a lower level is a game that knows better, and is fine")
+
+	# An addon only reached behind a presence check is optional. dot_core stands in for
+	# "the addon the shell lacks": it is installed, so it is derived unless the rule spares it.
+	var path := "res://addons/dot_core/core/dot_addon_api.gd"
+	var guarded := 'const P := "%s"\nfunc f():\n\tif ResourceLoader.exists(P):\n\t\tload(P).new()\n' % path
+	var cases := {
+		"guarded": [guarded, false],
+		"no_guard": ['const P := "%s"\nfunc f():\n\tload(P).new()\n' % path, true],
+		"preload": [guarded + 'const Q := preload("%s")\n' % path, true],
+		"class_name": [guarded + "var x: DotAddonApi\n", true],
+		"comment_only": [guarded + "# DotAddonApi is named here only\n", false],
+	}
+	var base := SCRATCH + "_derive"
+	DirAccess.make_dir_recursive_absolute(base)
+	for key in cases:
+		var dir := "%s/%s" % [base, key]
+		DirAccess.make_dir_recursive_absolute(dir)
+		var f := FileAccess.open(dir + "/g.gd", FileAccess.WRITE)
+		f.store_string(cases[key][0])
+		f.close()
+		var got := DotAddonApi.derive(dir)
+		var opt := DotAddonApi.derive_optional(dir)
+		var want_required: bool = cases[key][1]
+		_check(got.has("dot_core") == want_required and opt.has("dot_core") == (not want_required),
+			"%s: dot-core is %s (required %s, optional %s)" % [key, "required" if want_required else "optional", str(got), str(opt)])
+		DirAccess.remove_absolute(dir + "/g.gd")
+		DirAccess.remove_absolute(dir)
+	# A scene naming the path cannot ask first, so it is required even beside a guarded script.
+	var scene_dir := base + "/scene"
+	DirAccess.make_dir_recursive_absolute(scene_dir)
+	for pair in [["g.gd", guarded], ["s.tscn", '[ext_resource type="Script" path="%s" id="1"]\n' % path]]:
+		var f2 := FileAccess.open(scene_dir + "/" + pair[0], FileAccess.WRITE)
+		f2.store_string(pair[1])
+		f2.close()
+	_check(DotAddonApi.derive(scene_dir).has("dot_core"), "a scene naming the path makes it required despite a guarded script")
+	DirAccess.remove_absolute(scene_dir + "/g.gd")
+	DirAccess.remove_absolute(scene_dir + "/s.tscn")
+	DirAccess.remove_absolute(scene_dir)
+	DirAccess.remove_absolute(base)
 
 	_done()
 

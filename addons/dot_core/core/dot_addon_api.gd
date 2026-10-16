@@ -369,27 +369,101 @@ static func derive(
 		if addon != "":
 			classes[str(entry.get("class", ""))] = addon
 
-	var used := {}
+	var scan := _scan(root, skip_dirs, classes)
+	var out := {}
+	for addon in scan.hard.keys():
+		var level := build_level(str(addon))
+		if level > 0:
+			out[str(addon)] = level
+	return out
+
+
+## Addons a project's files reach only behind a presence check, so a host without them
+## runs the game anyway. Same files as [method derive]; an addon in [method derive] is
+## never in here.
+##
+## [b]Why they stay out of requires.json.[/b] A pack asking for an addon the shell does
+## not have is refused before the game starts, so a lightning effect from an add-on a
+## player may not have would take the whole game down on the web. An addon is optional
+## when every file naming it is a script that (a) reaches it ONLY by a literal
+## [code]res://addons/<addon>/[/code] path handed to [code]load()[/code] -- never a
+## global class name and never [code]preload()[/code], both of which are compile-time and
+## fail to parse without it -- and (b) asks whether anything is there first:
+## [code]ResourceLoader.exists[/code], [code]FileAccess.file_exists[/code],
+## [code]DirAccess.dir_exists_absolute[/code], [code]DotAddonApi.installed[/code] or
+## [code]DotAddonApi.build_level[/code]. The check is per file, not per path: a script
+## that tests one path and loads another is the author's promise, as a floor is.
+## Comments are not code, so a doc comment naming a class does not make it required.
+static func derive_optional(
+	root: String = "res://",
+	skip_dirs: PackedStringArray = PackedStringArray(["addons", "examples", "tools", ".godot", ".github", "screenshots"])
+) -> Dictionary:
+	var classes := {}
+	for entry in ProjectSettings.get_global_class_list():
+		var addon := _addon_of(str(entry.get("path", "")))
+		if addon != "":
+			classes[str(entry.get("class", ""))] = addon
+	var scan := _scan(root, skip_dirs, classes)
+	var out := {}
+	for addon in scan.soft.keys():
+		if not scan.hard.has(addon):
+			var level := build_level(str(addon))
+			if level > 0:
+				out[str(addon)] = level
+	return out
+
+
+## {hard: {addon: true}, soft: {addon: true}} for [method derive] and [method derive_optional].
+static func _scan(root: String, skip_dirs: PackedStringArray, classes: Dictionary) -> Dictionary:
+	var hard := {}
+	var soft := {}
 	var word := RegEx.create_from_string("[A-Za-z_][A-Za-z0-9_]*")
 	var literal := RegEx.create_from_string("res://addons/([a-z0-9_]+)/")
+	var presence := RegEx.create_from_string("\\b(?:ResourceLoader\\.exists|FileAccess\\.file_exists|DirAccess\\.dir_exists_absolute|DotAddonApi\\.(?:installed|build_level))\\s*\\(")
 
 	for file in _source_files(root, skip_dirs):
 		var text := FileAccess.get_file_as_string(file)
 		if text == "":
 			continue
+		var is_script := file.get_extension() == "gd"
+		if is_script:
+			text = _strip_comments(text)
+		var guarded_file := is_script and presence.search(text) != null
 		for m in word.search_all(text):
 			var token := m.get_string()
 			if classes.has(token):
-				used[classes[token]] = true
+				hard[classes[token]] = true
 		for m in literal.search_all(text):
-			used[m.get_string(1)] = true
+			var addon := m.get_string(1)
+			var line_start := text.rfind("\n", m.get_start()) + 1
+			var before := text.substr(line_start, m.get_start() - line_start)
+			if guarded_file and not before.contains("preload"):
+				soft[addon] = true
+			else:
+				hard[addon] = true
+	return {"hard": hard, "soft": soft}
 
-	var out := {}
-	for addon in used.keys():
-		var level := build_level(str(addon))
-		if level > 0:
-			out[str(addon)] = level
-	return out
+
+## [param text] with each line's trailing GDScript comment removed. Tracks quotes so a
+## `#` inside a string (a colour, a path) stays.
+static func _strip_comments(text: String) -> String:
+	var lines := text.split("\n")
+	for i in lines.size():
+		var line := lines[i]
+		if not line.contains("#"):
+			continue
+		var quote := ""
+		for j in line.length():
+			var c := line[j]
+			if quote != "":
+				if c == quote and line[j - 1] != "\\":
+					quote = ""
+			elif c == "\"" or c == "'":
+				quote = c
+			elif c == "#":
+				lines[i] = line.substr(0, j)
+				break
+	return "\n".join(lines)
 
 
 ## Which addons [param requirements] leaves out or overstates, against [method derive].
