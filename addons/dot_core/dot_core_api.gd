@@ -13,5 +13,7 @@ extends RefCounted
 # 5: camera/: DotCameraProbe, DotCameraBoom, DotCameraFade (cameras that stay out of the
 #    level and fade the people between them and what they look at).
 # 6: DotCollisionAudit (visible level geometry nothing collides with; `dot_no_collision` opt-out).
-const LEVEL := 6
+# 7: DotTcpScreen, DotTransportDual.tls_hello_screen / TlsHelloScreen / is_loopback_bind,
+#    DotDualPeer.screen (a TLS ClientHello at a plain WebSocket listener closed at once).
+const LEVEL := 7
 const OLDEST := 1

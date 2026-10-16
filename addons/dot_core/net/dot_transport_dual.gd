@@ -43,6 +43,25 @@ extends DotTransport
 ## are on another port should turn it off.
 @export var share_udp_port: bool = true
 
+enum TlsHelloScreen { AUTO = 0, ON = 1, OFF = 2 }
+
+## Whether a [DotTcpScreen] holds the public TCP port, with the WebSocket server behind it on
+## loopback, so a TLS ClientHello at this plain listener is closed at once.
+##
+## A native client dials a public [code]host:port[/code] as [code]wss://[/code] first; at a
+## server with no certificate the WebSocket server waits for an HTTP header that never comes,
+## and the client waited out its whole TLS timeout (2.5 s) before trying [code]ws://[/code].
+## Screened, the wrong guess costs one round trip. Addresses are mapped back by [DotDualPeer].
+##
+## [b]Auto screens only a listener that faces the network.[/b] The relay is not free: every
+## WebSocket byte is copied through it in script, measured at 10 to 20 us per busy link per
+## frame (32 clients, a packet each way each frame: about 0.5 ms). A listener bound to
+## loopback is behind a TLS terminator (dot-server-deploy's nginx layout), where only the
+## proxy reaches it and every connection begins with GET, so it would pay that for nothing.
+## Never applied when the WebSocket server terminates TLS itself
+## ([member DotTransportWebSocket.use_tls]): there a ClientHello is the right first byte.
+@export_enum("Auto", "On", "Off") var tls_hello_screen: int = TlsHelloScreen.AUTO
+
 ## Sub-transport for browsers. Created with defaults if unset.
 @export var websocket: DotTransportWebSocket = null
 
@@ -98,7 +117,16 @@ func _is_available() -> DotResult:
 func _create_server(port: int, bind_address: String) -> DotResult:
 	var ws_t := _websocket()
 	_share_limits(ws_t)
-	var ws_res := ws_t._create_server(port, bind_address)
+	var tcp_screen: DotTcpScreen = null
+	var ws_res: DotResult = null
+	if _screens(ws_t, bind_address):
+		var screened := _build_screened_websocket(ws_t, port, bind_address)
+		if not screened.ok:
+			return screened
+		ws_res = DotResult.success(screened.value["peer"])
+		tcp_screen = screened.value["screen"]
+	else:
+		ws_res = ws_t._create_server(port, bind_address)
 	if not ws_res.ok:
 		return ws_res
 
@@ -129,7 +157,7 @@ func _create_server(port: int, bind_address: String) -> DotResult:
 		)
 
 	_peer = DotDualPeer.new()
-	_peer.setup(ws_peer, enet_peer, mux)
+	_peer.setup(ws_peer, enet_peer, mux, tcp_screen)
 
 	DotLog.info(
 		CHANNEL,
@@ -138,9 +166,67 @@ func _create_server(port: int, bind_address: String) -> DotResult:
 			"websocket_tcp": port,
 			"enet_udp": _enet_bound_port if enet_peer != null else 0,
 			"shared_udp": mux != null,
+			"tls_hello_screen": tcp_screen != null,
 		}
 	)
 	return DotResult.success(_peer as MultiplayerPeer)
+
+
+func _screens(ws_t: DotTransportWebSocket, bind_address: String) -> bool:
+	if ws_t.use_tls or tls_hello_screen == TlsHelloScreen.OFF:
+		return false
+	if tls_hello_screen == TlsHelloScreen.ON:
+		return true
+	return not is_loopback_bind(bind_address)
+
+
+## Whether [param bind_address] listens on loopback only. Empty and "*" are every interface.
+static func is_loopback_bind(bind_address: String) -> bool:
+	var a := bind_address.strip_edges().to_lower().trim_prefix("[").trim_suffix("]")
+	return a == "localhost" or a == "::1" or a.begins_with("127.")
+
+
+## The public TCP port to a [DotTcpScreen], the WebSocket server on loopback behind it:
+## {peer, screen}. The public bind failing fails the server, as it did unscreened; the
+## loopback side failing falls back to WebSocket on the public port with a WARN.
+func _build_screened_websocket(ws_t: DotTransportWebSocket, port: int, bind_address: String) -> DotResult:
+	var tcp_screen := DotTcpScreen.new()
+	tcp_screen.first_byte_timeout_sec = ws_t.handshake_timeout_sec
+	tcp_screen.max_links = maxi(64, max_clients * 2)
+	var opened := tcp_screen.open(port, bind_address, 0)
+	if not opened.ok:
+		return opened
+
+	# WebSocketMultiplayerPeer cannot say which port 0 gave it, so ask the OS for a free
+	# loopback port first. Another process could take it in between; a retry covers that.
+	for attempt in 3:
+		var inner_port := _free_loopback_port()
+		if inner_port <= 0:
+			continue
+		var made := ws_t._create_server(inner_port, "127.0.0.1")
+		if made.ok:
+			tcp_screen.set_inner_port(inner_port)
+			return DotResult.success({"peer": made.value, "screen": tcp_screen})
+
+	tcp_screen.close()
+	DotLog.warn(
+		CHANNEL,
+		"no loopback port for the WebSocket server; serving it unscreened, a TLS hello waits out the handshake",
+		{"setting": "tls_hello_screen"}
+	)
+	var direct := ws_t._create_server(port, bind_address)
+	if not direct.ok:
+		return direct
+	return DotResult.success({"peer": direct.value, "screen": null})
+
+
+static func _free_loopback_port() -> int:
+	var probe := TCPServer.new()
+	if probe.listen(0, "127.0.0.1") != OK:
+		return 0
+	var free := probe.get_local_port()
+	probe.stop()
+	return free
 
 
 func _build_enet(udp_port: int, bind_address: String) -> DotResult:

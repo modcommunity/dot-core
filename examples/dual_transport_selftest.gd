@@ -10,8 +10,8 @@ extends Node
 ## godot --headless --path . res://examples/dual_transport_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 12
-const CHECKS := 67
+const SECTIONS := 13
+const CHECKS := 82
 
 const PORT := 47391
 
@@ -53,6 +53,7 @@ func _run() -> void:
 	await _test_enet_server_bandwidth()
 	await _test_enet_peer_timeout()
 	await _test_shutdown_reaches_enet()
+	await _test_tls_hello_screened()
 
 	if _server != null:
 		_server.close()
@@ -728,6 +729,161 @@ func _test_shutdown_reaches_enet() -> void:
 	var took := Time.get_ticks_msec() - started
 	_check(gone and took < 1000, "and learns the server closed in %d ms, not at its peer timeout" % took)
 	client.close()
+
+
+## A native client dials a public server as wss:// first. At a plain listener the engine's
+## WebSocket server read the ClientHello waiting for an HTTP header's CRLFCRLF and the client
+## waited out its TLS timeout (2.5 s; the server's handshake timeout is 5 s). The screen
+## closes anything whose first byte is not 'G'. Armed in-section: the same raw hello at a
+## server with [member DotTransportDual.tls_hello_screen] off is still open after a second.
+## Auto leaves a loopback listener (a TLS terminator's backend) unscreened.
+func _test_tls_hello_screened() -> void:
+	_section("A TLS ClientHello at the plain WebSocket port is closed in a round trip")
+
+	var port := PORT + 50
+	var auto_made := DotTransportDual.new().create_server(port, "127.0.0.1")
+	_check(
+		auto_made.ok and (auto_made.value as DotDualPeer).screen == null,
+		"auto: a loopback listener (behind a TLS terminator) is not screened"
+	)
+	if auto_made.ok:
+		(auto_made.value as DotDualPeer).close()
+	_check(
+		DotTransportDual.is_loopback_bind("127.0.0.1") and DotTransportDual.is_loopback_bind("::1")
+			and not DotTransportDual.is_loopback_bind("") and not DotTransportDual.is_loopback_bind("*")
+			and not DotTransportDual.is_loopback_bind("0.0.0.0") and not DotTransportDual.is_loopback_bind("10.0.0.5"),
+		"auto screens every interface and a public address, not loopback"
+	)
+	var t := DotTransportDual.new()
+	t.tls_hello_screen = DotTransportDual.TlsHelloScreen.ON
+	var made := t.create_server(port, "127.0.0.1")
+	var server := made.value as DotDualPeer if made.ok else null
+	_check(server != null and server.screen != null, "on: a dual server listens with its TCP port screened")
+	if server == null or server.screen == null:
+		return
+
+	var raw_ms := await _raw_hello_closed_ms(server, port)
+	_check(raw_ms >= 0 and raw_ms < 1000, "a raw TLS handshake byte is closed in %d ms" % raw_ms)
+	_check(int(server.screen.describe()["refused_tls"]) == 1, "and counted as a refused TLS hello")
+
+	# The real thing: the engine's own wss:// client, as the client link's TLS-first try is.
+	var wss := WebSocketMultiplayerPeer.new()
+	var wss_err := wss.create_client("wss://127.0.0.1:%d/game" % port, TLSOptions.client_unsafe())
+	var started := Time.get_ticks_msec()
+	var failed := false
+	while wss_err == OK and Time.get_ticks_msec() - started < 3000 and not failed:
+		server.poll()
+		wss.poll()
+		failed = wss.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED
+		await get_tree().process_frame
+	var wss_ms := Time.get_ticks_msec() - started
+	_check(failed and wss_ms < 1000, "a wss:// client at the plain port fails in %d ms, not at its timeout" % wss_ms)
+	wss.close()
+
+	var ids: Array[int] = []
+	server.peer_connected.connect(func(id: int) -> void: ids.append(id))
+	var ws := DotTransportWebSocket.new().create_client("ws://127.0.0.1:%d" % port).value as MultiplayerPeer
+	var deadline := Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline and (ids.is_empty() or ws.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED):
+		server.poll()
+		ws.poll()
+		await get_tree().process_frame
+	_check(ids.size() == 1, "a plain WebSocket client still joins through the screen")
+	if ids.is_empty():
+		server.close()
+		return
+	var id := ids[0]
+
+	server.set_target_peer(id)
+	server.put_packet("down".to_utf8_buffer())
+	ws.set_target_peer(1)
+	ws.put_packet("up".to_utf8_buffer())
+	var got_client: Array[String] = []
+	var got_server: Array[String] = []
+	deadline = Time.get_ticks_msec() + 3000
+	while Time.get_ticks_msec() < deadline and (got_client.is_empty() or got_server.is_empty()):
+		server.poll()
+		ws.poll()
+		_collect(ws, got_client)
+		_collect(server, got_server)
+		await get_tree().process_frame
+	_check(got_client == ["down"], "the server's packet reaches the client (%s)" % [got_client])
+	_check(got_server == ["up"], "and the client's reaches the server (%s)" % [got_server])
+
+	# 64 KiB both ways: more than one read of the relay, as a content chunk is.
+	var big := PackedByteArray()
+	big.resize(65000)
+	for i in big.size():
+		big[i] = i % 251
+	server.set_target_peer(id)
+	server.put_packet(big)
+	var big_back := PackedByteArray()
+	deadline = Time.get_ticks_msec() + 3000
+	while Time.get_ticks_msec() < deadline and big_back.is_empty():
+		server.poll()
+		ws.poll()
+		if ws.get_available_packet_count() > 0:
+			big_back = ws.get_packet()
+		await get_tree().process_frame
+	_check(big_back == big, "a 65000-byte packet crosses the relay intact")
+
+	var relay_port := int(server.websocket.call("get_peer_port", id))
+	_check(server.get_peer_address(id) == "127.0.0.1", "the WebSocket peer's address is the client's")
+	_check(
+		server.get_peer_port(id) != relay_port and server.get_peer_port(id) > 0,
+		"and its port is the client's (%d), not the relay's (%d)" % [server.get_peer_port(id), relay_port]
+	)
+
+	ws.close()
+	deadline = Time.get_ticks_msec() + 3000
+	while Time.get_ticks_msec() < deadline and (server.screen.link_count() > 0 or server.peer_counts()["websocket"] > 0):
+		server.poll()
+		await get_tree().process_frame
+	_check(
+		server.screen.link_count() == 0 and server.peer_counts()["websocket"] == 0,
+		"the client leaving closes its link (%d link(s), %s)" % [server.screen.link_count(), server.peer_counts()]
+	)
+	server.close()
+
+	# The control: unscreened, the engine sits on the same hello.
+	var plain_t := DotTransportDual.new()
+	plain_t.tls_hello_screen = DotTransportDual.TlsHelloScreen.OFF
+	var plain_made := plain_t.create_server(port + 1, "127.0.0.1")
+	var plain := plain_made.value as DotDualPeer if plain_made.ok else null
+	_check(plain != null and plain.screen == null, "off: no screen")
+	if plain == null:
+		return
+	var plain_ms := await _raw_hello_closed_ms(plain, port + 1, 1000)
+	_check(plain_ms < 0, "and the same hello is still open after a second (the bug this screens)")
+	plain.close()
+
+
+## Sends a TLS handshake record's first bytes and returns how long the server took to close
+## the connection, or -1 when it was still open after [param limit_ms].
+func _raw_hello_closed_ms(server: DotDualPeer, port: int, limit_ms: int = 3000) -> int:
+	var tcp := StreamPeerTCP.new()
+	tcp.connect_to_host("127.0.0.1", port)
+	var deadline := Time.get_ticks_msec() + 2000
+	while tcp.get_status() == StreamPeerTCP.STATUS_CONNECTING and Time.get_ticks_msec() < deadline:
+		tcp.poll()
+		server.poll()
+		await get_tree().process_frame
+	if tcp.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+		return -2
+	# A ClientHello's record header: handshake, TLS 1.0 record version, a length; then the
+	# start of the hello. No CRLF anywhere, as in a real one.
+	tcp.put_data(PackedByteArray([0x16, 0x03, 0x01, 0x00, 0x2a, 0x01, 0x00, 0x00, 0x26, 0x03, 0x03]))
+	var started := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - started < limit_ms:
+		server.poll()
+		tcp.poll()
+		if tcp.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+			var took := Time.get_ticks_msec() - started
+			tcp.disconnect_from_host()
+			return took
+		await get_tree().process_frame
+	tcp.disconnect_from_host()
+	return -1
 
 
 func _section(title: String) -> void:

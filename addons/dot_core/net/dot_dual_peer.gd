@@ -22,6 +22,11 @@ extends MultiplayerPeerExtension
 ## loopback and sees every client as 127.0.0.1; [method get_peer_address] maps the
 ## relay back to the real address, which is what bans and rate limits must see.
 ##
+## [b]WebSocket behind a screen.[/b] When [member screen] is set the WebSocket server sits
+## on loopback behind a [DotTcpScreen], which closes a TLS ClientHello at once instead of
+## letting the server wait out its handshake timeout on it, and sees every client as
+## 127.0.0.1; [method get_peer_address] maps that back too.
+##
 ## No ENet identifier is named in this file: the web template has none, and a
 ## script mentioning one does not compile there. ENet is reached by [method Object.call].
 
@@ -36,11 +41,17 @@ var enet: MultiplayerPeer = null
 ## The UDP demultiplexer in front of [member enet], or null when ENet binds its
 ## port directly.
 var demux: DotUdpDemux = null
+## The TCP screen in front of [member websocket], or null when WebSocket binds its port
+## directly.
+var screen: DotTcpScreen = null
 
 ## external peer id -> Backend
 var _backend_of: Dictionary = {}
 ## ENet peer id -> relay loopback port, so the relay closes with its peer.
 var _relay_port_of: Dictionary = {}
+## WebSocket peer id -> {ip, port} of the client behind the screen, read when it joins: the
+## screen's link may close before the peer's peer_disconnected handlers ask.
+var _ws_remote_of: Dictionary = {}
 
 ## Incoming packets drained from both backends: {data, peer, channel, mode}.
 var _queue: Array[Dictionary] = []
@@ -51,6 +62,8 @@ var _transfer_channel: int = 0
 var _transfer_mode: int = MultiplayerPeer.TRANSFER_MODE_RELIABLE
 var _refusing: bool = false
 var _closed: bool = false
+## A [method DotTcpScreen.flush] is queued for the end of this frame.
+var _screen_flush_queued: bool = false
 
 var _collisions: int = 0
 ## The ENet peer whose peer_disconnected is being emitted right now, or 0.
@@ -59,10 +72,13 @@ var _enet_departing: int = 0
 var _websocket_departing: int = 0
 
 
-func setup(p_websocket: MultiplayerPeer, p_enet: MultiplayerPeer, p_demux: DotUdpDemux) -> void:
+func setup(
+	p_websocket: MultiplayerPeer, p_enet: MultiplayerPeer, p_demux: DotUdpDemux, p_screen: DotTcpScreen = null
+) -> void:
 	websocket = p_websocket
 	enet = p_enet
 	demux = p_demux
+	screen = p_screen
 
 	if websocket != null:
 		websocket.peer_connected.connect(_on_connected.bind(Backend.WEBSOCKET))
@@ -91,6 +107,8 @@ func backend_name(peer_id: int) -> String:
 func get_peer_address(peer_id: int) -> String:
 	match backend_of(peer_id):
 		Backend.WEBSOCKET:
+			if _ws_remote_of.has(peer_id):
+				return str(_ws_remote_of[peer_id]["ip"])
 			return str(websocket.call("get_peer_address", peer_id))
 		Backend.ENET:
 			var remote := _enet_remote(peer_id)
@@ -102,6 +120,8 @@ func get_peer_address(peer_id: int) -> String:
 func get_peer_port(peer_id: int) -> int:
 	match backend_of(peer_id):
 		Backend.WEBSOCKET:
+			if _ws_remote_of.has(peer_id):
+				return int(_ws_remote_of[peer_id]["port"])
 			return int(websocket.call("get_peer_port", peer_id))
 		Backend.ENET:
 			return int(_enet_remote(peer_id).get("port", 0))
@@ -128,6 +148,8 @@ func describe() -> Dictionary:
 	}
 	if demux != null:
 		d["demux"] = demux.describe()
+	if screen != null:
+		d["screen"] = screen.describe()
 	return d
 
 
@@ -141,6 +163,12 @@ func describe_lines() -> PackedStringArray:
 		lines.append(
 			"udp %d shared: %d relay(s), %d in / %d out relayed, %d handled, %d dropped"
 			% [dm["port"], dm["relays"], dm["relayed_in"], dm["relayed_out"], dm["handled"], dm["dropped"]]
+		)
+	if screen != null:
+		var sc := screen.describe()
+		lines.append(
+			"tcp %d screened: %d link(s), %d relayed, %d refused (%d TLS), %d timed out, %d over limit"
+			% [sc["port"], sc["links"], sc["relayed"], sc["refused"], sc["refused_tls"], sc["timed_out"], sc["over_limit"]]
 		)
 	return lines
 
@@ -161,6 +189,10 @@ func _on_connected(id: int, backend: int) -> void:
 	_backend_of[id] = backend
 	if backend == Backend.ENET and demux != null:
 		_relay_port_of[id] = _enet_raw_port(id)
+	if backend == Backend.WEBSOCKET and screen != null:
+		var remote := screen.remote_for_inner_port(int(websocket.call("get_peer_port", id)))
+		if not remote.is_empty():
+			_ws_remote_of[id] = remote
 
 	DotLog.debug(
 		CHANNEL, "peer joined", {"id": id, "backend": "enet" if backend == Backend.ENET else "websocket"}
@@ -188,6 +220,7 @@ func _on_disconnected(id: int, backend: int) -> void:
 	else:
 		_websocket_departing = id
 	peer_disconnected.emit(id)
+	_ws_remote_of.erase(id)
 	_enet_departing = outer_enet
 	_websocket_departing = outer_websocket
 
@@ -225,9 +258,17 @@ func _poll() -> void:
 	if demux != null:
 		demux.pump_in()
 
+	# Client bytes cross the screen before the WebSocket server reads, and its replies
+	# cross back right after it writes (it writes in poll), so the screen adds no frame.
+	if screen != null:
+		screen.pump_in()
+
 	if websocket != null:
 		websocket.poll()
 		_drain(websocket, Backend.WEBSOCKET)
+
+	if screen != null:
+		screen.pump_out()
 
 	if enet != null:
 		enet.poll()
@@ -320,7 +361,18 @@ func _send(inner: MultiplayerPeer, target: int, buffer: PackedByteArray) -> Erro
 	inner.transfer_channel = _transfer_channel
 	inner.transfer_mode = _transfer_mode
 	inner.set_target_peer(target)
-	return inner.put_packet(buffer)
+	var err := inner.put_packet(buffer)
+	if screen != null and inner == websocket and not _screen_flush_queued:
+		# Once per frame, not per packet: a flush visits every link.
+		_screen_flush_queued = true
+		_flush_screen.call_deferred()
+	return err
+
+
+func _flush_screen() -> void:
+	_screen_flush_queued = false
+	if not _closed and screen != null:
+		screen.flush()
 
 
 func _sendable(backend: int, peer_id: int) -> bool:
@@ -510,6 +562,11 @@ func _close() -> void:
 			inner.close()
 	if demux != null:
 		demux.close()
+	if screen != null:
+		# What the WebSocket server wrote as it closed is still on loopback.
+		screen.pump_out()
+		screen.close()
 	_backend_of.clear()
+	_ws_remote_of.clear()
 	_relay_port_of.clear()
 	_queue.clear()
