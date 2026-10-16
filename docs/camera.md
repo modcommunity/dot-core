@@ -32,3 +32,14 @@ A camera that stopped against every body would pull into the player's head each 
 
 `DotCameraCheck` is the same check for a game's own level: `orbit_path` turns a camera round a pivot (a spawn) with the pitch swinging, `pivots_near_walls` finds pivots on a grid where a wall is close (an open floor proves nothing), `fly` asks every frame where the camera wanted to be and where the probe put it, and `passed` needs the first in or behind the level on some frame and the second inside on none, with no snap. `DotCameraTool` is a `SceneTree` base a game's `tools/render_cameras.gd` extends with its level, pivots and camera offsets: it flies them, exits 1 on a failure, and under a renderer draws the worst frame before and after, a body between the camera and the player plain and faded, and a body walking into a first-person camera plain and faded (`screenshots/cameras/`). `--no-render` flies only, headless.
 
+
+## Drawing materials once before play: DotRenderWarmup
+
+A renderer compiles a material's shader the first time something using it is drawn, and under the Compatibility renderer (every browser) the compile and the link are synchronous on the only thread: the first frame of a map, the first shot and the first kill each stall. Nothing compiles a shader without drawing it, so `DotRenderWarmup` draws it: `collect(root)` gathers every mesh and material a subtree uses (surface, override and overlay materials, particle process materials and draw passes), `add_items` takes those plus anything not in the tree yet, and `start()` puts each on a half-millimetre instance just past the parent camera's near plane for two frames, then frees itself and emits `finished`.
+
+- **Why it is invisible and still works**: culling is by bounds on the CPU, not by covered pixels, so a sub-pixel quad inside the frustum is submitted and its program built exactly as a full-screen one would be.
+- **Why a mesh is drawn as itself** rather than its materials on a quad: the vertex format is part of the shader variant.
+- **What it misses**: variants that depend on what draws the surface. A skinned mesh warms its unskinned variant, and a light that appears later (a muzzle flash) adds variants nobody drew. It removes most first-use stalls, not all.
+- **It never waits for ever**: headless or in a hidden window nothing is drawn, so `timeout_sec` (5 s) finishes it anyway; a loading screen held on `finished` always lifts.
+
+The client shell (dot-server-deploy) runs it under its loading screen; `examples/camera_selftest` covers collection, placement and the timeout.

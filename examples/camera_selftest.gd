@@ -12,8 +12,8 @@ extends Node3D
 ## godot --headless --path . res://examples/camera_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 8
-const CHECKS := 32
+const SECTIONS := 9
+const CHECKS := 38
 
 const WORLD := 1
 const PEOPLE := 2
@@ -45,6 +45,7 @@ func _run() -> void:
 	_test_fade_without_colliders()
 	_test_clip_view()
 	_test_check_helper()
+	await _test_render_warmup()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -418,6 +419,56 @@ func _test_check_helper() -> void:
 
 	var total := DotCameraCheck.add(DotCameraCheck.add({}, near_pillars), open)
 	_check(int(total["frames"]) == int(near_pillars["frames"]) + int(open["frames"]), "flights add up")
+
+
+func _test_render_warmup() -> void:
+	_section("DotRenderWarmup collects a scene's materials and draws them out of sight")
+
+	var scene := Node3D.new()
+	var a := StandardMaterial3D.new()
+	var b := StandardMaterial3D.new()
+	var box := BoxMesh.new()
+	box.material = a
+	for i in 3:
+		var mi := MeshInstance3D.new()
+		mi.mesh = box
+		scene.add_child(mi)
+	var over := MeshInstance3D.new()
+	over.mesh = box
+	over.material_override = b
+	scene.add_child(over)
+	var sparks := GPUParticles3D.new()
+	sparks.process_material = ParticleProcessMaterial.new()
+	scene.add_child(sparks)
+
+	var items := DotRenderWarmup.collect(scene)
+	# The box, its material, the override, and the particles' process material: each once,
+	# however many instances share it.
+	_check(items.size() == 4 and items.has(box) and items.has(a) and items.has(b), "collect finds each mesh and material once (%d)" % items.size())
+	_check(DotRenderWarmup.collect(scene, items).size() == 4, "collecting into the same list adds nothing twice")
+
+	var cam := Camera3D.new()
+	cam.near = 0.1
+	add_child(cam)
+	var warm := DotRenderWarmup.new()
+	warm.timeout_sec = 0.3
+	cam.add_child(warm)
+	warm.add_items(items)
+	warm.add_items([a, "not a resource", null])
+	_check(warm.item_count() == 4, "add_items ignores repeats and anything it cannot draw")
+	warm.start()
+	var placed := warm.get_children()
+	var inside := placed.all(func(n: Node) -> bool:
+		var at := (n as Node3D).global_position
+		return cam.is_position_in_frustum(at) and cam.global_position.distance_to(at) < 0.2)
+	_check(placed.size() == 4 and inside, "every item is placed just past the near plane, inside the frustum")
+	# Headless never draws, so this is the timeout: a cover waiting on it must still lift.
+	var got: int = await warm.finished
+	_check(got == 4, "finished fires even when nothing is drawn, with the count drawn")
+	await get_tree().process_frame
+	_check(not is_instance_valid(warm), "and the warmup frees itself")
+	cam.queue_free()
+	scene.free()
 
 
 # --- reporting ---------------------------------------------------------------------------

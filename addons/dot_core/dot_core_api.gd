@@ -15,5 +15,6 @@ extends RefCounted
 # 6: DotCollisionAudit (visible level geometry nothing collides with; `dot_no_collision` opt-out).
 # 7: DotTcpScreen, DotTransportDual.tls_hello_screen / TlsHelloScreen / is_loopback_bind,
 #    DotDualPeer.screen (a TLS ClientHello at a plain WebSocket listener closed at once).
-const LEVEL := 7
+# 8: DotRenderWarmup (draws a scene's materials once, out of sight, so shaders compile under a cover).
+const LEVEL := 8
 const OLDEST := 1
