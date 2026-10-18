@@ -15,6 +15,7 @@ var _passed := 0
 var _failed := 0
 var _section_count := 0
 var _records: Array = []
+var _sink := Callable()
 
 
 class FakeHost:
@@ -28,8 +29,19 @@ class FakeHost:
 func _ready() -> void:
 	DotLog.set_level(DotLog.Level.DEBUG)
 	DotLog.print_to_stdout = false
-	DotLog.add_sink(func(rec: Dictionary) -> void: _records.append(rec))
+	_sink = _on_record
+	DotLog.add_sink(_sink)
 	_run()
+
+
+func _on_record(rec: Dictionary) -> void:
+	_records.append(rec)
+
+
+# A sink left in DotLog's static list outlives this script, and the engine's exit teardown
+# then frees memory twice (a heap abort after "0 failed").
+func _exit_tree() -> void:
+	DotLog.remove_sink(_sink)
 
 
 func _run() -> void:

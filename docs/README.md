@@ -7,3 +7,4 @@
 | [addon-api.md](addon-api.md) | `DotAddonApi`, the per-addon `LEVEL`/`OLDEST` rule, `requires.json` |
 | [randomness.md](randomness.md) | `random/`: the (key, index) idea, the mixer's three traps, who still hand-rolls a generator |
 | [camera.md](camera.md) | `camera/`: why not `SpringArm3D`, the look-ahead sweep, fading people instead of colliding with them, the armed check |
+| [loading.md](loading.md) | `loading/`: `DotLoadGate` (holds, requirements, freezing, the timeout), who covers the screen, `DotLoadingCover`, older shells |

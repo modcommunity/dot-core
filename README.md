@@ -37,6 +37,7 @@ Requires Godot 4.7 or newer.
 | **`DotPaths`** | Path sanitisation that *refuses* traversal rather than cleaning it, atomic writes, and web filesystem flushing. |
 | **`DotHash`** | SHA-256, HMAC, constant-time comparison, base64url, CSPRNG tokens. |
 | **`DotRandomStream` and friends** | Randomness a second machine can reproduce. A draw is a pure function of (key, index), so two peers that draw in a different order do not diverge and adding a feature does not change yesterday's replay. `DotRandomTable` for weighted picks with pity, `DotRandomSchedule` for events in ticks, `DotRandomManager` for the named streams a game hands out. |
+| **`DotLoadGate` / `DotLoadingCover`** | "The game is not ready to be seen yet" in a few lines: `hold`/`release` reasons, `require` a predicate, `freeze` the local body until the world under it exists, `warm_up` extra materials, and a timeout that opens anyway with a warning naming what was still held. Covers the screen itself (and compiles the scene's shaders under the cover with `DotRenderWarmup`) unless a host such as a client shell claims the job. [docs/loading.md](docs/loading.md) |
 
 ## Try it
 

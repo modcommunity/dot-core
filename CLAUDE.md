@@ -16,6 +16,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | [docs/addon-api.md](docs/addon-api.md) | adding to or removing from any addon's API; `requires.json`; `requires.floor.json` for a game that guards a newer level |
 | [docs/randomness.md](docs/randomness.md) | anything in `random/`, or writing a seeded draw anywhere |
 | [docs/camera.md](docs/camera.md) | anything in `camera/`, or any camera that is not a player's own eyes |
+| [docs/loading.md](docs/loading.md) | anything in `loading/`, a loading screen, or a game shown before its world is in |
 
 ## Layout
 
@@ -36,7 +37,8 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | `net/` | `dot_transport*.gd` (base with address parsing incl. bracketed IPv6, websocket, enet, auto, dual), `dot_dual_peer.gd`, `dot_udp_demux.gd`, `dot_tcp_screen.gd` (closes a TLS hello at the plain WebSocket port, relays the rest), `dot_metered_peer.gd`, `dot_http.gd` |
 | `random/` | `dot_random_stream.gd`, `_table.gd`, `_schedule.gd`, `_config.gd`, `_manager.gd` (the node a game holds; the only thing that knows the seed) |
 | `camera/` | `dot_camera_probe.gd` (a swept sphere from a pivot, eased in ahead of an obstacle and out behind it), `dot_camera_boom.gd` (the `SpringArm3D` replacement built on it), `dot_camera_fade.gd` (fades characters between the camera and its focus, hides one at the camera; `bodies_fn` for characters with no collider), `dot_camera_check.gd` (flies a camera along a scripted path, armed), `dot_camera_tool.gd` (the base of every game's `tools/render_cameras.gd`), `dot_render_warmup.gd` (draws a scene's materials once out of sight so shaders compile under a loading screen) |
-| `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest`, `camera_selftest`, `scheduler_selftest`, `collision_audit_selftest`, `content_index_selftest` |
+| `loading/` | `dot_load_gate.gd` (`DotLoadGate`: `hold`/`release`/`require` reasons, `freeze` nodes while closed, `warm_up` items, a timeout that opens with a warning; finds a host by `dot_load_gate_host` metadata, else covers itself and runs `DotRenderWarmup`; registered as `dot_load_gate`), `dot_loading_cover.gd` (the stock cover) |
+| `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest`, `camera_selftest`, `scheduler_selftest`, `collision_audit_selftest`, `content_index_selftest`, `load_gate_selftest` |
 
 ## Running and testing
 
@@ -63,6 +65,7 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 - A game guarding an addon's newer level names it in `requires.floor.json`, or its pack still asks for the built level and an older host refuses it before the guard runs. [floors](docs/addon-api.md#requiresfloorjson-asking-less-of-an-addon-the-game-guards)
 - A seeded draw is a pure function of (key, index); derive streams by name. Splitmix constants are signed decimals, `>>` needs `_unsigned_shift`, and `String.hash()` is not a stable seed. [randomness](docs/randomness.md)
 - A camera that is not a player's own eyes goes through `DotCameraProbe` (or `DotCameraBoom`), never `SpringArm3D`; characters are faded by `DotCameraFade`, never collided with; a "never inside" check flies the same path with no probe and requires it to fail. [camera](docs/camera.md)
+- A suite that adds a `DotLog` sink removes it before exit: a Callable left in DotLog's static list aborts the process at teardown (heap corruption after "0 failed"). [loading](docs/loading.md#things-that-look-wrong-and-are-not)
 - `DotConfig` unknown keys warn, never fail; `sensitive_keys()` blocks environment and argv.
 - Set `require_type` on a `DotNodeRef` a host configures by path: a type error at boot beats a null call mid-session.
 
