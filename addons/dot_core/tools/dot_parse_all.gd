@@ -51,6 +51,10 @@ func _initialize() -> void:
 			p = "res://" + p.trim_prefix("./")
 		total += 1
 		printerr("PARSE> ", p)
+		# This script is the one running: it compiled or we would not be here, and
+		# reload() on a script in use fails, which would call every project's own copy bad.
+		if p == (get_script() as Script).resource_path:
+			continue
 		var s = ResourceLoader.load(p, "Script", ResourceLoader.CACHE_MODE_IGNORE)
 		if s == null or (s is GDScript and s.reload() != OK):
 			printerr("PARSE_FAIL ", p)
