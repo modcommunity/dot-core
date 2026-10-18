@@ -20,9 +20,13 @@ const FILES := {
 	"bad_ident.gd": "extends Node\nfunc f() -> void:\n\tUndeclaredThing.go()\n",
 	"dep_on_bad.gd": "extends Node\nconst B = preload(\"user://parse_all_selftest/bad_syntax.gd\")\n",
 	"ok_plain.gd": "extends Node\nfunc f() -> int:\n\treturn 2\n",
+	# A script that declares, or inherits, a non-static reload() (dot-vote's sources do):
+	# an untyped script.reload() in the tool reached this method and called it bad.
+	"own_reload.gd": "extends RefCounted\nfunc reload() -> int:\n\treturn 0\n",
+	"inherits_reload.gd": "extends \"user://parse_all_selftest/own_reload.gd\"\n",
 }
 const BAD := ["bad_syntax.gd", "bad_type.gd", "bad_ident.gd", "dep_on_bad.gd"]
-const GOOD := ["good.gd", "ok_plain.gd"]
+const GOOD := ["good.gd", "ok_plain.gd", "own_reload.gd", "inherits_reload.gd"]
 
 var _passed := 0
 var _failed := 0
@@ -47,7 +51,7 @@ func _ready() -> void:
 		"--script", TOOL, "--", ProjectSettings.globalize_path(DIR + "/list.txt")], out, true)
 	var text := str(out[0]) if not out.is_empty() else ""
 	_check(code == 1, "exits 1 when scripts are bad (got %d)" % code)
-	_check(text.contains("PARSED 6 FAILED"), "reports the total")
+	_check(text.contains("PARSED 8 FAILED"), "reports the total")
 	_check(text.contains("PARSE_END"), "ends with PARSE_END")
 	for f in BAD:
 		_check(text.contains("PARSE_FAIL %s/%s" % [DIR, f]), "names %s" % f)
@@ -57,14 +61,14 @@ func _ready() -> void:
 
 	# A good list alone exits 0 with nothing failed.
 	var lg := FileAccess.open(DIR + "/good_list.txt", FileAccess.WRITE)
-	lg.store_string("%s/good.gd\n%s/ok_plain.gd\n" % [DIR, DIR])
+	lg.store_string("%s/good.gd\n%s/ok_plain.gd\n%s/own_reload.gd\n%s/inherits_reload.gd\n" % [DIR, DIR, DIR, DIR])
 	lg.close()
 	var out2 := []
 	var code2 := OS.execute(OS.get_executable_path(), [
 		"--headless", "--path", ProjectSettings.globalize_path("res://"),
 		"--script", TOOL, "--", ProjectSettings.globalize_path(DIR + "/good_list.txt")], out2, true)
 	_check(code2 == 0, "exits 0 on a clean list (got %d)" % code2)
-	_check(str(out2[0]).contains("PARSED 2 FAILED 0"), "clean list: PARSED 2 FAILED 0")
+	_check(str(out2[0]).contains("PARSED 4 FAILED 0"), "clean list: PARSED 4 FAILED 0")
 
 	print("%d passed, %d failed" % [_passed, _failed])
 	if _failed > 0:

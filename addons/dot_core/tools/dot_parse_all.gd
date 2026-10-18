@@ -56,7 +56,11 @@ func _initialize() -> void:
 		if p == (get_script() as Script).resource_path:
 			continue
 		var s = ResourceLoader.load(p, "Script", ResourceLoader.CACHE_MODE_IGNORE)
-		if s == null or (s is GDScript and s.reload() != OK):
+		# Typed, so the call binds to the engine's GDScript.reload(). An untyped s.reload()
+		# is looked up in the script's own methods first: a script that declares, or
+		# inherits, a non-static reload() (dot-vote's sources do) errors there instead.
+		var gd := s as GDScript
+		if s == null or (gd != null and gd.reload() != OK):
 			printerr("PARSE_FAIL ", p)
 			bad += 1
 	printerr("PARSE_END")
