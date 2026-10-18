@@ -16,5 +16,6 @@ extends RefCounted
 # 7: DotTcpScreen, DotTransportDual.tls_hello_screen / TlsHelloScreen / is_loopback_bind,
 #    DotDualPeer.screen (a TLS ClientHello at a plain WebSocket listener closed at once).
 # 8: DotRenderWarmup (draws a scene's materials once, out of sight, so shaders compile under a cover).
-const LEVEL := 8
+# 9: DotContentIndex, DotContentEntry (what mounted packs provide, tagged by session: solo or online).
+const LEVEL := 9
 const OLDEST := 1

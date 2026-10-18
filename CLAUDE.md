@@ -21,6 +21,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 
 | Path | What |
 | --- | --- |
+| `core/dot_content_index.gd`, `dot_content_entry.gd` | what mounted packs provide (`entries(kind)`), tagged solo or online; registered as `dot_content_index`; dot-cloud fills it, catalogues read it; `examples/content_index_selftest` |
 | `core/dot_error.gd`, `dot_result.gd` | failure codes (`CODE_*` is the contract); ok/value/error, where reading `.value` on a failure errors |
 | `core/dot_platform.gd`, `dot_web.gd` | cached capability detection; JavaScriptBridge access, safe on every platform |
 | `core/dot_paths.gd` | path sanitisation (traversal refusal), atomic writes |
@@ -35,7 +36,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | `net/` | `dot_transport*.gd` (base with address parsing incl. bracketed IPv6, websocket, enet, auto, dual), `dot_dual_peer.gd`, `dot_udp_demux.gd`, `dot_tcp_screen.gd` (closes a TLS hello at the plain WebSocket port, relays the rest), `dot_metered_peer.gd`, `dot_http.gd` |
 | `random/` | `dot_random_stream.gd`, `_table.gd`, `_schedule.gd`, `_config.gd`, `_manager.gd` (the node a game holds; the only thing that knows the seed) |
 | `camera/` | `dot_camera_probe.gd` (a swept sphere from a pivot, eased in ahead of an obstacle and out behind it), `dot_camera_boom.gd` (the `SpringArm3D` replacement built on it), `dot_camera_fade.gd` (fades characters between the camera and its focus, hides one at the camera; `bodies_fn` for characters with no collider), `dot_camera_check.gd` (flies a camera along a scripted path, armed), `dot_camera_tool.gd` (the base of every game's `tools/render_cameras.gd`), `dot_render_warmup.gd` (draws a scene's materials once out of sight so shaders compile under a loading screen) |
-| `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest`, `camera_selftest`, `scheduler_selftest`, `collision_audit_selftest` |
+| `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest`, `camera_selftest`, `scheduler_selftest`, `collision_audit_selftest`, `content_index_selftest` |
 
 ## Running and testing
 

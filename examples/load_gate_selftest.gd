@@ -1,0 +1,350 @@
+extends Node
+
+## Exercises [DotLoadGate] and [DotLoadingCover]: holds and releases, predicates, the
+## timeout and its warning, freezing, closing again, the camera requirement and its own
+## warm-up, a host claiming the cover, and the older shells' root signal.
+##
+## [codeblock]
+## godot --headless --path . res://examples/load_gate_selftest.tscn
+## [/codeblock]
+
+const SECTIONS := 8
+const CHECKS := 58
+
+var _passed := 0
+var _failed := 0
+var _section_count := 0
+var _records: Array = []
+
+
+class FakeHost:
+	extends RefCounted
+	var adopted: Array = []
+
+	func adopt_load_gate(gate: Object) -> void:
+		adopted.append(gate)
+
+
+func _ready() -> void:
+	DotLog.set_level(DotLog.Level.DEBUG)
+	DotLog.print_to_stdout = false
+	DotLog.add_sink(func(rec: Dictionary) -> void: _records.append(rec))
+	_run()
+
+
+func _run() -> void:
+	_line("dot-core load gate self-test")
+	_line("")
+
+	await _test_hold_release()
+	await _test_predicates()
+	await _test_timeout()
+	await _test_freeze()
+	await _test_reclose()
+	await _test_camera_and_own_warmup()
+	await _test_hosted()
+	await _test_finding_and_old_shells()
+
+	_line("")
+	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
+	if _section_count != SECTIONS:
+		_line("ERROR: %d of %d sections ran." % [_section_count, SECTIONS])
+		get_tree().quit(1)
+		return
+	if _passed + _failed != CHECKS:
+		_line("ERROR: %d checks ran, %d expected. A section aborted part-way." % [_passed + _failed, CHECKS])
+		get_tree().quit(1)
+		return
+	get_tree().quit(1 if _failed > 0 else 0)
+
+
+## A game root with a gate that needs no camera, so a test controls every reason itself.
+func _make(no_camera := true) -> DotLoadGate:
+	var root := Node.new()
+	root.name = "Game%d" % _section_count
+	add_child(root)
+	var gate := DotLoadGate.new()
+	gate.register_service = false
+	gate.require_camera = not no_camera
+	gate.warm_timeout_sec = 0.2
+	root.add_child(gate)
+	return gate
+
+
+func _frames(n: int) -> void:
+	for i in n:
+		await get_tree().physics_frame
+	await get_tree().process_frame
+
+
+func _drop(gate: DotLoadGate) -> void:
+	var root := gate.get_parent()
+	remove_child(root)
+	root.free()
+
+
+func _test_hold_release() -> void:
+	_section("holds and releases")
+	var gate := _make()
+	var said: Array = []
+	gate.progress_changed.connect(func(f: float, t: String) -> void: said.append([f, t]))
+	var opened: Array = []
+	gate.opened.connect(func() -> void: opened.append(true))
+	gate.hold(&"map", "Loading the map")
+	gate.hold(&"players", "Waiting for players")
+	_check(not gate.is_open() and gate.state() == DotLoadGate.State.CLOSED, "closed while something is held")
+	_check(gate.status_text() == "Waiting for players", "the newest hold says what is happening", gate.status_text())
+	_check(gate.reasons() == [&"map", &"players"], "reasons lists both, oldest first", str(gate.reasons()))
+	_check(gate.is_cover_showing(), "with no host the gate's own cover is up")
+	gate.set_progress(0.5, "Half way")
+	_check(not said.is_empty() and said[-1] == [0.5, "Half way"], "set_progress is announced", str(said.back()))
+	_check((gate.cover as DotLoadingCover).status() == "Half way", "and shown on the cover")
+	gate.set_progress(-1.0)
+	gate.release(&"players")
+	_check(gate.status_text() == "Loading the map", "releasing one hands the line to the other", gate.status_text())
+	await _frames(6)
+	_check(not gate.is_open(), "still closed while one is held")
+	gate.release(&"map")
+	gate.release(&"never-held")
+	await _frames(6)
+	_check(gate.is_open() and opened.size() == 1, "open once nothing is held", str(gate.describe()))
+	_check(not gate.is_cover_showing(), "and the cover is gone")
+	_check(gate.describe_lines().size() == 4 and gate.describe_lines()[0].begins_with("load gate: OPEN"), "describe_lines", str(gate.describe_lines()))
+	_drop(gate)
+
+
+func _test_predicates() -> void:
+	_section("requirements polled every frame")
+	var gate := _make()
+	var flag := [false]
+	gate.require(&"level", func() -> bool: return flag[0], "Building the level")
+	_check(gate.is_holding(&"level") and gate.status_text() == "Building the level", "a requirement holds and speaks")
+	await _frames(5)
+	_check(not gate.is_open(), "closed while it is false")
+	flag[0] = true
+	await _frames(6)
+	_check(not gate.is_holding(&"level"), "dropped once true")
+	_check(gate.is_open(), "and the gate opens")
+	# A predicate whose object is gone counts as met, rather than holding for ever.
+	var gate2 := _make()
+	var owner_node := Node.new()
+	gate2.require(&"gone", Callable(owner_node, &"is_inside_tree"))
+	owner_node.free()
+	await _frames(6)
+	_check(gate2.is_open(), "a predicate on a freed object counts as met")
+	_drop(gate)
+	_drop(gate2)
+
+
+func _test_timeout() -> void:
+	_section("the timeout opens it with a warning")
+	var gate := _make()
+	gate.timeout_sec = 0.3
+	gate.hold(&"map", "Loading the map")
+	gate.require(&"never", func() -> bool: return false)
+	_records.clear()
+	var t0 := Time.get_ticks_msec()
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+		await get_tree().process_frame
+	_check(gate.is_open(), "open after the timeout")
+	var warned: Array = _records.filter(func(r: Dictionary) -> bool:
+		return int(r["level"]) == DotLog.Level.WARN and r["channel"] == DotLoadGate.CHANNEL)
+	_check(warned.size() == 1, "exactly one warning", str(warned.size()))
+	var held: Array = (warned[0]["fields"] as Dictionary).get("still_held", []) if warned.size() > 0 else []
+	_check(held.has("map") and held.has("never"), "naming every reason still held", str(held))
+	_check(gate.reasons().is_empty(), "and nothing is held afterwards")
+	var infos: Array = _records.filter(func(r: Dictionary) -> bool:
+		return int(r["level"]) == DotLog.Level.INFO and r["channel"] == DotLoadGate.CHANNEL)
+	_check(infos.size() == 1 and (infos[0]["fields"]["timed_out"] as Array).size() == 2, "the open line says it timed out", str(infos))
+	_drop(gate)
+
+
+func _test_freeze() -> void:
+	_section("freezing and restoring process_mode")
+	var gate := _make()
+	var body := Node3D.new()
+	body.process_mode = Node.PROCESS_MODE_PAUSABLE
+	var other := Node.new()
+	other.process_mode = Node.PROCESS_MODE_ALWAYS
+	gate.get_parent().add_child(body)
+	gate.get_parent().add_child(other)
+	gate.hold(&"map")
+	gate.freeze(body)
+	gate.freeze(other)
+	gate.freeze(body)  # twice is once
+	_check(body.process_mode == Node.PROCESS_MODE_DISABLED and other.process_mode == Node.PROCESS_MODE_DISABLED, "frozen while closed")
+	_check(int(gate.describe()["frozen"]) == 2, "counted once each", str(gate.describe()))
+	gate.release(&"map")
+	await _frames(6)
+	_check(gate.is_open(), "open")
+	_check(body.process_mode == Node.PROCESS_MODE_PAUSABLE and other.process_mode == Node.PROCESS_MODE_ALWAYS, "each gets its own mode back")
+	var late := Node.new()
+	late.process_mode = Node.PROCESS_MODE_INHERIT
+	gate.get_parent().add_child(late)
+	gate.freeze(late)
+	_check(late.process_mode == Node.PROCESS_MODE_INHERIT, "a node frozen while open is only remembered")
+	gate.hold(&"map2")
+	_check(body.process_mode == Node.PROCESS_MODE_DISABLED and late.process_mode == Node.PROCESS_MODE_DISABLED, "closing again freezes every remembered node")
+	other.free()
+	gate.unfreeze(late)
+	_check(late.process_mode == Node.PROCESS_MODE_INHERIT, "unfreeze restores at once")
+	gate.release(&"map2")
+	await _frames(6)
+	_check(body.process_mode == Node.PROCESS_MODE_PAUSABLE and int(gate.describe()["watched"]) == 1, "a freed node and an unfrozen one are forgotten", str(gate.describe()))
+	gate.hold(&"x")
+	var root := gate.get_parent()
+	root.remove_child(gate)
+	_check(body.process_mode == Node.PROCESS_MODE_PAUSABLE, "a gate leaving the tree never leaves a body frozen")
+	gate.free()
+	remove_child(root)
+	root.free()
+
+
+func _test_reclose() -> void:
+	_section("a second hold closes it again")
+	var gate := _make()
+	var log: Array = []
+	gate.opened.connect(func() -> void: log.append("opened"))
+	gate.closed.connect(func() -> void: log.append("closed"))
+	gate.ready_to_show.connect(func() -> void: log.append("ready"))
+	await _frames(6)
+	_check(gate.is_open() and log == ["ready", "opened"], "nothing held: ready, then open", str(log))
+	gate.hold(&"map", "Changing map")
+	_check(not gate.is_open() and log.back() == "closed", "a hold while open closes it and says so", str(log))
+	_check(gate.is_cover_showing() and (gate.cover as DotLoadingCover).status() == "Changing map", "and the cover is back with the new line")
+	gate.release(&"map")
+	await _frames(6)
+	_check(log == ["ready", "opened", "closed", "ready", "opened"], "and it opens again", str(log))
+	gate.hold(&"a")
+	gate.hold(&"a")
+	_check(log.count("closed") == 2, "holding twice closes once")
+	_drop(gate)
+
+
+func _test_camera_and_own_warmup() -> void:
+	_section("a camera inside the game, and the gate's own warm-up")
+	var gate := _make(false)
+	gate.warm_up([StandardMaterial3D.new(), null])
+	_check(gate.warm_items().size() == 1, "warm_up keeps items and drops nulls")
+	await _frames(8)
+	_check(not gate.is_open() and gate.is_holding(DotLoadGate.REASON_CAMERA), "no camera in the game: held")
+	var elsewhere := Camera3D.new()
+	add_child(elsewhere)
+	elsewhere.make_current()
+	await _frames(6)
+	_check(not gate.is_open(), "a camera outside the game does not count")
+	var cam := Camera3D.new()
+	var mesh := MeshInstance3D.new()
+	mesh.mesh = BoxMesh.new()
+	gate.get_parent().add_child(mesh)
+	gate.get_parent().add_child(cam)
+	cam.make_current()
+	_check(gate.collect_warm_items().size() >= 2, "collect_warm_items has the tree's mesh and the extra", str(gate.collect_warm_items().size()))
+	var t0 := Time.get_ticks_msec()
+	var saw_warming := [false]
+	gate.ready_to_show.connect(func() -> void: saw_warming[0] = gate.state() == DotLoadGate.State.WARMING)
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+		await get_tree().process_frame
+	_check(gate.is_open() and saw_warming[0], "a camera in the game opens it, through a warm-up", str(gate.describe()))
+	await get_tree().process_frame
+	_check(not cam.has_node("LoadGateWarmup"), "the warm-up is gone from the camera")
+	remove_child(elsewhere)
+	elsewhere.free()
+	_drop(gate)
+
+
+func _test_hosted() -> void:
+	_section("a host claims the cover")
+	var host := FakeHost.new()
+	var root := Node.new()
+	root.name = "HostedGame"
+	add_child(root)
+	set_meta(DotLoadGate.HOST_META, host)
+	var gate := DotLoadGate.new()
+	gate.register_service = false
+	gate.require_camera = false
+	gate.host_wait_sec = 0.4
+	root.add_child(gate)
+	remove_meta(DotLoadGate.HOST_META)
+	_check(host.adopted == [gate], "the host's adopt_load_gate is called on entering the tree")
+	_check(gate.is_hosted() and not gate.is_cover_showing(), "and the gate shows no cover of its own")
+	var ready := [0]
+	gate.ready_to_show.connect(func() -> void: ready[0] += 1)
+	await _frames(6)
+	_check(ready[0] == 1 and gate.state() == DotLoadGate.State.WARMING, "nothing held: it waits for the host's warm-up", str(gate.describe()))
+	gate.host_finished()
+	_check(gate.is_open(), "host_finished opens it")
+	gate.hold(&"map")
+	_check(not gate.is_cover_showing(), "closing again still shows nothing of its own")
+	gate.release(&"map")
+	await _frames(6)
+	_records.clear()
+	var t0 := Time.get_ticks_msec()
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+		await get_tree().process_frame
+	_check(gate.is_open(), "a host that never finishes is not waited on for ever")
+	_check(_records.any(func(r: Dictionary) -> bool: return int(r["level"]) == DotLog.Level.WARN), "and that is a warning")
+	# Claimed later, by a host that found the gate itself.
+	var gate2 := _make()
+	_check(gate2.is_cover_showing(), "an unclaimed gate covers")
+	var host2 := FakeHost.new()
+	gate2.hosted_by(host2)
+	_check(not gate2.is_cover_showing() and host2.adopted.size() == 1, "hosted_by takes the cover down and tells the host")
+	remove_child(root)
+	root.free()
+	_drop(gate2)
+
+
+func _test_finding_and_old_shells() -> void:
+	_section("finding the gate, and the root contract older shells read")
+	var root := Node.new()
+	add_child(root)
+	var deep := Node.new()
+	root.add_child(deep)
+	var gate := DotLoadGate.new()
+	gate.require_camera = false
+	gate.service_scope = &"selftest"
+	root.add_child(gate)
+	_check(DotLoadGate.of(deep) == gate, "of() finds it from any node under the game")
+	_check(DotRegistry.get_service(DotRegistry.scoped_name(DotLoadGate.SERVICE, &"selftest")) == gate, "registered under its scope")
+	_check(DotLoadGate.of(self) == null, "and not from outside the game")
+	_check(root.has_signal(&"ready_to_show"), "the root carries ready_to_show for an older shell")
+	var heard := [0]
+	root.connect(&"ready_to_show", func() -> void: heard[0] += 1)
+	await _frames(6)
+	_check(gate.is_open() and heard[0] == 1, "emitted on the root when it opens")
+	# A root that declares its own signal keeps it, and the gate does not emit it.
+	var own := preload("res://examples/load_gate_selftest_root.gd").new()
+	add_child(own)
+	var gate2 := DotLoadGate.new()
+	gate2.register_service = false
+	gate2.require_camera = false
+	own.add_child(gate2)
+	await _frames(6)
+	_check(gate2.is_open() and own.emitted == 0, "a root with its own ready_to_show is left to emit it")
+	root.remove_child(gate)
+	_check(not root.has_meta(DotLoadGate.META), "leaving the tree takes the meta away")
+	_check(DotRegistry.get_service(DotRegistry.scoped_name(DotLoadGate.SERVICE, &"selftest")) == null, "and the registration")
+	gate.free()
+	remove_child(root)
+	root.free()
+	remove_child(own)
+	own.free()
+
+
+func _section(title: String) -> void:
+	_section_count += 1
+	_line("== %s" % title)
+
+
+func _check(ok: bool, what: String, detail: String = "") -> void:
+	if ok:
+		_passed += 1
+		_line("  ok   %s" % what)
+	else:
+		_failed += 1
+		_line("  FAIL %s%s" % [what, (" -- " + detail) if detail != "" else ""])
+
+
+func _line(s: String) -> void:
+	print(s)
