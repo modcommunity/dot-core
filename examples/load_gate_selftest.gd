@@ -1,15 +1,15 @@
 extends Node
 
 ## Exercises [DotLoadGate] and [DotLoadingCover]: holds and releases, predicates, the
-## timeout and its warning, freezing, closing again, the camera requirement and its own
+## timeout and its warning, freezing, settling frozen bodies under the cover, closing again, the camera requirement and its own
 ## warm-up, a host claiming the cover, and the older shells' root signal.
 ##
 ## [codeblock]
 ## godot --headless --path . res://examples/load_gate_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 8
-const CHECKS := 58
+const SECTIONS := 9
+const CHECKS := 76
 
 var _passed := 0
 var _failed := 0
@@ -52,6 +52,7 @@ func _run() -> void:
 	await _test_predicates()
 	await _test_timeout()
 	await _test_freeze()
+	await _test_settle()
 	await _test_reclose()
 	await _test_camera_and_own_warmup()
 	await _test_hosted()
@@ -210,6 +211,117 @@ func _test_freeze() -> void:
 	gate.free()
 	remove_child(root)
 	root.free()
+
+
+## A body frozen in the air, over a floor.
+func _settle_rig(gate: DotLoadGate) -> Array:
+	var root := gate.get_parent()
+	var floor_body := StaticBody3D.new()
+	var floor_shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(20, 0.2, 20)
+	floor_shape.shape = box
+	floor_body.add_child(floor_shape)
+	root.add_child(floor_body)
+	var body: CharacterBody3D = (load("res://examples/load_gate_settle_body.gd") as GDScript).new()
+	var shape := CollisionShape3D.new()
+	var cube := BoxShape3D.new()
+	cube.size = Vector3.ONE
+	shape.shape = cube
+	body.add_child(shape)
+	body.position = Vector3(0, 1.0, 0)  # bottom 0.4 m above the floor's top
+	root.add_child(body)
+	var sampler := Node.new()
+	sampler.process_mode = Node.PROCESS_MODE_PAUSABLE
+	root.add_child(sampler)
+	return [body, sampler]
+
+
+func _test_settle() -> void:
+	_section("frozen bodies settle under the cover, input off")
+	var gate := _make()
+	var rig := _settle_rig(gate)
+	var body: CharacterBody3D = rig[0]
+	var sampler: Node = rig[1]
+	var at_open: Array = []
+	gate.opened.connect(func() -> void: at_open.append([body.is_on_floor(), body.position.y, body.input_enabled]))
+	gate.hold(&"map")
+	gate.freeze(body)
+	gate.freeze_input(sampler)
+	await _frames(4)
+	_check(body.process_mode == Node.PROCESS_MODE_DISABLED and body.ticks == 0, "frozen while held: no tick at all")
+	_records.clear()
+	gate.release(&"map")
+	var t0 := Time.get_ticks_msec()
+	while not gate.is_settling() and not gate.is_open() and Time.get_ticks_msec() - t0 < 2000:
+		await get_tree().physics_frame
+	_check(gate.is_settling() and not gate.is_open(), "released: it settles before it opens", str(gate.describe()))
+	_check(gate.is_cover_showing() and gate.state() == DotLoadGate.State.CLOSED, "still covered and still CLOSED to anyone asking")
+	await _frames(3)
+	_check(body.ticks > 0 and body.position.y < 1.0, "the frozen body simulates: it is falling", "ticks %d y %.3f" % [body.ticks, body.position.y])
+	_check(not body.input_enabled and body.input_ticks == 0, "with its input_enabled off", "input ticks %d" % body.input_ticks)
+	_check(not body.is_processing_unhandled_input() and body.has_meta(DotLoadGate.SETTLING_META), "its input events off and the settling meta on")
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_W
+	ev.pressed = true
+	Input.parse_input_event(ev)
+	await _frames(1)
+	_check(body.events == 0, "a key pressed while settling never reaches it", str(body.events))
+	_check(sampler.process_mode == Node.PROCESS_MODE_DISABLED, "a freeze_input node stays stopped through settling")
+	var input_seen := false
+	t0 = Time.get_ticks_msec()
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+		input_seen = input_seen or body.input_enabled
+		await get_tree().physics_frame
+	_check(gate.is_open() and at_open.size() == 1 and bool(at_open[0][0]), "it opens with the body on the floor", str(at_open))
+	_check(not input_seen and body.input_ticks == 0, "input stayed off for every frame until then", "input ticks %d" % body.input_ticks)
+	_check(body.input_enabled and body.is_processing_unhandled_input() and not body.has_meta(DotLoadGate.SETTLING_META), "is given back once open")
+	_check(sampler.process_mode == Node.PROCESS_MODE_PAUSABLE, "and the freeze_input node gets its own mode back")
+	var settled: Array = _records.filter(func(r: Dictionary) -> bool: return r["message"] == "settled")
+	_check(settled.size() == 1 and bool(settled[0]["fields"]["at_rest"]) and int(settled[0]["fields"]["frames"]) < gate.settle_frames,
+		"ended early, at rest, under the cap", str(settled))
+	# A map change: frozen again, put back in the air, settles again.
+	gate.hold(&"map2")
+	_check(body.process_mode == Node.PROCESS_MODE_DISABLED and not gate.is_settling(), "a map change freezes it again")
+	body.position = Vector3(0, 1.0, 0)
+	body.velocity = Vector3.ZERO
+	gate.release(&"map2")
+	var seen_settling := false
+	t0 = Time.get_ticks_msec()
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+		seen_settling = seen_settling or gate.is_settling()
+		await get_tree().physics_frame
+	_check(seen_settling and gate.is_open() and at_open.size() == 2 and bool(at_open[1][0]), "and settles again before reopening", str(at_open))
+	# Held again while settling: stopped again, and the next release settles afresh.
+	body.position = Vector3(0, 1.0, 0)
+	gate.hold(&"map3")
+	gate.release(&"map3")
+	t0 = Time.get_ticks_msec()
+	while not gate.is_settling() and Time.get_ticks_msec() - t0 < 2000:
+		await get_tree().physics_frame
+	gate.hold(&"map4")
+	_check(not gate.is_settling() and body.process_mode == Node.PROCESS_MODE_DISABLED and not body.input_enabled, "a hold while settling stops it again, input still off")
+	gate.release(&"map4")
+	t0 = Time.get_ticks_msec()
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+		await get_tree().physics_frame
+	_check(gate.is_open() and body.input_enabled, "and it opens after settling afresh")
+	_drop(gate)
+	# settle_frames 0: the old behaviour, frozen until open.
+	var gate2 := _make()
+	gate2.settle_frames = 0
+	var rig2 := _settle_rig(gate2)
+	var body2: CharacterBody3D = rig2[0]
+	var mode_at_open: Array = []
+	gate2.opened.connect(func() -> void: mode_at_open.append(body2.ticks))
+	gate2.freeze(body2)
+	t0 = Time.get_ticks_msec()
+	var settling2 := false
+	while not gate2.is_open() and Time.get_ticks_msec() - t0 < 2000:
+		settling2 = settling2 or gate2.is_settling()
+		await get_tree().physics_frame
+	_check(gate2.is_open() and not settling2 and mode_at_open == [0], "settle_frames 0 skips it: frozen until open", str(mode_at_open))
+	_drop(gate2)
 
 
 func _test_reclose() -> void:
