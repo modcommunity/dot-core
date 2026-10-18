@@ -57,6 +57,10 @@ const REASON_CAMERA := &"camera"
 ## The reason the gate holds under while waiting for a host or a warmup; never released by
 ## a game.
 const REASON_SETTLE := &"settle"
+## Settling: a body whose position moved less than this (metres) in a physics frame is still.
+const REST_EPSILON := 0.001
+## Settling: consecutive still physics frames after which a body counts as at rest.
+const REST_FRAMES := 3
 ## Metadata on each frozen node while it settles (simulating, still covered, input off). A
 ## node that reads input itself can check it, or ask the gate's [method is_settling].
 const SETTLING_META := &"dot_load_gate_settling"
@@ -98,10 +102,16 @@ signal progress_changed(fraction: float, text: String)
 ## standing. 0 skips settling: frozen nodes then start the moment the gate opens.
 @export var settle_frames: int = 30
 
-## End settling early, after two frames, once every frozen body is at rest: on the floor
-## (when it has [code]is_on_floor()[/code]) and slower than [member settle_rest_speed]
-## (its [code]velocity[/code] or [code]linear_velocity[/code]). Asked by name, so any body
-## type answers.
+## End settling early once every frozen body is at rest. A body is at rest when the engine
+## says so (it has [code]is_on_floor()[/code], is on the floor, and is slower than
+## [member settle_rest_speed] by its [code]velocity[/code] or [code]linear_velocity[/code]:
+## two frames) OR when its [code]global_position[/code] has moved less than
+## [constant REST_EPSILON] for [constant REST_FRAMES] physics frames in a row. The position
+## test is the one that cannot be fooled: a body without [code]is_on_floor()[/code] or
+## [code]velocity[/code] used to count as at rest at once, lifting the cover on a body still
+## falling, and a [code]CharacterBody3D[/code] the game moves by script never reports a
+## floor or a velocity that matches its motion, so it always ran the whole cap. A node with
+## no position (a plain [Node]) is at rest. Asked by name, so any body type answers.
 @export var settle_until_rest: bool = true
 
 ## Metres per second under which a settling body counts as at rest.
@@ -470,6 +480,7 @@ func _physics_process(_delta: float) -> void:
 		_settled = 0
 	elif _settling:
 		_settle_ran += 1
+		_track_rest()
 		var rest := settle_until_rest and _settle_ran >= 2 and _bodies_at_rest()
 		if _settle_ran >= settle_frames or rest:
 			_settling = false
@@ -493,6 +504,8 @@ func _begin_settle() -> bool:
 			continue
 		_hold_input(node)
 		_restore_one(entry)
+		entry["rest_pos"] = _position_of(node)
+		entry["still"] = 0
 		any = true
 	if not any:
 		return false
@@ -500,6 +513,33 @@ func _begin_settle() -> bool:
 	_settle_ran = 0
 	DotLog.debug(CHANNEL, "settling the frozen nodes under the cover", {"frames": settle_frames})
 	return true
+
+
+## The node's global position, or null for a node without one.
+func _position_of(node: Node) -> Variant:
+	if node is Node3D:
+		return (node as Node3D).global_position
+	if node is Node2D:
+		return (node as Node2D).global_position
+	return null
+
+
+## Once per settling physics frame: counts consecutive frames each body held still.
+func _track_rest() -> void:
+	for id: int in _frozen:
+		var entry: Dictionary = _frozen[id]
+		if bool(entry.get("through_settle", false)):
+			continue
+		var node := (entry["ref"] as WeakRef).get_ref() as Node
+		if node == null:
+			continue
+		var pos: Variant = _position_of(node)
+		var last: Variant = entry.get("rest_pos")
+		if pos != null and last != null and pos.distance_to(last) < REST_EPSILON:
+			entry["still"] = int(entry.get("still", 0)) + 1
+		else:
+			entry["still"] = 0
+		entry["rest_pos"] = pos
 
 
 func _bodies_at_rest() -> bool:
@@ -510,7 +550,11 @@ func _bodies_at_rest() -> bool:
 		var node := (entry["ref"] as WeakRef).get_ref() as Node
 		if node == null:
 			continue
-		if node.has_method(&"is_on_floor") and not bool(node.call(&"is_on_floor")):
+		if _position_of(node) == null:
+			continue
+		if int(entry.get("still", 0)) >= REST_FRAMES:
+			continue
+		if not node.has_method(&"is_on_floor") or not bool(node.call(&"is_on_floor")):
 			return false
 		var v: Variant = null
 		if &"velocity" in node:

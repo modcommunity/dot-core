@@ -8,8 +8,8 @@ extends Node
 ## godot --headless --path . res://examples/load_gate_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 9
-const CHECKS := 76
+const SECTIONS := 10
+const CHECKS := 84
 
 var _passed := 0
 var _failed := 0
@@ -53,6 +53,7 @@ func _run() -> void:
 	await _test_timeout()
 	await _test_freeze()
 	await _test_settle()
+	await _test_settle_by_position()
 	await _test_reclose()
 	await _test_camera_and_own_warmup()
 	await _test_hosted()
@@ -188,7 +189,7 @@ func _test_freeze() -> void:
 	_check(body.process_mode == Node.PROCESS_MODE_DISABLED and other.process_mode == Node.PROCESS_MODE_DISABLED, "frozen while closed")
 	_check(int(gate.describe()["frozen"]) == 2, "counted once each", str(gate.describe()))
 	gate.release(&"map")
-	await _frames(6)
+	await _frames(12)
 	_check(gate.is_open(), "open")
 	_check(body.process_mode == Node.PROCESS_MODE_PAUSABLE and other.process_mode == Node.PROCESS_MODE_ALWAYS, "each gets its own mode back")
 	var late := Node.new()
@@ -202,7 +203,7 @@ func _test_freeze() -> void:
 	gate.unfreeze(late)
 	_check(late.process_mode == Node.PROCESS_MODE_INHERIT, "unfreeze restores at once")
 	gate.release(&"map2")
-	await _frames(6)
+	await _frames(12)
 	_check(body.process_mode == Node.PROCESS_MODE_PAUSABLE and int(gate.describe()["watched"]) == 1, "a freed node and an unfrozen one are forgotten", str(gate.describe()))
 	gate.hold(&"x")
 	var root := gate.get_parent()
@@ -322,6 +323,73 @@ func _test_settle() -> void:
 		await get_tree().physics_frame
 	_check(gate2.is_open() and not settling2 and mode_at_open == [0], "settle_frames 0 skips it: frozen until open", str(mode_at_open))
 	_drop(gate2)
+
+
+## Settling judged by position: bodies the engine cannot call at rest.
+func _test_settle_by_position() -> void:
+	_section("settle judges rest by position when the engine cannot")
+	# Falling by script with no is_on_floor()/velocity: the cover stays until it stops.
+	var gate := _make()
+	var faller: Node3D = (load("res://examples/load_gate_faller.gd") as GDScript).new()
+	faller.position.y = 1.0  # 20 frames to land
+	gate.get_parent().add_child(faller)
+	var y_at_open: Array = []
+	gate.opened.connect(func() -> void: y_at_open.append(faller.position.y))
+	gate.hold(&"map")
+	gate.freeze(faller)
+	await _frames(2)
+	gate.release(&"map")
+	var t0 := Time.get_ticks_msec()
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 4000:
+		await get_tree().physics_frame
+	_check(gate.is_open() and y_at_open.size() == 1, "a faller with no floor API still opens", str(y_at_open))
+	_check(y_at_open.size() == 1 and is_zero_approx(y_at_open[0]), "and only after it stopped falling", str(y_at_open))
+	_check(faller.ticks > 15, "it was simulated through the fall", str(faller.ticks))
+	_drop(gate)
+	# A script-moved CharacterBody3D that has landed: ends settle well under the cap.
+	_records.clear()
+	var gate2 := _make()
+	gate2.settle_frames = 60
+	var mover: CharacterBody3D = (load("res://examples/load_gate_script_body.gd") as GDScript).new()
+	gate2.get_parent().add_child(mover)
+	gate2.freeze(mover)
+	t0 = Time.get_ticks_msec()
+	while not gate2.is_open() and Time.get_ticks_msec() - t0 < 4000:
+		await get_tree().physics_frame
+	var settled: Array = _records.filter(func(r: Dictionary) -> bool: return r["message"] == "settled")
+	_check(gate2.is_open() and not mover.is_on_floor(), "a script-moved body never reports a floor, and it opens")
+	_check(settled.size() == 1 and int(settled[0]["fields"]["frames"]) < 10 and bool(settled[0]["fields"]["at_rest"]),
+		"settle ended early by position, not at the cap", str(settled))
+	_drop(gate2)
+	# A node with no position does not block.
+	_records.clear()
+	var gate3 := _make()
+	gate3.settle_frames = 60
+	var plain := Node.new()
+	gate3.get_parent().add_child(plain)
+	gate3.freeze(plain)
+	t0 = Time.get_ticks_msec()
+	while not gate3.is_open() and Time.get_ticks_msec() - t0 < 4000:
+		await get_tree().physics_frame
+	settled = _records.filter(func(r: Dictionary) -> bool: return r["message"] == "settled")
+	_check(gate3.is_open(), "a non-spatial frozen node opens the gate")
+	_check(settled.size() == 1 and int(settled[0]["fields"]["frames"]) <= 3 and bool(settled[0]["fields"]["at_rest"]),
+		"and does not hold settling", str(settled))
+	_drop(gate3)
+	# A mix: one body at rest must not end settle while another still falls.
+	var gate4 := _make()
+	var f2: Node3D = (load("res://examples/load_gate_faller.gd") as GDScript).new()
+	f2.position.y = 1.0
+	var p2 := Node.new()
+	gate4.get_parent().add_child(f2)
+	gate4.get_parent().add_child(p2)
+	gate4.freeze(p2)
+	gate4.freeze(f2)
+	t0 = Time.get_ticks_msec()
+	while not gate4.is_open() and Time.get_ticks_msec() - t0 < 4000:
+		await get_tree().physics_frame
+	_check(gate4.is_open() and is_zero_approx(f2.position.y), "one body at rest does not cut the others short", str(f2.position.y))
+	_drop(gate4)
 
 
 func _test_reclose() -> void:
