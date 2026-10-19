@@ -11,7 +11,7 @@ extends Node
 ## [/codeblock]
 
 const SECTIONS := 14
-const CHECKS := 90
+const CHECKS := 95
 
 const PORT := 47391
 
@@ -744,8 +744,8 @@ func _test_tls_hello_screened() -> void:
 	var port := PORT + 50
 	var auto_made := DotTransportDual.new().create_server(port, "127.0.0.1")
 	_check(
-		auto_made.ok and (auto_made.value as DotDualPeer).screen == null,
-		"auto: a loopback listener (behind a TLS terminator) is not screened"
+		auto_made.ok and (auto_made.value as DotDualPeer).screen != null,
+		"auto: a loopback listener (behind a TLS terminator) is screened too, a proxied scanner reaches it"
 	)
 	if auto_made.ok:
 		(auto_made.value as DotDualPeer).close()
@@ -753,7 +753,7 @@ func _test_tls_hello_screened() -> void:
 		DotTransportDual.is_loopback_bind("127.0.0.1") and DotTransportDual.is_loopback_bind("::1")
 			and not DotTransportDual.is_loopback_bind("") and not DotTransportDual.is_loopback_bind("*")
 			and not DotTransportDual.is_loopback_bind("0.0.0.0") and not DotTransportDual.is_loopback_bind("10.0.0.5"),
-		"auto screens every interface and a public address, not loopback"
+		"is_loopback_bind names loopback and nothing wider"
 	)
 	var t := DotTransportDual.new()
 	t.tls_hello_screen = DotTransportDual.TlsHelloScreen.ON
@@ -859,13 +859,37 @@ func _test_tls_hello_screened() -> void:
 	plain.close()
 
 
+## Collects the engine's own error output: a script cannot read stderr, but a [Logger] sees
+## every engine error. Only wsl_peer's matter here.
+class EngineErrors extends Logger:
+	var wsl_peer: Array[String] = []
+
+	func _log_error(
+		_function: String, file: String, _line: int, code: String, rationale: String,
+		_editor_notify: bool, _error_type: int, _script_backtraces: Array
+	) -> void:
+		if file.contains("wsl_peer"):
+			wsl_peer.append(rationale if rationale != "" else code)
+
+
+const _KEY := "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+
+
 ## A scanner's plain "GET /" (no Upgrade header) at the WebSocket port. Unscreened it reaches
 ## the engine, which logs "Missing or invalid header 'upgrade'" (wsl_peer.cpp) as an ERROR
-## nothing on our side can lower; screened it is answered 426 and closed here. Armed: the
-## screen-off server must NOT answer 426 (the engine's request path is the one that errors,
-## so a run's stderr shows the wsl_peer line exactly once, from this control and no other).
+## nothing on our side can lower; screened it is answered and closed here and the engine
+## never sees it. Armed: the same bytes at a screen-off server do raise the engine error.
 func _test_plain_http_screened() -> void:
-	_section("A plain HTTP request without Upgrade: websocket never reaches the engine")
+	_section("A request the engine would reject never reaches it")
+	var logger := EngineErrors.new()
+	OS.add_logger(logger)
+	var records: Array[Dictionary] = []
+	var on_record := func(rec: Dictionary) -> void:
+		if str(rec.get("channel", "")) == "transport":
+			records.append(rec)
+	DotLog.signals().record.connect(on_record)
+	DotLog.set_level(DotLog.Level.DEBUG)
+
 	var port := PORT + 60
 	var t := DotTransportDual.new()
 	t.tls_hello_screen = DotTransportDual.TlsHelloScreen.ON
@@ -873,14 +897,32 @@ func _test_plain_http_screened() -> void:
 	var server := made.value as DotDualPeer if made.ok else null
 	_check(server != null and server.screen != null, "on: screened server listens")
 	if server == null or server.screen == null:
+		OS.remove_logger(logger)
 		return
-	var reply := await _raw_request(server, port, "GET / HTTP/1.1\r\nHost: x\r\nUser-Agent: scan\r\nAccept: */*\r\n\r\n".to_utf8_buffer())
+	var scan := "GET / HTTP/1.1\r\nHost: x\r\nUser-Agent: scan\r\nAccept: */*\r\n\r\n"
+	var reply := await _raw_request(server, port, scan.to_utf8_buffer())
 	_check(reply.begins_with("HTTP/1.1 426"), "a plain GET is answered 426 and closed (%s)" % reply.left(20).c_escape())
 	_check(int(server.screen.describe()["refused_http"]) == 1, "and counted as a refused HTTP request")
+
+	var ish := "GET /game HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n\r\n"
+	reply = await _raw_request(server, port, ish.to_utf8_buffer())
+	_check(reply.begins_with("HTTP/1.1 426"), "a websocket-ish request missing its key is refused too")
+	var ish2 := "GET /game HTTP/1.1\r\nHost: x\r\nUpgrade: websocket-ish\r\nConnection: Upgrade\r\n" + _KEY + "Sec-WebSocket-Version: 13\r\n\r\n"
+	reply = await _raw_request(server, port, ish2.to_utf8_buffer())
+	_check(reply.begins_with("HTTP/1.1 426"), "and so is an Upgrade value that only contains websocket")
+
+	reply = await _raw_request(server, port, ("GET / HTTP/1.1\r\nX: " + "a".repeat(5000) + "\r\n\r\n").to_utf8_buffer())
+	_check(reply.begins_with("HTTP/1.1 431"), "a header over the engine's 4096 bytes is answered 431")
+
 	var cut := await _raw_request(server, port, "GET /ga".to_utf8_buffer(), 7000)
 	_check(cut == "" and int(server.screen.describe()["timed_out"]) == 1, "a truncated request is closed at the screen's timeout, not the engine's")
-	_check(server.screen.link_count() == 0, "and neither was relayed to the engine")
-	# Upgrade in any case still joins.
+
+	# A handshake in odd case with a list-valued Connection, written in two pieces.
+	var good := "GET /game HTTP/1.1\r\nHost: x\r\nUpgrade: WebSocket\r\nConnection: keep-alive, Upgrade\r\n" + _KEY + "Sec-WebSocket-Protocol: dot.v1\r\nSec-WebSocket-Version: 13\r\n\r\n"
+	var whole := good.to_utf8_buffer()
+	reply = await _raw_request(server, port, whole.slice(0, 40), 3000, whole.slice(40))
+	_check(reply.begins_with("HTTP/1.1 101"), "a mixed-case handshake split across two writes is relayed and accepted (%s)" % reply.left(20).c_escape())
+
 	var ids: Array[int] = []
 	server.peer_connected.connect(func(id: int) -> void: ids.append(id))
 	var ws := DotTransportWebSocket.new().create_client("ws://127.0.0.1:%d" % port).value as MultiplayerPeer
@@ -891,6 +933,12 @@ func _test_plain_http_screened() -> void:
 		await get_tree().process_frame
 	_check(ids.size() == 1, "a real WebSocket client still joins")
 	ws.close()
+	_check(logger.wsl_peer.is_empty(), "on: the engine raised no wsl_peer error (%s)" % [logger.wsl_peer])
+	var debug_lines := 0
+	for rec in records:
+		if int(rec.get("level", -1)) == DotLog.Level.DEBUG and (rec.get("fields", {}) as Dictionary).has("ip"):
+			debug_lines += 1
+	_check(debug_lines >= 4, "and each refusal left a DEBUG line with the address (%d)" % debug_lines)
 	server.close()
 
 	var off_t := DotTransportDual.new()
@@ -898,16 +946,18 @@ func _test_plain_http_screened() -> void:
 	var off_made := off_t.create_server(port + 1, "127.0.0.1")
 	var off := off_made.value as DotDualPeer if off_made.ok else null
 	_check(off != null and off.screen == null, "off: no screen")
-	if off == null:
-		return
-	var off_reply := await _raw_request(off, port + 1, "GET / HTTP/1.1\r\nHost: x\r\nUser-Agent: scan\r\nAccept: */*\r\n\r\n".to_utf8_buffer(), 1500)
-	_check(not off_reply.begins_with("HTTP/1.1 426"), "and unscreened the engine takes the request itself (the bug this screens)")
-	off.close()
+	if off != null:
+		await _raw_request(off, port + 1, scan.to_utf8_buffer(), 1500)
+		_check(not logger.wsl_peer.is_empty(), "and unscreened the engine does raise its wsl_peer error (the bug this screens)")
+		off.close()
+	DotLog.signals().record.disconnect(on_record)
+	DotLog.set_level(DotLog.Level.ERROR)
+	OS.remove_logger(logger)
 
 
 ## Sends [param bytes] and returns what the server wrote back before closing or
 ## [param limit_ms] passed.
-func _raw_request(server: DotDualPeer, port: int, bytes: PackedByteArray, limit_ms: int = 3000) -> String:
+func _raw_request(server: DotDualPeer, port: int, bytes: PackedByteArray, limit_ms: int = 3000, second: PackedByteArray = PackedByteArray()) -> String:
 	var tcp := StreamPeerTCP.new()
 	tcp.connect_to_host("127.0.0.1", port)
 	var deadline := Time.get_ticks_msec() + 2000
@@ -920,9 +970,16 @@ func _raw_request(server: DotDualPeer, port: int, bytes: PackedByteArray, limit_
 	tcp.put_data(bytes)
 	var got := PackedByteArray()
 	var started := Time.get_ticks_msec()
+	var frames := 0
 	while Time.get_ticks_msec() - started < limit_ms:
 		server.poll()
 		tcp.poll()
+		frames += 1
+		if frames == 10 and not second.is_empty():
+			tcp.put_data(second)
+		# A relayed handshake leaves the connection open: its reply is complete at the blank line.
+		if got.get_string_from_ascii().contains("\r\n\r\n"):
+			break
 		if tcp.get_status() == StreamPeerTCP.STATUS_CONNECTED:
 			var n := tcp.get_available_bytes()
 			if n > 0:

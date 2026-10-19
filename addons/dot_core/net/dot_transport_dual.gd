@@ -53,11 +53,12 @@ enum TlsHelloScreen { AUTO = 0, ON = 1, OFF = 2 }
 ## and the client waited out its whole TLS timeout (2.5 s) before trying [code]ws://[/code].
 ## Screened, the wrong guess costs one round trip. Addresses are mapped back by [DotDualPeer].
 ##
-## [b]Auto screens only a listener that faces the network.[/b] The relay is not free: every
+## [b]Auto screens every plain listener, loopback included.[/b] The relay is not free: every
 ## WebSocket byte is copied through it in script, measured at 10 to 20 us per busy link per
-## frame (32 clients, a packet each way each frame: about 0.5 ms). A listener bound to
-## loopback is behind a TLS terminator (dot-server-deploy's nginx layout), where only the
-## proxy reaches it and every connection begins with GET, so it would pay that for nothing.
+## frame (32 clients, a packet each way each frame: about 0.5 ms). Behind dot-server-deploy's
+## nginx the listener is on loopback and the proxy forwards an internet scanner's plain
+## "GET /" untouched, which the engine logs as an ERROR no log level lowers; only the screen
+## stops that, so the half millisecond is paid there too. [constant TlsHelloScreen.OFF] opts out.
 ## Never applied when the WebSocket server terminates TLS itself
 ## ([member DotTransportWebSocket.use_tls]): there a ClientHello is the right first byte.
 @export_enum("Auto", "On", "Off") var tls_hello_screen: int = TlsHelloScreen.AUTO
@@ -172,12 +173,10 @@ func _create_server(port: int, bind_address: String) -> DotResult:
 	return DotResult.success(_peer as MultiplayerPeer)
 
 
-func _screens(ws_t: DotTransportWebSocket, bind_address: String) -> bool:
+func _screens(ws_t: DotTransportWebSocket, _bind_address: String) -> bool:
 	if ws_t.use_tls or tls_hello_screen == TlsHelloScreen.OFF:
 		return false
-	if tls_hello_screen == TlsHelloScreen.ON:
-		return true
-	return not is_loopback_bind(bind_address)
+	return true
 
 
 ## Whether [param bind_address] listens on loopback only. Empty and "*" are every interface.

@@ -43,9 +43,10 @@ const CHANNEL := "transport"
 const HTTP_GET_FIRST := 0x47
 ## The first byte of a TLS handshake record, i.e. a ClientHello.
 const TLS_HANDSHAKE := 0x16
-## Largest request header held while waiting for its blank line. A real handshake is a few
-## hundred bytes; more than this is not one, and holding it would let a scanner pin memory.
-const MAX_HEADER_BYTES := 8192
+## Largest request header held while waiting for its blank line: the engine's own limit
+## (wsl_peer.h), so a header it would refuse is refused here, with a 431, and a scanner
+## cannot pin memory.
+const MAX_HEADER_BYTES := 4096
 const HEADER_END := "\r\n\r\n"
 
 ## Seconds a connection may stay silent before its first byte. Same default as the
@@ -231,41 +232,26 @@ func _screen() -> void:
 		if outer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 			continue
 		var available := outer.get_available_bytes()
+		# Judged only when bytes arrived: a silent connection has nothing new to parse.
 		if available > 0:
-			var got: Array = outer.get_partial_data(mini(available, MAX_HEADER_BYTES))
+			var held: PackedByteArray = entry["buf"]
+			var got: Array = outer.get_partial_data(mini(available, MAX_HEADER_BYTES + 1 - held.size()))
 			var data: PackedByteArray = got[1]
 			if got[0] != OK or data.is_empty():
 				outer.disconnect_from_host()
 				continue
 			# Packed arrays copy on assignment: append to a local and store it back.
-			var held: PackedByteArray = entry["buf"]
 			held.append_array(data)
 			entry["buf"] = held
-		var buf: PackedByteArray = entry["buf"]
-		if not buf.is_empty():
-			if buf[0] != HTTP_GET_FIRST:
-				_refuse(outer, buf[0])
-				continue
-			# The engine's WebSocket server raises an ERROR it cannot be told to lower for a
-			# GET without Upgrade: websocket (an internet scanner's "GET /"), so the header
-			# is read whole here and only a real handshake is handed on.
-			var head := buf.get_string_from_ascii()
-			var end := head.find(HEADER_END)
-			if end >= 0:
-				if _is_websocket_upgrade(head.substr(0, end)):
-					_open_link(outer, buf)
-				else:
-					_refuse_http(outer, buf)
-				continue
-			if buf.size() >= MAX_HEADER_BYTES:
-				_refuse_http(outer, buf)
+			if _judge(outer, held):
 				continue
 		if now - int(entry["since"]) > int(first_byte_timeout_sec * 1000.0):
 			_timed_out += 1
-			if not buf.is_empty():
+			var waited: PackedByteArray = entry["buf"]
+			if not waited.is_empty():
 				# A truncated request: closed here rather than left for the engine's own
 				# handshake timeout to report.
-				DotLog.debug(CHANNEL, "closed a truncated request header", {"ip": outer.get_connected_host(), "bytes": buf.size()})
+				DotLog.debug(CHANNEL, "closed a truncated request header", {"ip": outer.get_connected_host(), "bytes": waited.size()})
 			outer.disconnect_from_host()
 		else:
 			still.append(entry)
@@ -284,17 +270,59 @@ func _refuse(outer: StreamPeerTCP, first: int) -> void:
 	outer.disconnect_from_host()
 
 
-## True when the header block has an [code]Upgrade[/code] header whose value contains
-## "websocket" (a token list, any case), which is all a WebSocket handshake needs to be.
-func _is_websocket_upgrade(head: String) -> bool:
-	for line in head.split("\r\n"):
-		var colon := line.find(":")
-		if colon > 0 and line.substr(0, colon).strip_edges().to_lower() == "upgrade":
-			return line.substr(colon + 1).to_lower().contains("websocket")
-	return false
+## Decides what a connection's bytes so far are. True when it is settled (relayed or closed),
+## false while the header is still incomplete.
+##
+## The engine's WebSocket server raises an ERROR it cannot be told to lower for any request
+## its handshake parser rejects (an internet scanner's "GET /"), so the header is read whole
+## here and only one the parser accepts is handed on.
+func _judge(outer: StreamPeerTCP, buf: PackedByteArray) -> bool:
+	if buf[0] != HTTP_GET_FIRST:
+		_refuse(outer, buf[0])
+		return true
+	var head := buf.get_string_from_ascii()
+	var end := head.find(HEADER_END)
+	if end < 0:
+		if buf.size() >= MAX_HEADER_BYTES:
+			_refuse_http(outer, buf, "431 Request Header Fields Too Large")
+			return true
+		return false
+	if end + HEADER_END.length() > MAX_HEADER_BYTES:
+		_refuse_http(outer, buf, "431 Request Header Fields Too Large")
+	elif _is_websocket_handshake(head.substr(0, end)):
+		_open_link(outer, buf)
+	else:
+		_refuse_http(outer, buf, "426 Upgrade Required")
+	return true
 
 
-func _refuse_http(outer: StreamPeerTCP, request: PackedByteArray) -> void:
+## Mirrors the checks of the engine's server handshake (wsl_peer.cpp, _parse_client_request):
+## "GET <path> HTTP/1.1", at least four header lines, Upgrade exactly "websocket", a
+## Connection header containing "upgrade", Sec-WebSocket-Version 13 and a Sec-WebSocket-Key.
+## Anything this passes cannot make the engine log an error for its headers; looser would
+## let a "websocket-ish" probe through to it, and stricter would refuse a real client.
+func _is_websocket_handshake(head: String) -> bool:
+	var lines := head.split("\r\n")
+	if lines.size() < 4:
+		return false
+	var request := lines[0].split(" ")
+	if request.size() != 3 or request[0] != "GET" or request[2] != "HTTP/1.1":
+		return false
+	var h: Dictionary = {}
+	for i in range(1, lines.size()):
+		var colon := lines[i].find(":")
+		if colon <= 0:
+			return false
+		h[lines[i].substr(0, colon).strip_edges().to_lower()] = lines[i].substr(colon + 1).strip_edges().to_lower()
+	return (
+		h.get("upgrade", "") == "websocket"
+		and str(h.get("connection", "")).contains("upgrade")
+		and h.get("sec-websocket-version", "") == "13"
+		and str(h.get("sec-websocket-key", "")) != ""
+	)
+
+
+func _refuse_http(outer: StreamPeerTCP, request: PackedByteArray, status: String) -> void:
 	_refused += 1
 	_refused_http += 1
 	var line := request.get_string_from_ascii().get_slice("\r\n", 0).left(80)
@@ -305,7 +333,11 @@ func _refuse_http(outer: StreamPeerTCP, request: PackedByteArray) -> void:
 	)
 	# 426 names the fix to a human who opened the port in a browser; the connection closes
 	# either way, so a scanner learns nothing it could use.
-	outer.put_data("HTTP/1.1 426 Upgrade Required\r\nUpgrade: websocket\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".to_utf8_buffer())
+	# Unread request bytes would make the close a reset that discards the reply below.
+	var rest := outer.get_available_bytes()
+	if rest > 0:
+		outer.get_partial_data(rest)
+	outer.put_data(("HTTP/1.1 %s\r\nUpgrade: websocket\r\nConnection: close\r\nContent-Length: 0\r\n\r\n" % status).to_utf8_buffer())
 	outer.disconnect_from_host()
 
 

@@ -32,6 +32,9 @@ var idle_eviction_sec: float = 300.0
 ## key -> [tokens, last_seen_ticks_ms]
 var _buckets: Dictionary = {}
 
+## Least time between sweeps, in milliseconds.
+var sweep_interval_ms: int = 30_000
+
 var _last_sweep_ms: int = 0
 
 
@@ -110,12 +113,17 @@ func tracked_count() -> int:
 	return _buckets.size()
 
 
+## Whether [param key] still has a bucket (one that has refilled and gone idle is dropped).
+func is_tracked(key: Variant) -> bool:
+	return _buckets.has(key)
+
+
 ## Drops buckets nobody has touched recently.
 ##
 ## Amortised: swept at most once every 30 seconds, and only when something is
 ## being checked anyway, so an idle server does no work.
 func _maybe_sweep(now: int) -> void:
-	if now - _last_sweep_ms < 30_000:
+	if now - _last_sweep_ms < sweep_interval_ms:
 		return
 	_last_sweep_ms = now
 
@@ -125,8 +133,11 @@ func _maybe_sweep(now: int) -> void:
 		var entry: Array = _buckets[key]
 		# Only evict a bucket that has refilled: dropping a throttled peer's
 		# bucket early would hand it a fresh burst, which is precisely the
-		# thing being prevented.
-		if int(entry[1]) < cutoff and float(entry[0]) >= burst - 0.001:
+		# thing being prevented. "Refilled" is by elapsed time, not the stored
+		# count: a bucket is stored as it was when last touched, so one left at
+		# 0 tokens would otherwise never read as full and never be evicted.
+		var refilled := float(entry[0]) + float(now - int(entry[1])) / 1000.0 * rate
+		if int(entry[1]) < cutoff and refilled >= burst - 0.001:
 			dead.append(key)
 
 	for key in dead:
