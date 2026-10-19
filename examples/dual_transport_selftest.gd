@@ -10,8 +10,8 @@ extends Node
 ## godot --headless --path . res://examples/dual_transport_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 13
-const CHECKS := 82
+const SECTIONS := 14
+const CHECKS := 90
 
 const PORT := 47391
 
@@ -54,6 +54,7 @@ func _run() -> void:
 	await _test_enet_peer_timeout()
 	await _test_shutdown_reaches_enet()
 	await _test_tls_hello_screened()
+	await _test_plain_http_screened()
 
 	if _server != null:
 		_server.close()
@@ -856,6 +857,81 @@ func _test_tls_hello_screened() -> void:
 	var plain_ms := await _raw_hello_closed_ms(plain, port + 1, 1000)
 	_check(plain_ms < 0, "and the same hello is still open after a second (the bug this screens)")
 	plain.close()
+
+
+## A scanner's plain "GET /" (no Upgrade header) at the WebSocket port. Unscreened it reaches
+## the engine, which logs "Missing or invalid header 'upgrade'" (wsl_peer.cpp) as an ERROR
+## nothing on our side can lower; screened it is answered 426 and closed here. Armed: the
+## screen-off server must NOT answer 426 (the engine's request path is the one that errors,
+## so a run's stderr shows the wsl_peer line exactly once, from this control and no other).
+func _test_plain_http_screened() -> void:
+	_section("A plain HTTP request without Upgrade: websocket never reaches the engine")
+	var port := PORT + 60
+	var t := DotTransportDual.new()
+	t.tls_hello_screen = DotTransportDual.TlsHelloScreen.ON
+	var made := t.create_server(port, "127.0.0.1")
+	var server := made.value as DotDualPeer if made.ok else null
+	_check(server != null and server.screen != null, "on: screened server listens")
+	if server == null or server.screen == null:
+		return
+	var reply := await _raw_request(server, port, "GET / HTTP/1.1\r\nHost: x\r\nUser-Agent: scan\r\nAccept: */*\r\n\r\n".to_utf8_buffer())
+	_check(reply.begins_with("HTTP/1.1 426"), "a plain GET is answered 426 and closed (%s)" % reply.left(20).c_escape())
+	_check(int(server.screen.describe()["refused_http"]) == 1, "and counted as a refused HTTP request")
+	var cut := await _raw_request(server, port, "GET /ga".to_utf8_buffer(), 7000)
+	_check(cut == "" and int(server.screen.describe()["timed_out"]) == 1, "a truncated request is closed at the screen's timeout, not the engine's")
+	_check(server.screen.link_count() == 0, "and neither was relayed to the engine")
+	# Upgrade in any case still joins.
+	var ids: Array[int] = []
+	server.peer_connected.connect(func(id: int) -> void: ids.append(id))
+	var ws := DotTransportWebSocket.new().create_client("ws://127.0.0.1:%d" % port).value as MultiplayerPeer
+	var deadline := Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline and ids.is_empty():
+		server.poll()
+		ws.poll()
+		await get_tree().process_frame
+	_check(ids.size() == 1, "a real WebSocket client still joins")
+	ws.close()
+	server.close()
+
+	var off_t := DotTransportDual.new()
+	off_t.tls_hello_screen = DotTransportDual.TlsHelloScreen.OFF
+	var off_made := off_t.create_server(port + 1, "127.0.0.1")
+	var off := off_made.value as DotDualPeer if off_made.ok else null
+	_check(off != null and off.screen == null, "off: no screen")
+	if off == null:
+		return
+	var off_reply := await _raw_request(off, port + 1, "GET / HTTP/1.1\r\nHost: x\r\nUser-Agent: scan\r\nAccept: */*\r\n\r\n".to_utf8_buffer(), 1500)
+	_check(not off_reply.begins_with("HTTP/1.1 426"), "and unscreened the engine takes the request itself (the bug this screens)")
+	off.close()
+
+
+## Sends [param bytes] and returns what the server wrote back before closing or
+## [param limit_ms] passed.
+func _raw_request(server: DotDualPeer, port: int, bytes: PackedByteArray, limit_ms: int = 3000) -> String:
+	var tcp := StreamPeerTCP.new()
+	tcp.connect_to_host("127.0.0.1", port)
+	var deadline := Time.get_ticks_msec() + 2000
+	while tcp.get_status() == StreamPeerTCP.STATUS_CONNECTING and Time.get_ticks_msec() < deadline:
+		tcp.poll()
+		server.poll()
+		await get_tree().process_frame
+	if tcp.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+		return "<no connection>"
+	tcp.put_data(bytes)
+	var got := PackedByteArray()
+	var started := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - started < limit_ms:
+		server.poll()
+		tcp.poll()
+		if tcp.get_status() == StreamPeerTCP.STATUS_CONNECTED:
+			var n := tcp.get_available_bytes()
+			if n > 0:
+				got.append_array(tcp.get_data(n)[1])
+		else:
+			break
+		await get_tree().process_frame
+	tcp.disconnect_from_host()
+	return got.get_string_from_ascii()
 
 
 ## Sends a TLS handshake record's first bytes and returns how long the server took to close

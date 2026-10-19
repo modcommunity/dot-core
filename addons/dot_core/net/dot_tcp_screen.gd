@@ -19,9 +19,10 @@ extends RefCounted
 ##
 ## [codeblock]
 ## connection on the public port, byte 0
-##   'G' (an HTTP GET, the only thing a WebSocket handshake begins with) -> relayed, both
-##       ways, to the unchanged WebSocketMultiplayerPeer on 127.0.0.1:<inner port>
-##   anything else (0x16: a TLS handshake record)                        -> closed at once
+##   'G' and a complete header with Upgrade: websocket -> relayed, both ways, to the
+##       unchanged WebSocketMultiplayerPeer on 127.0.0.1:<inner port>
+##   'G' without that header (a scanner's "GET /")     -> answered 426 and closed
+##   anything else (0x16: a TLS handshake record)      -> closed at once
 ## [/codeblock]
 ##
 ## [b]The relay hides the client's address[/b]: the WebSocket server sees 127.0.0.1 and
@@ -42,6 +43,10 @@ const CHANNEL := "transport"
 const HTTP_GET_FIRST := 0x47
 ## The first byte of a TLS handshake record, i.e. a ClientHello.
 const TLS_HANDSHAKE := 0x16
+## Largest request header held while waiting for its blank line. A real handshake is a few
+## hundred bytes; more than this is not one, and holding it would let a scanner pin memory.
+const MAX_HEADER_BYTES := 8192
+const HEADER_END := "\r\n\r\n"
 
 ## Seconds a connection may stay silent before its first byte. Same default as the
 ## WebSocket handshake timeout, which governs it from there on.
@@ -57,7 +62,7 @@ var _server: TCPServer = null
 var _public_port: int = 0
 var _inner_port: int = 0
 
-## Connections that have not sent a byte yet: {outer, since}.
+## Connections whose request header is not complete yet: {outer, since, buf}.
 var _waiting: Array[Dictionary] = []
 ## Relayed connections: {outer, inner, to_inner, to_outer, ip, port, inner_port}.
 var _links: Array[Dictionary] = []
@@ -67,6 +72,7 @@ var _by_inner_port: Dictionary = {}
 var _relayed: int = 0
 var _refused: int = 0
 var _refused_tls: int = 0
+var _refused_http: int = 0
 var _timed_out: int = 0
 var _over_limit: int = 0
 
@@ -194,6 +200,7 @@ func describe() -> Dictionary:
 		"relayed": _relayed,
 		"refused": _refused,
 		"refused_tls": _refused_tls,
+		"refused_http": _refused_http,
 		"timed_out": _timed_out,
 		"over_limit": _over_limit,
 	}
@@ -210,7 +217,7 @@ func _accept() -> void:
 			_over_limit += 1
 			outer.disconnect_from_host()
 			continue
-		_waiting.append({"outer": outer, "since": Time.get_ticks_msec()})
+		_waiting.append({"outer": outer, "since": Time.get_ticks_msec(), "buf": PackedByteArray()})
 
 
 func _screen() -> void:
@@ -224,22 +231,44 @@ func _screen() -> void:
 		if outer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 			continue
 		var available := outer.get_available_bytes()
-		if available <= 0:
-			if now - int(entry["since"]) > int(first_byte_timeout_sec * 1000.0):
-				_timed_out += 1
+		if available > 0:
+			var got: Array = outer.get_partial_data(mini(available, MAX_HEADER_BYTES))
+			var data: PackedByteArray = got[1]
+			if got[0] != OK or data.is_empty():
 				outer.disconnect_from_host()
-			else:
-				still.append(entry)
-			continue
-		var got: Array = outer.get_partial_data(mini(available, max_buffered))
-		var data: PackedByteArray = got[1]
-		if got[0] != OK or data.is_empty():
+				continue
+			# Packed arrays copy on assignment: append to a local and store it back.
+			var held: PackedByteArray = entry["buf"]
+			held.append_array(data)
+			entry["buf"] = held
+		var buf: PackedByteArray = entry["buf"]
+		if not buf.is_empty():
+			if buf[0] != HTTP_GET_FIRST:
+				_refuse(outer, buf[0])
+				continue
+			# The engine's WebSocket server raises an ERROR it cannot be told to lower for a
+			# GET without Upgrade: websocket (an internet scanner's "GET /"), so the header
+			# is read whole here and only a real handshake is handed on.
+			var head := buf.get_string_from_ascii()
+			var end := head.find(HEADER_END)
+			if end >= 0:
+				if _is_websocket_upgrade(head.substr(0, end)):
+					_open_link(outer, buf)
+				else:
+					_refuse_http(outer, buf)
+				continue
+			if buf.size() >= MAX_HEADER_BYTES:
+				_refuse_http(outer, buf)
+				continue
+		if now - int(entry["since"]) > int(first_byte_timeout_sec * 1000.0):
+			_timed_out += 1
+			if not buf.is_empty():
+				# A truncated request: closed here rather than left for the engine's own
+				# handshake timeout to report.
+				DotLog.debug(CHANNEL, "closed a truncated request header", {"ip": outer.get_connected_host(), "bytes": buf.size()})
 			outer.disconnect_from_host()
-			continue
-		if data[0] != HTTP_GET_FIRST:
-			_refuse(outer, data[0])
-			continue
-		_open_link(outer, data)
+		else:
+			still.append(entry)
 	_waiting = still
 
 
@@ -252,6 +281,31 @@ func _refuse(outer: StreamPeerTCP, first: int) -> void:
 		"closed a connection that is not a WebSocket handshake",
 		{"ip": outer.get_connected_host(), "first_byte": first, "tls": first == TLS_HANDSHAKE}
 	)
+	outer.disconnect_from_host()
+
+
+## True when the header block has an [code]Upgrade[/code] header whose value contains
+## "websocket" (a token list, any case), which is all a WebSocket handshake needs to be.
+func _is_websocket_upgrade(head: String) -> bool:
+	for line in head.split("\r\n"):
+		var colon := line.find(":")
+		if colon > 0 and line.substr(0, colon).strip_edges().to_lower() == "upgrade":
+			return line.substr(colon + 1).to_lower().contains("websocket")
+	return false
+
+
+func _refuse_http(outer: StreamPeerTCP, request: PackedByteArray) -> void:
+	_refused += 1
+	_refused_http += 1
+	var line := request.get_string_from_ascii().get_slice("\r\n", 0).left(80)
+	DotLog.debug(
+		CHANNEL,
+		"closed a plain HTTP request that is not a WebSocket upgrade",
+		{"ip": outer.get_connected_host(), "request": line}
+	)
+	# 426 names the fix to a human who opened the port in a browser; the connection closes
+	# either way, so a scanner learns nothing it could use.
+	outer.put_data("HTTP/1.1 426 Upgrade Required\r\nUpgrade: websocket\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".to_utf8_buffer())
 	outer.disconnect_from_host()
 
 

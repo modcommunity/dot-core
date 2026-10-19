@@ -167,8 +167,8 @@ func describe_lines() -> PackedStringArray:
 	if screen != null:
 		var sc := screen.describe()
 		lines.append(
-			"tcp %d screened: %d link(s), %d relayed, %d refused (%d TLS), %d timed out, %d over limit"
-			% [sc["port"], sc["links"], sc["relayed"], sc["refused"], sc["refused_tls"], sc["timed_out"], sc["over_limit"]]
+			"tcp %d screened: %d link(s), %d relayed, %d refused (%d TLS, %d HTTP), %d timed out, %d over limit"
+			% [sc["port"], sc["links"], sc["relayed"], sc["refused"], sc["refused_tls"], sc["refused_http"], sc["timed_out"], sc["over_limit"]]
 		)
 	return lines
 
