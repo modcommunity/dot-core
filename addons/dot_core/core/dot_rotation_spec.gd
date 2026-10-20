@@ -211,7 +211,8 @@ static func _at(where: String) -> String:
 ## A `commands:` block: `prefix:` (a string, "" allowed, absent means the code's own) and
 ## `names:` (role to a name or a list of names, the first being the one help and hints show and
 ## the rest aliases). Normalised to `{"prefix": String (only if written), "names": {role: PackedStringArray}}`.
-## A name that is not lowercase letters, digits and underscores is dropped with a warning,
+## One leading "!" or "/" is removed (it is the chat prefix, set by `prefix:`). A name that is
+## then not lowercase letters, digits and underscores is dropped with a warning,
 ## because it could never be typed after a chat prefix.
 static func _commands(value: Variant, warnings: PackedStringArray, where: String) -> Dictionary:
 	var out := {"names": {}}
@@ -231,6 +232,11 @@ static func _commands(value: Variant, warnings: PackedStringArray, where: String
 		var good := PackedStringArray()
 		for n: Variant in list:
 			var text := str(n).strip_edges()
+			# An owner writes the name as players type it ("!rtv", "/rtv"). The chat prefix is
+			# `prefix:`, not part of the name, so one leading "!" or "/" is taken off rather
+			# than the whole name dropped for it.
+			if text.begins_with("!") or text.begins_with("/"):
+				text = text.substr(1).strip_edges()
 			var ok := text != ""
 			for i in text.length():
 				var c := text.unicode_at(i)
