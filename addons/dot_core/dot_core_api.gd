@@ -19,5 +19,7 @@ extends RefCounted
 # 9: DotContentIndex, DotContentEntry (what mounted packs provide, tagged by session: solo or online).
 # 10: loading/: DotLoadGate, DotLoadingCover (the game is not ready to be seen yet: holds,
 #     requirements, frozen nodes, a cover a host can claim).
-const LEVEL := 10
+# 11: DotParallel (a fork/join on the worker pool that returns inside the tick: pure tasks,
+#     results in index order, a verify mode that runs them twice).
+const LEVEL := 11
 const OLDEST := 1
