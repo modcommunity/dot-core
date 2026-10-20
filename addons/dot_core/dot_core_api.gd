@@ -21,5 +21,7 @@ extends RefCounted
 #     requirements, frozen nodes, a cover a host can claim).
 # 11: DotParallel (a fork/join on the worker pool that returns inside the tick: pure tasks,
 #     results in index order, a verify mode that runs them twice).
-const LEVEL := 11
+# 12: DotYaml (the YAML subset reader), DotRotationSpec (maps.yml / games.yml: rotations,
+#     wildcards, layering, `commands:`), DotCommandNames (renames, aliases, collision skip).
+const LEVEL := 12
 const OLDEST := 1

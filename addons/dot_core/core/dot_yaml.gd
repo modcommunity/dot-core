@@ -159,6 +159,13 @@ static func _prepare(text: String, source: String) -> Variant:
 ##
 ## A `#` inside a quoted string is data. Without this, `sv_name: "Bob's #1 server"` becomes
 ## `"Bob's` and the server is named something nobody typed.
+## Whether a quote character at [param index] starts a quoted scalar. Only at the start of a
+## value: after a space, `[`, `{`, `,`, `:` or at the start. The apostrophe in `Bob's map # c`
+## follows a letter, so it is text, and the comment after it is still a comment.
+static func _opens_quote(text: String, index: int) -> bool:
+	return index == 0 or " \t[{,:".contains(text[index - 1])
+
+
 static func _strip_comment(text: String) -> String:
 	var quote := ""
 	var index := 0
@@ -172,9 +179,9 @@ static func _strip_comment(text: String) -> String:
 				continue
 			if ch == quote:
 				quote = ""
-		elif ch == "\"" or ch == "'":
+		elif (ch == "\"" or ch == "'") and _opens_quote(text, index):
 			quote = ch
-		elif ch == "#" and (index == 0 or text[index - 1] == " "):
+		elif ch == "#" and (index == 0 or text[index - 1] == " " or text[index - 1] == "\t"):
 			return text.substr(0, index).strip_edges()
 
 		index += 1
@@ -266,7 +273,12 @@ static func _parse_map(
 		# Nothing after the colon: either a nested block, or an empty value.
 		var child_indent := _next_indent(rows, cursor)
 
-		if child_indent > indent:
+		# A list may sit at the key's own indent (`maps:` then `- a` underneath, unindented),
+		# which is valid YAML and what most people write.
+		var flush_list: bool = child_indent == indent and cursor[0] < rows.size() \
+			and String(rows[cursor[0]]["text"]).begins_with("- ")
+
+		if child_indent > indent or flush_list:
 			var child := _parse_block(rows, cursor, child_indent, source, depth + 1)
 
 			if not child.ok:

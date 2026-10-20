@@ -43,13 +43,13 @@ static func all_of(prefix: String, names: Dictionary, defaults: Dictionary, role
 
 
 ## Whether [param full] may be registered on [param host]: nothing else has it, and this
-## binding has not taken it already. Logs the refusal. A host that cannot say (a module's
-## `add_command`) is assumed to be free of it.
+## binding has not taken it already. Logs the refusal. A host with no way to ask at all is
+## assumed to be free of it.
 static func available(host: Object, full: String, taken: PackedStringArray, role: String, owner_name: String) -> bool:
 	var clash := ""
 	if taken.has(full):
 		clash = "another %s command" % owner_name
-	elif host.has_method("has_name") and bool(host.call("has_name", full)):
+	elif _registry_has(host, full):
 		clash = "an existing command or cvar"
 	if clash == "":
 		return true
@@ -57,6 +57,17 @@ static func available(host: Object, full: String, taken: PackedStringArray, role
 		"name": full, "role": role, "used_by": clash, "owner": owner_name,
 	})
 	return false
+
+
+## A console answers `has_name`; a DotModule does not, but holds its server's console as
+## `console`, and registering through it is exactly what would steal the name. Asking only the
+## host once let a module-hosted binding take the server's own `status`.
+static func _registry_has(host: Object, full: String) -> bool:
+	var registry: Object = host
+	if not host.has_method("has_name"):
+		var c: Variant = host.get("console")
+		registry = c if c is Object else null
+	return registry != null and registry.has_method("has_name") and bool(registry.call("has_name", full))
 
 
 ## What a player types in chat to run [param full]: the server's first chat prefix, then the name.
