@@ -81,3 +81,4 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 ## Open items
 
 - dot-map, dot-vote, dot-2d, dot-team and dot-procedural-generation still draw from their own generators rather than `random/`. [randomness](docs/randomness.md#addons-that-hand-rolled-a-generator)
+- `DotYaml` is the family's one YAML subset reader (it refuses anchors, tags and block scalars; quote a value that starts with `*`). `DotRotationSpec` is the one rotation matcher, for dot-map's maps.yml and the server's games.yml: never write a second one.
