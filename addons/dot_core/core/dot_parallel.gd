@@ -26,6 +26,12 @@ extends RefCounted
 ## stream. Changes to long-lived state come back in the result and the caller applies them in
 ## index order, which is what makes the answer the same with any worker count.
 ##
+## [b]No typed array of nodes built on a worker.[/b] Appending a node to an
+## [code]Array[SomeNode][/code] checks it through [method Node.get_script], which is
+## thread-guarded: for a node in the tree the append fails with an error and the element is
+## simply missing. Keep untyped [Array]s on the worker and [method Array.assign] them on the
+## caller's thread. Typed locals and typed loop variables are fine.
+##
 ## [b]Static, no autoload, no node[/b], and no process-wide worker count: [param workers] comes
 ## from the caller's own config, so a listen server and a client (or two servers) in one process
 ## never change each other's threading. Only [member verify] is process-wide, and only suites
