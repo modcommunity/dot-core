@@ -25,5 +25,6 @@ extends RefCounted
 #     wildcards, layering, `commands:`), DotCommandNames (renames, aliases, collision skip).
 # 13: DotAddonConfig (cfg/addons/<name>/*.yml: every file read in name order over defaults,
 #     then environment, then command line).
-const LEVEL := 13
+# 14: DotHttpServer, DotHttpRequest, DotHttpResponse (net/: a small HTTP/1.1 server, desktop and server only).
+const LEVEL := 14
 const OLDEST := 1
