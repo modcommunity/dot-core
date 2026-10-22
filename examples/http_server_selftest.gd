@@ -62,6 +62,7 @@ func _run() -> void:
 	_section("tls"); await _test_tls(); _done()
 	_live = false
 	_srv.stop()
+	_srv = null
 	DotPaths.remove_tree(SCRATCH)
 	print("")
 	print("%d passed, %d failed, %d of %d sections ran to their last line" % [_passed, _failed, _completed, _entered])
@@ -293,4 +294,6 @@ func _test_tls() -> void:
 	var plain := _raw("GET /t HTTP/1.1\r\n\r\n".to_utf8_buffer(), 0.5, s.port())
 	_check(plain == "", "plain HTTP at a TLS port gets no response")
 	_active = null
+	tls.disconnect_from_stream()
+	tcp.disconnect_from_host()
 	s.stop()

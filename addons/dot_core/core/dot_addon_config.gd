@@ -30,9 +30,11 @@ extends RefCounted
 ## (shipped with the game), beside the executable (`cfg/`), `user://cfg`, then a
 ## `--config DIR` the process was started with (its files sit directly in `DIR`, so the
 ## addon directory is `DIR/addons/<name>`; the name is the folder form, `-` as `_`, so `dot-map`
-## reads `addons/dot_map`). The operator layer `server/<name>/` in the same roots is read after, so
-## it wins: it is how a box overrides what a game or addon ships. A server run from a directory it does not own
-## thus still finds its files, and a shipped default is never edited to tune one box.
+## reads `addons/dot_map`). Two more tiers in the same roots are read after, so they win: the
+## game's `game/<game>/<name>/` (only when [member game] is set) and the operator's
+## `server/addons/<name>/`, which is how a box overrides what a game or addon ships. A server run
+## from a directory it does not own thus still finds its files, and a shipped default is never
+## edited to tune one box. The old `server/<name>/` is still read through [DotCfgLegacy].
 ##
 ## [codeblock]
 ## var res := DotAddonConfig.load_dir("dot-map", {"rotation": {"mode": "sequential"}})
@@ -42,11 +44,23 @@ extends RefCounted
 
 const CHANNEL := "addon_config"
 const SUBDIR := "addons"
-## The operator override layer: `cfg/server/<addon_underscored>/`, read after (so over) `cfg/addons/`.
-const SERVER_SUBDIR := "server"
+## The operator override layer: `cfg/server/addons/<addon_underscored>/`, mirroring `cfg/addons/`.
+const SERVER_SUBDIR := "server/addons"
+## The game layer between the addon's and the operator's: `cfg/game/<game>/<addon_underscored>/`.
+const GAME_SUBDIR := "game"
+## The operator's per-game layer, strongest: `cfg/server/game/<game>/<addon_underscored>/`.
+const SERVER_GAME_SUBDIR := "server/game"
+## The operator layer before the mirror: `cfg/server/<addon_underscored>/`, shimmed by [DotCfgLegacy].
+const LEGACY_SERVER_SUBDIR := "server"
 const EXTENSION := "yml"
 ## Whole words that make any path segment secret. `key` is separate: only as the last word.
 const SECRET_WORDS: PackedStringArray = ["password", "passwords", "passwd", "secret", "secrets", "token", "tokens", "apikey"]
+
+## The game whose `cfg/game/<game>/` tier is read; empty skips that tier. A game sets it once at start.
+static var game: String = ""
+
+## A `--config`-style root to read as well when the command line names none: a host that was handed its cfg directory another way sets it.
+static var config_root: String = ""
 
 ## addon name -> {roots, files, overrides, refused}, kept for [method describe].
 static var _last: Dictionary = {}
@@ -70,21 +84,43 @@ static func folder_name(addon_name: String) -> String:
 	return addon_name.replace("-", "_")
 
 
-## Every existing copy of one addon file, weakest first: `cfg/addons/<addon>/<file>` in each root,
-## then the operator layer `cfg/server/<addon>/<file>` in each root. For a single file such as
+## Every existing copy of one addon file, weakest first: `cfg/addons/<addon>/<file>`, then
+## `cfg/game/<game>/<addon>/<file>`, then the operator's `cfg/server/addons/<addon>/<file>` and
+## `cfg/server/game/<game>/<addon>/<file>`, each in every root (the old `cfg/server/<addon>/<file>` stands in for a missing new copy). For a single file such as
 ## `maps.yml` that a reader layers itself; [param extra_dir] is a `--config`-style root put last.
 static func file_layers(addon_name: String, file: String, extra_dir: String = "") -> PackedStringArray:
 	var out := PackedStringArray()
-	for tier in [SUBDIR, SERVER_SUBDIR]:
-		for dir in _tier_dirs(addon_name, tier, extra_dir):
-			var path := dir.path_join(file)
-			if FileAccess.file_exists(path):
+	for tier in [SUBDIR, GAME_SUBDIR, SERVER_SUBDIR, SERVER_GAME_SUBDIR]:
+		var dirs := _tier_dirs(addon_name, tier, extra_dir)
+		var olds := _tier_dirs(addon_name, LEGACY_SERVER_SUBDIR, extra_dir) if tier == SERVER_SUBDIR else PackedStringArray()
+		for i in dirs.size():
+			var path := dirs[i].path_join(file)
+			if i < olds.size():
+				path = DotCfgLegacy.find(olds[i].path_join(file), path)
+				if path != "":
+					out.append(path)
+			elif FileAccess.file_exists(path):
 				out.append(path)
 	return out
 
 
+## For a list file an operator may replace (a map rotation): the layers of [method file_layers] that
+## apply, weakest first. A layer whose top level lacks `merge: true` replaces every weaker one, so only
+## the strongest such layer and the `merge: true` layers over it remain.
+static func replace_aware_layers(addon_name: String, file: String, extra_dir: String = "") -> PackedStringArray:
+	var all := file_layers(addon_name, file, extra_dir)
+	var start := 0
+	for i in range(all.size() - 1, -1, -1):
+		var parsed := DotYaml.parse_file(all[i])
+		var wants_merge: bool = parsed.ok and parsed.value is Dictionary and (parsed.value as Dictionary).get("merge") == true
+		if not wants_merge:
+			start = i
+			break
+	return all.slice(start)
+
+
 ## Reads one named yml for an addon that applies it to its own typed config: `cfg/addons/<folder>/`
-## then the operator's `cfg/server/<folder>/` (weakest first), each handed to [param apply], a
+## the game's, then the operator's `cfg/server/addons/<folder>/` (weakest first), each handed to [param apply], a
 ## `func(values: Dictionary, path: String) -> PackedStringArray`. A flat [param legacy_dir]/[param file_name]
 ## is read instead, with one WARN, while no new copy exists. Value: the strings [param apply] returned.
 ## Secrets are the caller's to keep file-only: this never touches the environment or command line.
@@ -145,16 +181,32 @@ static func load_dir(
 	var files := PackedStringArray()
 	var roots := PackedStringArray()
 
-	var all_dirs := _candidate_dirs(addon_name)
-	all_dirs.append_array(_tier_dirs(addon_name, SERVER_SUBDIR))
-	for dir in all_dirs:
+	# [dir, new_dir]: a legacy dir's file is skipped when the new dir holds it or DotCfgLegacy says no.
+	var all_dirs: Array = []
+	for d in _candidate_dirs(addon_name):
+		all_dirs.append([d, ""])
+	for d in _tier_dirs(addon_name, GAME_SUBDIR):
+		all_dirs.append([d, ""])
+	var news := _tier_dirs(addon_name, SERVER_SUBDIR)
+	var olds := _tier_dirs(addon_name, LEGACY_SERVER_SUBDIR)
+	for i in news.size():
+		all_dirs.append([olds[i], news[i]])
+		all_dirs.append([news[i], ""])
+	for d in _tier_dirs(addon_name, SERVER_GAME_SUBDIR):
+		all_dirs.append([d, ""])
+	for pair in all_dirs:
+		var dir: String = pair[0]
+		var new_dir: String = pair[1]
 		if not DirAccess.dir_exists_absolute(dir):
 			continue
 		roots.append(dir)
 		var names := PackedStringArray()
 		for f in DirAccess.get_files_at(dir):
-			if f.get_extension().to_lower() == EXTENSION:
-				names.append(f)
+			if f.get_extension().to_lower() != EXTENSION:
+				continue
+			if new_dir != "" and DotCfgLegacy.find(dir.path_join(f), new_dir.path_join(f)) != dir.path_join(f):
+				continue
+			names.append(f)
 		names.sort()
 		for f in names:
 			var path := dir.path_join(f)
@@ -170,7 +222,7 @@ static func load_dir(
 				)
 				DotLog.error(CHANNEL, "bad config file", {"addon": addon_name, "file": path})
 				return bad
-			_merge(merged, res.value as Dictionary)
+			merge(merged, res.value as Dictionary)
 			files.append(path)
 
 	var overrides := PackedStringArray()
@@ -220,7 +272,7 @@ static func _config_dir_arg() -> String:
 			return args[i + 1]
 		if args[i].begins_with("--config="):
 			return args[i].substr(9)
-	return ""
+	return config_root
 
 
 ## Addon directories (`cfg/addons/<addon_underscored>`), weakest root first.
@@ -228,10 +280,15 @@ static func _candidate_dirs(addon_name: String) -> PackedStringArray:
 	return _tier_dirs(addon_name, SUBDIR)
 
 
-## One tier's directories (`addons` or `server`) for an addon, weakest root first.
+## One tier's directories (`addons`, `game/<game>`, `server/addons`, `server/game/<game>` or the legacy `server`) for an addon, weakest root first.
 static func _tier_dirs(addon_name: String, tier: String, extra_dir: String = "") -> PackedStringArray:
 	var out := PackedStringArray()
-	var sub := tier.path_join(folder_name(addon_name))
+	var sub_root := ""
+	if tier == GAME_SUBDIR or tier == SERVER_GAME_SUBDIR:
+		if game == "":
+			return out
+		sub_root = tier.path_join(game)
+	var sub := (sub_root if sub_root != "" else tier).path_join(folder_name(addon_name))
 	out.append("res://cfg".path_join(sub))
 	var exe := OS.get_executable_path().get_base_dir()
 	if exe != "":
@@ -245,13 +302,18 @@ static func _tier_dirs(addon_name: String, tier: String, extra_dir: String = "")
 	return out
 
 
-## Deep merge: maps by key, everything else replaced.
-static func _merge(into: Dictionary, over: Dictionary) -> void:
+## Deep merge of [param over] into [param into]: maps by key, a list or scalar replaced whole (copied).
+static func merge(into: Dictionary, over: Dictionary) -> void:
 	for k in over:
 		if into.get(k) is Dictionary and over[k] is Dictionary:
-			_merge(into[k] as Dictionary, over[k] as Dictionary)
+			merge(into[k] as Dictionary, over[k] as Dictionary)
 		else:
 			into[k] = over[k].duplicate(true) if (over[k] is Dictionary or over[k] is Array) else over[k]
+
+
+## Old private name, kept until callers move to [method merge].
+static func _merge(into: Dictionary, over: Dictionary) -> void:
+	merge(into, over)
 
 
 static func _leaf_paths(tree: Dictionary, prefix: String, out: PackedStringArray) -> void:

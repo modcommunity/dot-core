@@ -6,8 +6,8 @@ extends Node
 ## godot --headless --path . res://examples/addon_config_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 8
-const CHECKS := 71
+const SECTIONS := 9
+const CHECKS := 86
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -29,6 +29,7 @@ func _run() -> void:
 	_test_hardening()
 	_test_bad_file()
 	_test_server_tier()
+	_test_server_mirror_and_game_tier()
 	_test_legacy_shim()
 	_test_apply_file()
 	_clean()
@@ -54,7 +55,19 @@ func _write(file: String, text: String) -> void:
 
 
 func _server_dir() -> String:
+	return "user://cfg/server/addons/selftest_addon"
+
+
+func _old_server_dir() -> String:
 	return "user://cfg/server/selftest_addon"
+
+
+func _server_game_dir() -> String:
+	return "user://cfg/server/game/selftest_game/selftest_addon"
+
+
+func _game_dir() -> String:
+	return "user://cfg/game/selftest_game/selftest_addon"
 
 
 func _write_at(dir: String, file: String, text: String) -> void:
@@ -65,7 +78,7 @@ func _write_at(dir: String, file: String, text: String) -> void:
 
 
 func _clean() -> void:
-	for dir in [_dir(), _server_dir(), "user://cfg/legacy_selftest"]:
+	for dir in [_dir(), _server_dir(), _old_server_dir(), _game_dir(), _server_game_dir(), "user://cfg/legacy_selftest"]:
 		if DirAccess.dir_exists_absolute(dir):
 			for f in DirAccess.get_files_at(dir):
 				DirAccess.remove_absolute(dir.path_join(f))
@@ -186,7 +199,7 @@ func _test_server_tier() -> void:
 	_check(layers.size() == 1 and layers[0].ends_with("addons/selftest_addon/10-base.yml"), "file_layers finds the addon copy only when the server has none")
 	_write_at(_server_dir(), "10-base.yml", "mode: s\n")
 	layers = DotAddonConfig.file_layers(NAME, "10-base.yml")
-	_check(layers.size() == 2 and layers[1].contains("/server/"), "file_layers lists the server copy last (strongest)")
+	_check(layers.size() == 2 and layers[1].contains("/server/addons/"), "file_layers lists the server copy last (strongest)")
 	_check(DotAddonConfig.file_layers(NAME, "missing.yml").is_empty(), "file_layers of a missing file is empty")
 	_write_at(_server_dir(), "10-base.yml", "a:\n\tb: 1\n  - broken: [\n")
 	res = DotAddonConfig.load_dir(NAME)
@@ -195,6 +208,60 @@ func _test_server_tier() -> void:
 	_write_at(_server_dir(), "only.yml", "x: 1\n")
 	_check(DotAddonConfig.get_value(DotAddonConfig.load_dir(NAME).value, "x") == 1, "a server-tier file alone is read")
 	_check(DotAddonConfig.dir_for(NAME) == _dir(), "dir_for stays on the addon tier")
+
+
+func _test_server_mirror_and_game_tier() -> void:
+	_section("cfg/server/addons mirrors the stock tier; the game tier sits between")
+	_clean()
+	DotCfgLegacy.reset()
+	DotAddonConfig.game = "selftest_game"
+	_write("10-base.yml", "mode: addon\nlow: 1\n")
+	_write_at(_game_dir(), "10-base.yml", "mode: game\nlow: 2\ng: 1\n")
+	var res := DotAddonConfig.load_dir(NAME)
+	_check(res.ok and DotAddonConfig.get_value(res.value, "mode") == "game", "the game tier beats the addon tier")
+	_check(DotAddonConfig.get_value(res.value, "low") == 2 and DotAddonConfig.get_value(res.value, "g") == 1, "and adds its own keys")
+	_write_at(_server_dir(), "10-base.yml", "mode: server\n")
+	res = DotAddonConfig.load_dir(NAME)
+	_check(DotAddonConfig.get_value(res.value, "mode") == "server" and DotAddonConfig.get_value(res.value, "low") == 2, "the server tier beats the game tier, which beats the addon")
+	var layers := DotAddonConfig.file_layers(NAME, "10-base.yml")
+	_check(layers.size() == 3 and layers[1].contains("/game/selftest_game/") and layers[2].contains("/server/addons/"), "file_layers: addon, game, server")
+	_write_at(_server_game_dir(), "10-base.yml", "mode: server-game\n")
+	layers = DotAddonConfig.file_layers(NAME, "10-base.yml")
+	_check(layers.size() == 4 and layers[3].contains("/server/game/"), "the operator's per-game copy is strongest")
+	_check(DotAddonConfig.get_value(DotAddonConfig.load_dir(NAME).value, "mode") == "server-game", "and wins in load_dir")
+	var plain := DotAddonConfig.replace_aware_layers(NAME, "10-base.yml")
+	_check(plain.size() == 1 and plain[0].contains("/server/game/"), "a list file without merge: true replaces every weaker layer")
+	_write_at(_server_game_dir(), "10-base.yml", "merge: true\nmode: server-game\n")
+	_check(DotAddonConfig.replace_aware_layers(NAME, "10-base.yml").size() == 2, "merge: true keeps the layer below, which replaces on its own")
+	DotAddonConfig.game = ""
+	_check(DotAddonConfig.file_layers(NAME, "10-base.yml").size() == 2, "no game set: the game tier is skipped")
+	# The old operator path.
+	_clean()
+	DotCfgLegacy.reset()
+	_write("10-base.yml", "mode: addon\n")
+	_write_at(_old_server_dir(), "10-base.yml", "mode: old\n")
+	res = DotAddonConfig.load_dir(NAME)
+	_check(DotAddonConfig.get_value(res.value, "mode") == "old", "the old cfg/server/<addon> is still read")
+	_check(DotCfgLegacy.warned_count() == 1, "and warned once")
+	DotAddonConfig.load_dir(NAME)
+	DotAddonConfig.file_layers(NAME, "10-base.yml")
+	_check(DotCfgLegacy.warned_count() == 1, "a reload and file_layers do not warn again")
+	_write_at(_server_dir(), "10-base.yml", "mode: new\n")
+	res = DotAddonConfig.load_dir(NAME)
+	_check(DotAddonConfig.get_value(res.value, "mode") == "new", "the new path wins over the old one")
+	DotAddonConfig.config_root = "user://cfg_root_selftest"
+	_write_at("user://cfg_root_selftest/addons/selftest_addon", "root.yml", "r: 1\n")
+	_check(DotAddonConfig.get_value(DotAddonConfig.load_dir(NAME).value, "r") == 1, "config_root is read like --config")
+	DotAddonConfig.config_root = ""
+	DirAccess.remove_absolute("user://cfg_root_selftest/addons/selftest_addon/root.yml")
+	DirAccess.remove_absolute("user://cfg_root_selftest/addons/selftest_addon")
+	DirAccess.remove_absolute("user://cfg_root_selftest/addons")
+	DirAccess.remove_absolute("user://cfg_root_selftest")
+	var merged := {"a": {"x": 1}, "l": [1]}
+	DotAddonConfig.merge(merged, {"a": {"y": 2}, "l": [2, 3]})
+	_check(merged == {"a": {"x": 1, "y": 2}, "l": [2, 3]}, "merge is public: maps by key, lists replaced")
+	_clean()
+	DotCfgLegacy.reset()
 
 
 func _test_legacy_shim() -> void:

@@ -30,5 +30,7 @@ extends RefCounted
 #     DotAddonConfig.folder_name / file_layers and the cfg/server/<addon>/ operator tier;
 #     an addon name's `-` is now `_` in its cfg/addons folder.
 # 16: DotAddonConfig.apply_file (one named yml through the addon, server and legacy layers, applied by the caller).
-const LEVEL := 16
+# 17: DotAddonConfig.merge (public), config_root, DotAddonConfig.game and the cfg/game/<game>/<addon>/ tier; the operator
+#     tier is now cfg/server/addons/<addon>/ (the old cfg/server/<addon>/ is read through DotCfgLegacy).
+const LEVEL := 17
 const OLDEST := 1

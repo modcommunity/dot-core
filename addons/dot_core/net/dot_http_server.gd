@@ -121,7 +121,11 @@ func route_prefix(method: String, prefix: String, handler: Callable) -> void:
 
 ## Serves files from [param dir] (res:// or user://) under [param url_prefix]. Traversal and dotfiles are refused.
 func serve_dir(url_prefix: String, dir: String, index: String = "index.html") -> void:
-	route_prefix("GET", url_prefix, func(req: DotHttpRequest) -> DotHttpResponse: return static_response(dir, req.rest, index, max_static_bytes))
+	# A weak reference: a lambda capturing self would keep the server alive through its own route table.
+	var me := weakref(self)
+	route_prefix("GET", url_prefix, func(req: DotHttpRequest) -> DotHttpResponse:
+		var srv := me.get_ref() as DotHttpServer
+		return DotHttpServer.static_response(dir, req.rest, index, srv.max_static_bytes if srv != null else 16777216))
 
 
 ## The file response for [param rel] under [param dir]: 403 for any traversal, 404 for missing, hidden or a directory without index.

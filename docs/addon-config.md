@@ -14,13 +14,21 @@ var mode: String = DotAddonConfig.get_value(res.value, "rotation.mode", "sequent
 
 ## Folder names, the operator tier and the shim
 
-The folder is the addon name with `-` as `_`: `load_dir("dot-map")` reads `cfg/addons/dot_map/` (`DotAddonConfig.folder_name`). The operator's layer is `cfg/server/<addon_underscored>/`, read in the same roots after `cfg/addons/`, so it beats what a game or addon ships. `file_layers(addon, file, extra_dir := "")` lists every existing copy of one file weakest first, for a reader that layers one named file itself (dot-map's `maps.yml`). Secrets stay file-only in every layer; env and argv refusal is unchanged.
+The folder is the addon name with `-` as `_`: `load_dir("dot-map")` reads `cfg/addons/dot_map/` (`DotAddonConfig.folder_name`). The tiers, weakest first, each read in every root: `cfg/addons/<addon>/`, the game's `cfg/game/<game>/<addon>/` (only when `DotAddonConfig.game` is set; a game sets it once at start), the operator's `cfg/server/addons/<addon>/` and the operator's per-game `cfg/server/game/<game>/<addon>/`. The operator tiers mirror the stock tree, so nothing in `cfg/server/` shares a name with a file there. The old `cfg/server/<addon>/` is still read through `DotCfgLegacy` (one WARN per file, removal 2026-12-31). `file_layers(addon, file, extra_dir := "")` lists every existing copy of one file weakest first, for a reader that layers one named file itself (dot-map's `maps.yml`). Secrets stay file-only in every layer; env and argv refusal is unchanged.
 
 A file that moved from a flat `cfg/<file>.yml` is found through `DotCfgLegacy.find(old_path, new_path)`: the new path wins whole when it exists (never merged with the old); otherwise the old path is returned with one WARN per old path naming both and `DotCfgLegacy.REMOVE_AFTER` (2026-12-31). After that date the old path is ignored and one ERROR names it. Design: [dot-map/docs/cfg-layout.md](../../dot-map/docs/cfg-layout.md). The self-test expects one ERROR line on stderr for the expired case.
 
 ## One named file into a typed config: `apply_file`
 
 An addon with a typed config class (a `DotVoteRules`, a `DotLogConfig`) reads one named file such as `vote.yml` through `DotAddonConfig.apply_file(addon, file_name, legacy_dir, apply)`, where `apply` is a `func(values: Dictionary, path: String) -> PackedStringArray` that sets its own properties and returns what it applied. The helper reads `cfg/addons/<folder>/` then `cfg/server/<folder>/` (the server copy wins), falls back to a flat `legacy_dir/file_name` through `DotCfgLegacy` (one WARN) only while no new copy exists, and fails with `CODE_PARSE` naming the file on a bad yml. It never reads the environment or command line, so a secret key stays file-only: the addon then calls its own `apply_env` and `apply_cli`, which refuse sensitive keys. Needs dot-core API level 16.
+
+## List files: replace by default, `merge: true` to add
+
+A file that is a list (a map rotation) is not merged key by key. `replace_aware_layers(addon, file, extra_dir := "")` returns the layers of `file_layers` that apply, weakest first: a layer whose top level lacks `merge: true` replaces every weaker one, so an operator's `cfg/server/addons/dot_map/maps.yml` swaps the shipped list whole, and one that starts `merge: true` adds to it. The reader (dot-map's rotation file) parses the returned paths itself and honours an optional `remove: [ids]` after merging. `DotAddonConfig.merge(into, over)` is the public deep merge (maps by key, lists replaced whole).
+
+`DotAddonConfig.config_root` is a `--config` root a host sets when it was handed its cfg directory some other way (dot-server-deploy does).
+
+Operators: [dot-server-deploy/docs/operator-config.md](../../dot-server-deploy/docs/operator-config.md).
 
 ## Order
 
