@@ -16,9 +16,15 @@ extends RefCounted
 ## `rotation.mode`: `DOT_MAP_ROTATION_MODE`); the command line is
 ## `--<addon_name>.<path>=value` (`--dot-map.rotation.mode=random`). Only a key that already
 ## exists in the defaults or a file can be overridden, and only with its own type, because
-## that is the only way to know which `_` in the variable name is a separator. A key whose
-## last segment contains `password`, `secret`, `token` or `key`, or is listed in
-## [param sensitive], is refused from both, as [method DotConfig.sensitive_keys] does.
+## that is the only way to know which `_` in the variable name is a separator. A key is
+## refused from both when any segment of its path, split on `_`, `-` and camelCase, holds the
+## word `password`, `secret`, `token` (or their plurals) or ends in the word `key` (`api_key`
+## yes; `hotkey`, `keybind`, `key_repeat` no), or when it is listed in [param sensitive]. Two
+## leaf paths that map to the same variable name (`a_b.c` and `a.b_c`) are ambiguous: the
+## variable is applied to neither, with one WARN; the command line is unambiguous.
+##
+## [b]Shipping.[/b] An export drops `.yml` from the PCK unless the preset's `include_filter`
+## lists it: see [method export_filter_hint].
 ##
 ## [b]Where `cfg/` is[/b], weakest first, each root merged over the one before: `res://cfg`
 ## (shipped with the game), beside the executable (`cfg/`), `user://cfg`, then a
@@ -35,20 +41,39 @@ extends RefCounted
 const CHANNEL := "addon_config"
 const SUBDIR := "addons"
 const EXTENSION := "yml"
-const SECRET_WORDS: PackedStringArray = ["password", "secret", "token", "key"]
+## Whole words that make any path segment secret. `key` is separate: only as the last word.
+const SECRET_WORDS: PackedStringArray = ["password", "passwords", "passwd", "secret", "secrets", "token", "tokens", "apikey"]
 
 ## addon name -> {roots, files, overrides, refused}, kept for [method describe].
 static var _last: Dictionary = {}
+## Env names already warned about as ambiguous, so a reload does not repeat the line.
+static var _warned_ambiguous: Dictionary = {}
 
 
-## The directory that wins for [param addon_name]: the strongest root that has one. When none
-## exists, where one would be created: under `user://cfg`, the only root a game may write.
+## The directory a [b]read[/b] finds first: the strongest root that has one (it may be
+## read-only, such as `res://cfg` or the executable's directory). When none exists, the
+## `user://cfg` path. Never write here; use [method write_dir_for].
 static func dir_for(addon_name: String) -> String:
 	var dirs := _candidate_dirs(addon_name)
 	for i in range(dirs.size() - 1, -1, -1):
 		if DirAccess.dir_exists_absolute(dirs[i]):
 			return dirs[i]
+	return write_dir_for(addon_name)
+
+
+## Where a write belongs: `user://cfg/addons/<addon_name>`, the only root a game may write.
+## It is not always the directory [method dir_for] reads from, and a file written here is
+## overridden by a `--config DIR` that also holds the addon. Call
+## [code]DotWeb.sync_filesystem()[/code] after writing.
+static func write_dir_for(addon_name: String) -> String:
 	return "user://cfg".path_join(SUBDIR).path_join(addon_name)
+
+
+## What an export preset needs so the yml files ship. Godot's exporter only packs resources
+## it knows plus what `include_filter` names, so a game that keeps `res://cfg/addons/` ships
+## none of it without this; it fails silently, as "no files".
+static func export_filter_hint() -> String:
+	return "Add `cfg/*` (or `*.yml`) to include_filter in every export preset (Project > Export > Resources > Filters to export non-resource files), or res://cfg/addons/ is left out of the PCK."
 
 
 ## Reads every yml for [param addon_name] over [param defaults]. Value: the merged Dictionary
@@ -59,7 +84,10 @@ static func load_dir(
 	defaults: Dictionary = {},
 	sensitive: PackedStringArray = PackedStringArray()
 ) -> DotResult:
-	if addon_name.strip_edges().is_empty() or addon_name.contains("/") or addon_name.contains(".."):
+	if (
+		addon_name.strip_edges().is_empty() or addon_name.contains("/") or addon_name.contains("\\")
+		or addon_name.contains(":") or addon_name.contains("..")
+	):
 		return DotResult.fail(DotError.CODE_INVALID, "Bad addon name for config: '%s'" % addon_name)
 
 	var merged: Dictionary = defaults.duplicate(true)
@@ -168,6 +196,9 @@ static func _merge(into: Dictionary, over: Dictionary) -> void:
 
 static func _leaf_paths(tree: Dictionary, prefix: String, out: PackedStringArray) -> void:
 	for k in tree:
+		# A key that is not text, or holds a '.', has no dotted path that reads back.
+		if not (k is String or k is StringName) or String(k).contains("."):
+			continue
 		var p := "%s%s" % [prefix, k]
 		if tree[k] is Dictionary:
 			_leaf_paths(tree[k] as Dictionary, p + ".", out)
@@ -176,14 +207,34 @@ static func _leaf_paths(tree: Dictionary, prefix: String, out: PackedStringArray
 
 
 static func _is_sensitive(path: String, extra: PackedStringArray) -> bool:
-	var last := path.get_slice(".", path.count("."))
-	if extra.has(path) or extra.has(last):
-		return true
-	var low := last.to_lower()
-	for w in SECRET_WORDS:
-		if low.contains(w):
+	var segs := path.split(".")
+	var prefix := ""
+	for seg in segs:
+		prefix = seg if prefix == "" else prefix + "." + seg
+		if extra.has(prefix) or extra.has(seg):
+			return true
+		var words := _words(seg)
+		for w in words:
+			if w in SECRET_WORDS:
+				return true
+		if words.size() > 0 and words[words.size() - 1] == "key":
 			return true
 	return false
+
+
+## Lower-case words of a key: split on `_`, `-` and a lower-to-upper camelCase step.
+static func _words(seg: String) -> PackedStringArray:
+	var spaced := ""
+	for i in seg.length():
+		var c := seg[i]
+		if i > 0 and c != c.to_lower() and seg[i - 1] == seg[i - 1].to_lower() and seg[i - 1] != "_" and seg[i - 1] != "-":
+			spaced += "_"
+		spaced += c
+	var out := PackedStringArray()
+	for w in spaced.to_lower().replace("-", "_").split("_"):
+		if w != "":
+			out.append(w)
+	return out
 
 
 static func _env_name(addon_name: String, path: String) -> String:
@@ -200,11 +251,25 @@ static func _apply_layer(
 	var argv := OS.get_cmdline_user_args() + OS.get_cmdline_args()
 	var cli_prefix := "--%s." % addon_name
 
+	# Two leaves can spell the same variable (a_b.c, a.b_c); which one was meant is unknowable.
+	var env_owner := {}
+	var ambiguous := {}
+	for path in leaves:
+		var en := _env_name(addon_name, path)
+		if env_owner.has(en):
+			ambiguous[en] = true
+		else:
+			env_owner[en] = path
+	for en in ambiguous:
+		if OS.has_environment(en) and not _warned_ambiguous.has(en):
+			_warned_ambiguous[en] = true
+			DotLog.warn(CHANNEL, "environment variable names two keys; applied to neither", {"addon": addon_name, "env": en})
+
 	for path in leaves:
 		var raw: Variant = null
 		var from := ""
 		var env_key := _env_name(addon_name, path)
-		if OS.has_environment(env_key):
+		if OS.has_environment(env_key) and not ambiguous.has(env_key):
 			raw = OS.get_environment(env_key)
 			from = "env " + env_key
 		# Command line is stronger, so it is read second and wins.
@@ -216,7 +281,7 @@ static func _apply_layer(
 			if rest.begins_with("="):
 				raw = rest.substr(1)
 				from = "cli " + a.get_slice("=", 0)
-			elif rest == "" and i + 1 < argv.size():
+			elif rest == "" and i + 1 < argv.size() and not String(argv[i + 1]).begins_with("--"):
 				raw = argv[i + 1]
 				from = "cli " + a
 		if raw == null:
@@ -248,15 +313,39 @@ static func _coerce(text: String, current: Variant) -> Variant:
 			if low in ["false", "0", "no", "off"]:
 				return false
 			return null
+		TYPE_NIL:
+			# No type to keep: read it the way a yml file would.
+			var parsed := DotYaml.parse("v: " + text)
+			if parsed.ok and parsed.value is Dictionary and (parsed.value as Dictionary).has("v"):
+				return (parsed.value as Dictionary)["v"]
+			return text
 		TYPE_INT:
-			return int(text) if text.is_valid_int() else null
+			var t := text.strip_edges()
+			if t.is_valid_int():
+				return t.to_int()
+			if t.is_valid_float():
+				var f := t.to_float()
+				if is_finite(f) and f == floorf(f) and absf(f) < 9007199254740992.0:
+					return int(f)
+			return null
 		TYPE_FLOAT:
 			return float(text) if text.is_valid_float() else null
 		TYPE_STRING, TYPE_STRING_NAME:
 			return text
 		TYPE_ARRAY:
+			# Elements keep the type of the default's first element; text when it is empty.
+			var proto: Variant = ""
+			if (current as Array).size() > 0:
+				proto = (current as Array)[0]
+			if proto is Dictionary or proto is Array:
+				return null
 			var items: Array = []
+			if text.strip_edges() == "":
+				return items
 			for part in text.split(","):
-				items.append(part.strip_edges())
+				var item: Variant = _coerce(part.strip_edges(), proto)
+				if item == null and proto != null:
+					return null
+				items.append(item)
 			return items
 	return null

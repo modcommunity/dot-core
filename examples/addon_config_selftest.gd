@@ -6,8 +6,8 @@ extends Node
 ## godot --headless --path . res://examples/addon_config_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 4
-const CHECKS := 24
+const SECTIONS := 5
+const CHECKS := 42
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_missing()
 	_test_layering()
 	_test_env()
+	_test_hardening()
 	_test_bad_file()
 	_clean()
 
@@ -104,6 +105,41 @@ func _test_env() -> void:
 	for k in ["MODE", "COUNT", "ON"]:
 		OS.unset_environment("SELFTEST_ADDON_ROTATION_" + k)
 	OS.unset_environment("SELFTEST_ADDON_API_TOKEN")
+
+
+func _test_hardening() -> void:
+	_section("Secret words, odd keys, coercion, CLI, ambiguity, names")
+	_clean()
+	_write("10.yml", "hotkey: a\nkeybind: b\nkey_repeat: 3\napi_key: k\nsecrets:\n  name: n\nauth:\n  token:\n    v: t\nplain: p\nnum: 2\nlist:\n  - 1\n  - 2\nemptymap:\nnest_a:\n  b: 1\n")
+	var d := {"nothing": null, 7: "x", "has.dot": 1, "em": {}, "a_b": {"c": "one"}, "a": {"b_c": "two"}}
+	var env := {"HOTKEY": "z", "KEYBIND": "z", "KEY_REPEAT": "9", "API_KEY": "z", "SECRETS_NAME": "z",
+		"AUTH_TOKEN_V": "z", "NUM": "1e1", "LIST": "5,6,7", "NOTHING": "42", "A_B_C": "z"}
+	for k in env:
+		OS.set_environment("SELFTEST_ADDON_" + k, env[k])
+	var res := DotAddonConfig.load_dir(NAME, d)
+	var v: Dictionary = res.value
+	_check(res.ok, "odd keys do not crash the load")
+	_check(v["hotkey"] == "z" and v["keybind"] == "z", "hotkey and keybind are not secrets")
+	_check(v["key_repeat"] == 9, "key_repeat is not a secret")
+	_check(v["api_key"] == "k", "a *_key is refused")
+	_check(v["secrets"]["name"] == "n", "a secret parent segment refuses its children")
+	_check(v["auth"]["token"]["v"] == "t", "a token parent segment refuses its children")
+	_check(v["num"] == 10, "an int accepts an integral float")
+	_check(v["list"] == [5, 6, 7], "a list keeps the element type of its default")
+	_check(v["nothing"] == 42, "a null default is overridable")
+	_check(v["a_b"]["c"] == "one" and v["a"]["b_c"] == "two", "an ambiguous variable applies to neither")
+	for k in env:
+		OS.unset_environment("SELFTEST_ADDON_" + k)
+	_check(DotAddonConfig._coerce("1.5", 3) == null, "a fractional float is not an int")
+	_check(DotAddonConfig._coerce("true", null) == true, "null default parsed as a scalar")
+	_check(DotAddonConfig._coerce("1,x", [1]) == null, "a bad list element fails the list")
+	var leaves := PackedStringArray()
+	DotAddonConfig._leaf_paths({"em": {}, 7: 1, "d.x": 2, "ok": 3}, "", leaves)
+	_check(leaves == PackedStringArray(["ok"]), "empty maps, non-string and dotted keys are not leaves")
+	_check(DotAddonConfig._is_sensitive("cfg.apiKey", PackedStringArray()), "camelCase apiKey is a secret")
+	_check(not DotAddonConfig.load_dir("a\\b").ok and not DotAddonConfig.load_dir("c:d").ok, "backslash and colon are refused in names")
+	_check(DotAddonConfig.write_dir_for(NAME).begins_with("user://cfg/"), "write_dir_for is under user://")
+	_check(DotAddonConfig.export_filter_hint().contains("include_filter"), "export hint names include_filter")
 
 
 func _test_bad_file() -> void:

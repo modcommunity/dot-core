@@ -10,7 +10,7 @@ var mode: String = DotAddonConfig.get_value(res.value, "rotation.mode", "sequent
 ```
 
 - `load_dir(addon_name, defaults := {}, sensitive := PackedStringArray()) -> DotResult`: value is the merged Dictionary (a copy; the defaults are not mutated).
-- `get_value(cfg, "dotted.path", default)`; `dir_for(addon_name) -> String`; `describe(addon_name := "")` / `describe_lines(...)` say which files and overrides the last load used.
+- `get_value(cfg, "dotted.path", default)`; `dir_for(addon_name) -> String` (read-strongest: the directory a read finds first, possibly read-only); `write_dir_for(addon_name) -> String` (always `user://cfg/addons/<name>`, the only place to write; call `DotWeb.sync_filesystem()` after); `describe(addon_name := "")` / `describe_lines(...)` say which files and overrides the last load used.
 
 ## Order
 
@@ -20,12 +20,16 @@ Layers, weakest first, as every `DotConfig`: defaults passed in < yml files < en
 
 ## Where `cfg/` is
 
-Weakest first, each merged over the last: `res://cfg` (shipped), `<executable dir>/cfg`, `user://cfg`, then `--config DIR` (files directly in `DIR`, so `DIR/addons/<name>/`). `dir_for` returns the strongest existing directory, or the `user://cfg` path when none exists. No scene path is involved.
+Weakest first, each merged over the last: `res://cfg` (shipped), `<executable dir>/cfg`, `user://cfg`, then `--config DIR` (files directly in `DIR`, so `DIR/addons/<name>/`). `dir_for` returns the strongest existing directory (read-strongest, maybe read-only), or the `write_dir_for` path when none exists; write only to `write_dir_for`. No scene path is involved.
 
 ## Environment and command line
 
-Environment: `<ADDON>_<PATH>` upper-cased, `-` `.` `/` as `_` (`dot-map`, `rotation.mode` is `DOT_MAP_ROTATION_MODE`). Command line: `--dot-map.rotation.mode=random`. Only a key already present in the defaults or a file can be overridden, and only with a value of its own type (bool, int, float, string, list split on commas); anything else logs a WARN and is ignored. Keys whose last segment contains `password`, `secret`, `token` or `key`, or that the caller lists in `sensitive`, are refused from both, as `DotConfig.sensitive_keys()` does.
+Environment: `<ADDON>_<PATH>` upper-cased, `-` `.` `/` as `_` (`dot-map`, `rotation.mode` is `DOT_MAP_ROTATION_MODE`). Command line: `--dot-map.rotation.mode=random`. Only a key already present in the defaults or a file can be overridden, and only with a value of its own type (bool, int, float, string, list split on commas); anything else logs a WARN and is ignored. Keys are refused from both when any segment of the path, split on `_`, `-` and camelCase, holds the word `password`, `secret` or `token` (or a plural) or ends in the word `key` (`api_key` yes; `hotkey`, `keybind`, `key_repeat` no), so `secrets.name` and `auth.token.v` are refused too; so is anything the caller lists in `sensitive`. Keys that are not text or contain `.`, and empty maps, cannot be overridden. A `null` default takes the value as a yml scalar; an int accepts `1e3` or `1.0`; a list keeps the element type of the default's first element. A space-separated command line value (`--dot-map.rotation.mode random`) is not taken when it starts with `--`. When two leaves spell the same variable (`a_b.c`, `a.b_c`) the variable applies to neither and one WARN is logged; the command line still works.
+
+## Exports drop the yml
+
+Godot's exporter packs only resources and what `include_filter` names, so `res://cfg/addons/*.yml` is silently missing from an exported game or a web build unless every export preset has `cfg/*` (or `*.yml`) in `include_filter`. Add it to a game's `export_presets.cfg`, to `game.sh` export steps, to dot-ci's export jobs and to dot-game-template's presets; `DotAddonConfig.export_filter_hint()` returns the sentence for a tool to print. A missing directory is not an error, so nothing at runtime can tell you.
 
 ## Failures
 
-A missing directory is not an error. A file that does not parse returns the `DotYaml` failure (`DotError.CODE_PARSE`, or `CODE_IO`) wrapped with the addon and file name, and logs ERROR on channel `addon_config`; a file whose top level is not a mapping is `CODE_PARSE`; a bad addon name (empty, `/`, `..`) is `CODE_INVALID`. The self-test expects one ERROR line on stderr for the bad-file case.
+A missing directory is not an error. A file that does not parse returns the `DotYaml` failure (`DotError.CODE_PARSE`, or `CODE_IO`) wrapped with the addon and file name, and logs ERROR on channel `addon_config`; a file whose top level is not a mapping is `CODE_PARSE`; a bad addon name (empty, `/`, `\`, `:`, `..`) is `CODE_INVALID`. The self-test expects one ERROR line on stderr for the bad-file case.
