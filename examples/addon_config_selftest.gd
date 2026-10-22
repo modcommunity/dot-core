@@ -6,8 +6,8 @@ extends Node
 ## godot --headless --path . res://examples/addon_config_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 7
-const CHECKS := 63
+const SECTIONS := 8
+const CHECKS := 71
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -30,6 +30,7 @@ func _run() -> void:
 	_test_bad_file()
 	_test_server_tier()
 	_test_legacy_shim()
+	_test_apply_file()
 	_clean()
 
 	_line("")
@@ -218,6 +219,49 @@ func _test_legacy_shim() -> void:
 	_check(DotCfgLegacy.find(old_p, new_p) == "", "after the removal date the old path is ignored")
 	_check(DotCfgLegacy.warned_count() == 1, "and reported once as an error")
 	_check(DotCfgLegacy.REMOVE_AFTER == "2026-12-31", "the removal date is 2026-12-31")
+	DotCfgLegacy.reset()
+
+
+func _test_apply_file() -> void:
+	_section("apply_file: layers, legacy shim, bad yml, secrets stay out of env")
+	_clean()
+	DotCfgLegacy.reset()
+	var got := {}
+	var apply := func(values: Dictionary, path: String) -> PackedStringArray:
+		got.merge(values, true)
+		return PackedStringArray([path])
+	var legacy := "user://cfg/legacy_apply"
+	_write("t.yml", "mode: addon\nkeep: 1\n")
+	var res := DotAddonConfig.apply_file(NAME, "t.yml", "", apply)
+	_check(res.ok and res.value.size() == 1 and got.get("mode") == "addon", "the new path is applied")
+	_write_at(legacy, "t.yml", "mode: old\n")
+	got.clear()
+	DotAddonConfig.apply_file(NAME, "t.yml", legacy, apply)
+	_check(got.get("mode") == "addon" and got.get("keep") == 1, "the new path beats the legacy file")
+	_write_at(_server_dir(), "t.yml", "mode: server\n")
+	got.clear()
+	res = DotAddonConfig.apply_file(NAME, "t.yml", legacy, apply)
+	_check(res.value.size() == 2 and got.get("mode") == "server" and got.get("keep") == 1, "the server layer is applied last and wins")
+	_clean()
+	DotCfgLegacy.reset()
+	_write_at(legacy, "t.yml", "mode: old\n")
+	got.clear()
+	res = DotAddonConfig.apply_file(NAME, "t.yml", legacy, apply)
+	_check(res.ok and got.get("mode") == "old" and DotCfgLegacy.warned_count() == 1, "only a legacy file: read, warned")
+	DotAddonConfig.apply_file(NAME, "t.yml", legacy, apply)
+	_check(DotCfgLegacy.warned_count() == 1, "the legacy warning is once")
+	_check(DotAddonConfig.apply_file(NAME, "none.yml", legacy, apply).value.is_empty(), "no file: success, nothing applied")
+	_clean()
+	_write("bad.yml", "a:\n\tb: 1\n  - broken: [\n")
+	res = DotAddonConfig.apply_file(NAME, "bad.yml", "", apply)
+	_check(not res.ok and res.error.code == DotError.CODE_PARSE and res.error.message.contains("bad.yml"), "bad yml: CODE_PARSE naming the file")
+	_clean()
+	_write("sec.yml", "api_key: file\nmode: x\n")
+	OS.set_environment("SELFTEST_ADDON_API_KEY", "stolen")
+	var env_cfg := DotAddonConfig.load_dir(NAME, {"api_key": "d"})
+	OS.unset_environment("SELFTEST_ADDON_API_KEY")
+	_check(env_cfg.ok and DotAddonConfig.get_value(env_cfg.value, "api_key") == "file", "a secret comes from the file; the environment cannot set it")
+	_clean()
 	DotCfgLegacy.reset()
 
 

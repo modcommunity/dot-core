@@ -29,5 +29,6 @@ extends RefCounted
 # 15: DotCfgLegacy (old cfg path read through a warn-once shim until 2026-12-31),
 #     DotAddonConfig.folder_name / file_layers and the cfg/server/<addon>/ operator tier;
 #     an addon name's `-` is now `_` in its cfg/addons folder.
-const LEVEL := 15
+# 16: DotAddonConfig.apply_file (one named yml through the addon, server and legacy layers, applied by the caller).
+const LEVEL := 16
 const OLDEST := 1

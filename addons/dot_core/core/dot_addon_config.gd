@@ -83,6 +83,34 @@ static func file_layers(addon_name: String, file: String, extra_dir: String = ""
 	return out
 
 
+## Reads one named yml for an addon that applies it to its own typed config: `cfg/addons/<folder>/`
+## then the operator's `cfg/server/<folder>/` (weakest first), each handed to [param apply], a
+## `func(values: Dictionary, path: String) -> PackedStringArray`. A flat [param legacy_dir]/[param file_name]
+## is read instead, with one WARN, while no new copy exists. Value: the strings [param apply] returned.
+## Secrets are the caller's to keep file-only: this never touches the environment or command line.
+static func apply_file(addon_name: String, file_name: String, legacy_dir: String, apply: Callable) -> DotResult:
+	var layers := file_layers(addon_name, file_name)
+	var newest := (
+		layers[layers.size() - 1] if not layers.is_empty()
+		else write_dir_for(addon_name).path_join(file_name)
+	)
+	var old_path := legacy_dir.path_join(file_name) if legacy_dir != "" else ""
+	if old_path != "" and DotCfgLegacy.find(old_path, newest) == old_path:
+		layers = PackedStringArray([old_path])
+
+	var applied := PackedStringArray()
+	for path in layers:
+		var parsed := DotYaml.parse_file(path)
+		if not parsed.ok:
+			return parsed.wrap("Could not read '%s'." % path)
+		if parsed.value == null:
+			continue
+		if not (parsed.value is Dictionary):
+			return DotResult.fail(DotError.CODE_PARSE, "'%s' must hold a mapping at the top level." % path)
+		applied.append_array(apply.call(parsed.value as Dictionary, path))
+	return DotResult.success(applied)
+
+
 ## Where a write belongs: `user://cfg/addons/<addon_underscored>`, the only root a game may write.
 ## It is not always the directory [method dir_for] reads from, and a file written here is
 ## overridden by a `--config DIR` that also holds the addon. Call
