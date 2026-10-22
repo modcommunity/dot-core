@@ -7,7 +7,7 @@ extends Node
 ## [/codeblock]
 
 const SECTIONS := 10
-const CHECKS := 107
+const CHECKS := 117
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -406,6 +406,25 @@ func _test_user_tier() -> void:
 	saved = DotAddonConfig.save_user(NAME, "../t.yml", {"mode": "a"})
 	_check(not saved.ok and saved.error.code == DotError.CODE_INVALID, "a path-like file name is refused")
 	_check(DotAddonConfig.user_paths(NAME, "t.yml").get("volume") == 0.5, "refused saves left the file as it was")
+	var schema2 := schema + [DotProfileSet.field("max_players", "int", 8), DotProfileSet.field("auth", "dict", {}), DotProfileSet.field("box", "dict", {})]
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"max_players.x": 999}, schema2)
+	_check(not saved.ok and saved.error.code == DotError.CODE_INVALID, "a dotted key under a non-dict field is refused")
+	_check(not DotAddonConfig.user_paths(NAME, "t.yml").has("max_players.x") and not DotAddonConfig.user_paths(NAME, "t.yml").has("max_players"), "the int field was not turned into a mapping")
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"box.size": 3}, schema2)
+	_check(saved.ok and DotAddonConfig.user_paths(NAME, "t.yml").get("box.size") == 3, "a dotted key under a dict field is saved")
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"auth": {"token": "x"}}, schema2)
+	_check(not saved.ok and saved.error.code == DotError.CODE_FORBIDDEN, "a secret nested in a dictionary value is refused")
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"auth.token": "x"}, schema2)
+	_check(not saved.ok and saved.error.code == DotError.CODE_FORBIDDEN, "a secret word in an earlier key segment is refused")
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"secrets.value": 1})
+	_check(not saved.ok and saved.error.code == DotError.CODE_FORBIDDEN, "secrets.value is refused without a schema")
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"box": {"pin": 1}}, schema2, PackedStringArray(["pin"]))
+	_check(not saved.ok and saved.error.code == DotError.CODE_FORBIDDEN, "the addon's own sensitive list reaches nested keys")
+	saved = DotAddonConfig.save_user("../x", "t.yml", {"mode": "a"})
+	_check(not saved.ok and saved.error.code == DotError.CODE_INVALID, "save_user refuses a path-like addon name")
+	var bad_reset := DotAddonConfig.reset_user("../x", "t.yml")
+	_check(not bad_reset.ok and bad_reset.error.code == DotError.CODE_INVALID, "reset_user refuses a path-like addon name")
+	_check(DotAddonConfig.user_paths("../x", "t.yml").is_empty(), "user_paths refuses a path-like addon name")
 	var reset := DotAddonConfig.reset_user(NAME, "t.yml")
 	_check(reset.ok and reset.value == true and not FileAccess.file_exists(DotAddonConfig.user_file(NAME, "t.yml")), "reset_user removes the file")
 	cfg = DotAddonConfig.load_dir(NAME, {})

@@ -182,7 +182,7 @@ static func user_file(addon_name: String, file: String) -> String:
 ## The user file's own `{dotted path: value}`, read even when the tier is off; empty when absent or unreadable.
 static func user_paths(addon_name: String, file: String) -> Dictionary:
 	var path := user_file(addon_name, file)
-	if not _file_ok(file) or not FileAccess.file_exists(path):
+	if not _file_ok(file) or not _addon_ok(addon_name) or not FileAccess.file_exists(path):
 		return {}
 	var res := DotYaml.parse_file(path)
 	var out := {}
@@ -193,11 +193,12 @@ static func user_paths(addon_name: String, file: String) -> Dictionary:
 
 ## Writes [param paths] (`{dotted path: value}`) into the user copy of [param file], keeping its other keys.
 ## With a [param schema] (the [method DotProfileSet.field] array the editor shows) each top-level key must
-## be in it and of its type; without one only yml-safe values are required. `CODE_STATE` while the tier is off.
-static func save_user(addon_name: String, file: String, paths: Dictionary, schema: Array = []) -> DotResult:
+## be in it and of its type (a dotted key only under a `dict` field); without one only yml-safe values are required.
+## A key path or nested key holding a secret word, or listed in [param sensitive], is refused. `CODE_STATE` while the tier is off.
+static func save_user(addon_name: String, file: String, paths: Dictionary, schema: Array = [], sensitive: PackedStringArray = PackedStringArray()) -> DotResult:
 	if not user_tier_enabled:
 		return DotResult.fail(DotError.CODE_STATE, "%s/%s: the user tier is off in this process" % [addon_name, file])
-	if not _file_ok(file) or addon_name.strip_edges() == "" or addon_name.contains("/") or addon_name.contains(".."):
+	if not _file_ok(file) or not _addon_ok(addon_name):
 		return DotResult.fail(DotError.CODE_INVALID, "bad addon or file name '%s/%s'" % [addon_name, file])
 	var scratch: DotProfileSet = DotProfileSet.create(addon_name, "", "addon", schema) if not schema.is_empty() else null
 	var tree := {}
@@ -216,7 +217,7 @@ static func save_user(addon_name: String, file: String, paths: Dictionary, schem
 		var value: Variant = paths[key]
 		if not DotProfileSet._finite(value):
 			return DotResult.fail(DotError.CODE_INVALID, "%s: NaN or infinity is refused" % key)
-		if _is_sensitive(parts[parts.size() - 1], PackedStringArray()):
+		if _is_sensitive(String(key), sensitive) or _holds_secret(String(key), value, sensitive):
 			return DotResult.fail(DotError.CODE_FORBIDDEN, "%s: secrets are file-only" % key)
 		if scratch != null:
 			var f := {}
@@ -225,6 +226,8 @@ static func save_user(addon_name: String, file: String, paths: Dictionary, schem
 					f = e
 			if f.is_empty():
 				return DotResult.fail(DotError.CODE_INVALID, "unknown key '%s'" % parts[0])
+			if parts.size() > 1 and f["type"] != "dict":
+				return DotResult.fail(DotError.CODE_INVALID, "%s: '%s' is not a mapping, so it has no nested keys" % [key, parts[0]])
 			if parts.size() == 1:
 				var checked := scratch._check_field(f, value)
 				if checked.has("error"):
@@ -247,8 +250,8 @@ static func save_user(addon_name: String, file: String, paths: Dictionary, schem
 
 ## Removes the user copy of [param file]: back to the tiers below. Value: true when a file was removed.
 static func reset_user(addon_name: String, file: String) -> DotResult:
-	if not _file_ok(file):
-		return DotResult.fail(DotError.CODE_INVALID, "bad file name '%s'" % file)
+	if not _file_ok(file) or not _addon_ok(addon_name):
+		return DotResult.fail(DotError.CODE_INVALID, "bad addon or file name '%s/%s'" % [addon_name, file])
 	var path := user_file(addon_name, file)
 	if not FileAccess.file_exists(path):
 		return DotResult.success(false)
@@ -261,6 +264,21 @@ static func reset_user(addon_name: String, file: String) -> DotResult:
 
 static func _file_ok(file: String) -> bool:
 	return file != "" and not file.contains("/") and not file.contains("\\") and not file.contains("..") and file.get_extension() == EXTENSION
+
+
+static func _addon_ok(addon_name: String) -> bool:
+	return addon_name.strip_edges() != "" and not addon_name.contains("/") and not addon_name.contains("\\") and not addon_name.contains("..") and not addon_name.contains(":")
+
+
+## Whether any key inside a dictionary [param value] (under [param prefix]) is a secret.
+static func _holds_secret(prefix: String, value: Variant, extra: PackedStringArray) -> bool:
+	if not (value is Dictionary):
+		return false
+	for k in value:
+		var p := "%s.%s" % [prefix, k]
+		if _is_sensitive(p, extra) or _holds_secret(p, value[k], extra):
+			return true
+	return false
 
 
 static func _leaf_values(tree: Dictionary, prefix: String, out: Dictionary) -> void:
