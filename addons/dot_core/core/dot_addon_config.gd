@@ -78,7 +78,8 @@ static func export_filter_hint() -> String:
 
 ## Reads every yml for [param addon_name] over [param defaults]. Value: the merged Dictionary
 ## (a fresh copy; [param defaults] is never mutated). A missing directory returns the
-## defaults. A bad file fails with [constant DotError.CODE_PARSE] (or CODE_IO) naming the file.
+## defaults. Pass the addon's own defaults only: rows a profile set already merged, passed as
+## [param defaults], are overwritten silently. A bad file fails with [constant DotError.CODE_PARSE] (or CODE_IO) naming the file.
 static func load_dir(
 	addon_name: String,
 	defaults: Dictionary = {},
