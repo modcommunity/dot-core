@@ -10,8 +10,13 @@ extends RefCounted
 ## [i]candidate[/i] is a Dictionary `{"id": "surf_mesa", "ref": "owner/surf_mesa"}` (`ref` is
 ## optional) and the caller supplies the installed ones.
 ##
+## An entry is a string, or a mapping that carries per-entry settings: `{surf_*: {waves: hard}}`
+## or `{map: surf_*, waves: hard}` (pattern under `entry`, `map`, `id`, `name` or `game`, every other
+## key a setting). The pattern joins `entries` as if it were written as a string; the settings
+## are in `settings` (`pattern: {key: value}`) and [method settings_for] answers for one id.
+##
 ## A section (one level of the file) normalises to
-## `{"rotation": String, "mode": String, "cooldown": int (-1 unset), "rotations": {name: {"mode": String, "cooldown": int, "entries": PackedStringArray}}}`.
+## `{"rotation": String, "mode": String, "cooldown": int (-1 unset), "rotations": {name: {"mode": String, "cooldown": int, "entries": PackedStringArray, "settings": {pattern: Dictionary}}}}`.
 ## A plain list under [param list_key] at the section's level is shorthand for a rotation
 ## named `main`; if the section also defines `rotations: main`, that wins and a warning is
 ## returned.
@@ -19,6 +24,7 @@ extends RefCounted
 const CHANNEL := "core.rotation"
 const MAIN := "main"
 const MODES := ["random", "cycle"]
+const PATTERN_KEYS := ["entry", "map", "id", "name", "game"]
 
 
 ## One file section, normalised. The value is the spec Dictionary above; [param warnings]
@@ -38,22 +44,23 @@ static func normalize(section: Dictionary, list_key: String, warnings: PackedStr
 	if named is Dictionary:
 		for key: Variant in (named as Dictionary):
 			var body: Variant = (named as Dictionary)[key]
-			var rot := {"mode": "", "cooldown": -1, "entries": PackedStringArray()}
+			var rot := {"mode": "", "cooldown": -1, "entries": PackedStringArray(), "settings": {}}
 			if body is Dictionary:
 				var b := body as Dictionary
 				if b.has("mode"):
 					rot["mode"] = _mode(b["mode"], warnings, where)
 				if b.has("cooldown"):
 					rot["cooldown"] = maxi(int(b["cooldown"]), 0)
-				rot["entries"] = _entries(b.get(list_key, []))
+				_fill(rot, b.get(list_key, []), warnings, where)
 			elif body is Array:
-				rot["entries"] = _entries(body)
+				_fill(rot, body, warnings, where)
 			(spec["rotations"] as Dictionary)[str(key)] = rot
 	elif section.has("rotations"):
 		warnings.append("%srotations: must be a map of names to lists" % _at(where))
 
 	if section.has(list_key):
-		var shorthand := {"mode": "", "cooldown": -1, "entries": _entries(section[list_key])}
+		var shorthand := {"mode": "", "cooldown": -1, "entries": PackedStringArray(), "settings": {}}
+		_fill(shorthand, section[list_key], warnings, where)
 		if (spec["rotations"] as Dictionary).has(MAIN):
 			warnings.append("%s%s: and rotations: main are both set; rotations: main wins" % [_at(where), list_key])
 		else:
@@ -80,7 +87,7 @@ static func layer(specs: Array) -> Dictionary:
 			out["cooldown"] = spec["cooldown"]
 		for name: Variant in (spec.get("rotations", {}) as Dictionary):
 			var incoming: Dictionary = (spec["rotations"] as Dictionary)[name]
-			var have: Dictionary = (out["rotations"] as Dictionary).get(name, {"mode": "", "cooldown": -1, "entries": PackedStringArray()})
+			var have: Dictionary = (out["rotations"] as Dictionary).get(name, {"mode": "", "cooldown": -1, "entries": PackedStringArray(), "settings": {}})
 			var merged := have.duplicate()
 			if str(incoming.get("mode", "")) != "":
 				merged["mode"] = incoming["mode"]
@@ -89,6 +96,7 @@ static func layer(specs: Array) -> Dictionary:
 			# A rotation that only sets a mode keeps the list below it.
 			if not (incoming["entries"] as PackedStringArray).is_empty() or not have.has("entries"):
 				merged["entries"] = incoming["entries"]
+				merged["settings"] = incoming.get("settings", {})
 			(out["rotations"] as Dictionary)[name] = merged
 	return out
 
@@ -169,6 +177,59 @@ static func expand(entries: PackedStringArray, candidates: Array, collections: D
 			if not out.has(str(id)):
 				out.append(str(id))
 	return out
+
+
+## The settings the rotation's mapping entries give [param id]: every entry whose pattern
+## matches it, merged in written order (a later entry wins a key). `{}` for a string-only rotation.
+static func settings_for(spec: Dictionary, name: String, id: String, candidates: Array, collections: Dictionary = {}) -> Dictionary:
+	var rot: Dictionary = (spec.get("rotations", {}) as Dictionary).get(name, {})
+	var all: Dictionary = rot.get("settings", {})
+	var out := {}
+	for pattern: Variant in (rot.get("entries", PackedStringArray()) as PackedStringArray):
+		if not all.has(pattern):
+			continue
+		if expand(PackedStringArray([pattern]), candidates, collections, PackedStringArray()).has(id):
+			out.merge(all[pattern], true)
+	return out
+
+
+## Reads [param v] into [param rot]'s `entries` and `settings`.
+static func _fill(rot: Dictionary, v: Variant, warnings: PackedStringArray, where: String) -> void:
+	var entries := rot["entries"] as PackedStringArray
+	var settings := rot["settings"] as Dictionary
+	var items: Array = v if v is Array else ([v] if v != null else [])
+	for item: Variant in items:
+		var pattern := ""
+		var extra := {}
+		if item is Dictionary:
+			var d := item as Dictionary
+			var key := ""
+			for k in PATTERN_KEYS:
+				if d.has(k):
+					key = k
+					break
+			if key != "":
+				pattern = str(d[key]).strip_edges()
+				for k: Variant in d:
+					if str(k) != key:
+						extra[str(k)] = d[k]
+			elif d.size() == 1 and d.values()[0] is Dictionary:
+				pattern = str(d.keys()[0]).strip_edges()
+				extra = (d.values()[0] as Dictionary).duplicate(true)
+			else:
+				warnings.append("%sa rotation entry that is a map needs entry:/map:/id:/name: or a single `pattern: {settings}`" % _at(where))
+				continue
+		else:
+			pattern = str(item).strip_edges()
+		if pattern == "":
+			continue
+		if not entries.has(pattern):
+			entries.append(pattern)
+		if not extra.is_empty():
+			if not settings.has(pattern):
+				settings[pattern] = {}
+			(settings[pattern] as Dictionary).merge(extra, true)
+	rot["entries"] = entries
 
 
 static func _ref(c: Dictionary) -> String:
