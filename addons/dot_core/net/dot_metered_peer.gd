@@ -38,8 +38,6 @@ extends MultiplayerPeerExtension
 ## No ENet identifier is named in this file: the web template has none, and a script
 ## mentioning one does not compile there. ENet is reached by [method Object.call].
 
-const CHANNEL := "transport"
-
 ## The peer underneath. Everything is forwarded to it.
 var inner: MultiplayerPeer = null
 
