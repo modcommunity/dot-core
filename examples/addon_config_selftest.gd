@@ -6,8 +6,8 @@ extends Node
 ## godot --headless --path . res://examples/addon_config_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 9
-const CHECKS := 87
+const SECTIONS := 10
+const CHECKS := 107
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -32,6 +32,7 @@ func _run() -> void:
 	_test_server_mirror_and_game_tier()
 	_test_legacy_shim()
 	_test_apply_file()
+	_test_user_tier()
 	_clean()
 
 	_line("")
@@ -78,7 +79,7 @@ func _write_at(dir: String, file: String, text: String) -> void:
 
 
 func _clean() -> void:
-	for dir in [_dir(), _server_dir(), _old_server_dir(), _game_dir(), _server_game_dir(), "user://cfg/legacy_selftest"]:
+	for dir in [_dir(), _server_dir(), _old_server_dir(), _game_dir(), _server_game_dir(), DotAddonConfig.user_dir_for(NAME), "user://cfg/legacy_selftest"]:
 		if DirAccess.dir_exists_absolute(dir):
 			for f in DirAccess.get_files_at(dir):
 				DirAccess.remove_absolute(dir.path_join(f))
@@ -361,3 +362,56 @@ func _check(condition: bool, what: String) -> void:
 
 func _line(text: String) -> void:
 	print(text)
+
+
+func _test_user_tier() -> void:
+	_section("user tier: off by default, between game and server, write, reset")
+	_clean()
+	DotAddonConfig.set_user_tier(false)
+	var schema := [
+		DotProfileSet.field("mode", "string", "a", {"enum": ["a", "b", "c"]}),
+		DotProfileSet.field("volume", "float", 1.0, {"min": 0.0, "max": 2.0}),
+	]
+	_write("t.yml", "mode: addon\nvolume: 1.0\n")
+	_write_at(DotAddonConfig.user_dir_for(NAME), "t.yml", "mode: user\n")
+	var cfg := DotAddonConfig.load_dir(NAME, {})
+	_check(cfg.ok and cfg.value["mode"] == "addon", "tier off (a server): a file in user:// is ignored by load_dir")
+	_check(DotAddonConfig.file_layers(NAME, "t.yml").size() == 1, "tier off: file_layers lists only the addon copy")
+	_check(DotAddonConfig.user_paths(NAME, "t.yml") == {"mode": "user"}, "user_paths reads the file even while off")
+	var saved := DotAddonConfig.save_user(NAME, "t.yml", {"volume": 0.5}, schema)
+	_check(not saved.ok and saved.error.code == DotError.CODE_STATE, "tier off: save_user is CODE_STATE")
+	DotAddonConfig.set_user_tier(true)
+	_check(DotProfileSet.user_tier_enabled, "set_user_tier also switches DotProfileSet")
+	cfg = DotAddonConfig.load_dir(NAME, {})
+	_check(cfg.ok and cfg.value["mode"] == "user" and cfg.value["volume"] == 1.0, "tier on: the user file overrides key by key")
+	_write_at(_server_dir(), "t.yml", "mode: server\n")
+	cfg = DotAddonConfig.load_dir(NAME, {})
+	_check(cfg.value["mode"] == "server", "the operator tier beats the user tier")
+	var layers := DotAddonConfig.file_layers(NAME, "t.yml")
+	_check(layers.size() == 3 and layers[1].contains("/user/addons/") and layers[2].contains("/server/addons/"), "file_layers order: addon, user, server")
+	_clean()
+	_write("t.yml", "mode: addon\nvolume: 1.0\n")
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"volume": 0.5, "mode": "b"}, schema)
+	_check(saved.ok, "save_user writes the user copy")
+	cfg = DotAddonConfig.load_dir(NAME, {})
+	_check(cfg.value["volume"] == 0.5 and cfg.value["mode"] == "b", "the saved values load")
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"mode": "c"}, schema)
+	_check(DotAddonConfig.user_paths(NAME, "t.yml") == {"volume": 0.5, "mode": "c"}, "a second save keeps the other keys")
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"volume": 9.0}, schema)
+	_check(not saved.ok, "out of range is refused by the schema")
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"nope": 1}, schema)
+	_check(not saved.ok and saved.error.code == DotError.CODE_INVALID, "an unknown key is refused")
+	saved = DotAddonConfig.save_user(NAME, "t.yml", {"api_key": "x"})
+	_check(not saved.ok and saved.error.code == DotError.CODE_FORBIDDEN, "a secret key is file-only")
+	saved = DotAddonConfig.save_user(NAME, "../t.yml", {"mode": "a"})
+	_check(not saved.ok and saved.error.code == DotError.CODE_INVALID, "a path-like file name is refused")
+	_check(DotAddonConfig.user_paths(NAME, "t.yml").get("volume") == 0.5, "refused saves left the file as it was")
+	var reset := DotAddonConfig.reset_user(NAME, "t.yml")
+	_check(reset.ok and reset.value == true and not FileAccess.file_exists(DotAddonConfig.user_file(NAME, "t.yml")), "reset_user removes the file")
+	cfg = DotAddonConfig.load_dir(NAME, {})
+	_check(cfg.value["mode"] == "addon" and cfg.value["volume"] == 1.0, "after reset the shipped values are back")
+	reset = DotAddonConfig.reset_user(NAME, "t.yml")
+	_check(reset.ok and reset.value == false, "a second reset is a no-op")
+	DotAddonConfig.set_user_tier(false)
+	_check(not DotProfileSet.user_tier_enabled, "set_user_tier(false) switches both off")
+	_clean()

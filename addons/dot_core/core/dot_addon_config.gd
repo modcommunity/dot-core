@@ -48,6 +48,8 @@ const SUBDIR := "addons"
 const SERVER_SUBDIR := "server/addons"
 ## The game layer between the addon's and the operator's: `cfg/game/<game>/<addon_underscored>/`.
 const GAME_SUBDIR := "game"
+## The player's own layer, `user://cfg/user/addons/<addon_underscored>/`, between game and operator; see [method set_user_tier].
+const USER_SUBDIR := "user/addons"
 ## The operator's per-game layer, strongest: `cfg/server/game/<game>/<addon_underscored>/`.
 const SERVER_GAME_SUBDIR := "server/game"
 ## The operator layer before the mirror: `cfg/server/<addon_underscored>/`, shimmed by [DotCfgLegacy].
@@ -58,6 +60,11 @@ const SECRET_WORDS: PackedStringArray = ["password", "passwords", "passwd", "sec
 
 ## The game whose `cfg/game/<game>/` tier is read; empty skips that tier. A game sets it once at start.
 static var game: String = ""
+
+## Whether the player's user tier is read. Off by default: only a solo or listen-host process turns it on
+## ([method set_user_tier]); a dedicated server or a connected client keeps it off, so a file on a
+## player's disk never changes what a server says.
+static var user_tier_enabled := false
 
 ## A `--config`-style root to read as well when the command line names none: a host that was handed its cfg directory another way sets it.
 static var config_root: String = ""
@@ -90,7 +97,7 @@ static func folder_name(addon_name: String) -> String:
 ## `maps.yml` that a reader layers itself; [param extra_dir] is a `--config`-style root put last.
 static func file_layers(addon_name: String, file: String, extra_dir: String = "") -> PackedStringArray:
 	var out := PackedStringArray()
-	for tier in [SUBDIR, GAME_SUBDIR, SERVER_SUBDIR, SERVER_GAME_SUBDIR]:
+	for tier in [SUBDIR, GAME_SUBDIR, USER_SUBDIR, SERVER_SUBDIR, SERVER_GAME_SUBDIR]:
 		var dirs := _tier_dirs(addon_name, tier, extra_dir)
 		var olds := _tier_dirs(addon_name, LEGACY_SERVER_SUBDIR, extra_dir) if tier == SERVER_SUBDIR else PackedStringArray()
 		for i in dirs.size():
@@ -155,6 +162,115 @@ static func write_dir_for(addon_name: String) -> String:
 	return "user://cfg".path_join(SUBDIR).path_join(folder_name(addon_name))
 
 
+## Turns the player's user tier on for a solo or listen-host process, off for a server or a connected client.
+## Also switches [member DotProfileSet.user_tier_enabled].
+static func set_user_tier(enabled: bool) -> void:
+	user_tier_enabled = enabled
+	DotProfileSet.user_tier_enabled = enabled
+
+
+## Directory of the user tier for an addon: `user://cfg/user/addons/<addon_underscored>`.
+static func user_dir_for(addon_name: String) -> String:
+	return "user://cfg".path_join(USER_SUBDIR).path_join(folder_name(addon_name))
+
+
+## Path of the user-tier copy of [param file].
+static func user_file(addon_name: String, file: String) -> String:
+	return user_dir_for(addon_name).path_join(file)
+
+
+## The user file's own `{dotted path: value}`, read even when the tier is off; empty when absent or unreadable.
+static func user_paths(addon_name: String, file: String) -> Dictionary:
+	var path := user_file(addon_name, file)
+	if not _file_ok(file) or not FileAccess.file_exists(path):
+		return {}
+	var res := DotYaml.parse_file(path)
+	var out := {}
+	if res.ok and res.value is Dictionary:
+		_leaf_values(res.value, "", out)
+	return out
+
+
+## Writes [param paths] (`{dotted path: value}`) into the user copy of [param file], keeping its other keys.
+## With a [param schema] (the [method DotProfileSet.field] array the editor shows) each top-level key must
+## be in it and of its type; without one only yml-safe values are required. `CODE_STATE` while the tier is off.
+static func save_user(addon_name: String, file: String, paths: Dictionary, schema: Array = []) -> DotResult:
+	if not user_tier_enabled:
+		return DotResult.fail(DotError.CODE_STATE, "%s/%s: the user tier is off in this process" % [addon_name, file])
+	if not _file_ok(file) or addon_name.strip_edges() == "" or addon_name.contains("/") or addon_name.contains(".."):
+		return DotResult.fail(DotError.CODE_INVALID, "bad addon or file name '%s/%s'" % [addon_name, file])
+	var scratch: DotProfileSet = DotProfileSet.create(addon_name, "", "addon", schema) if not schema.is_empty() else null
+	var tree := {}
+	var path := user_file(addon_name, file)
+	var had := FileAccess.file_exists(path)
+	if had:
+		var existing := DotYaml.parse_file(path)
+		if not existing.ok:
+			return existing.wrap("saving %s" % path)
+		if existing.value is Dictionary:
+			tree = existing.value
+	for key in paths:
+		var parts := String(key).split(".")
+		if String(key).is_empty() or parts.has(""):
+			return DotResult.fail(DotError.CODE_INVALID, "bad key path '%s'" % key)
+		var value: Variant = paths[key]
+		if not DotProfileSet._finite(value):
+			return DotResult.fail(DotError.CODE_INVALID, "%s: NaN or infinity is refused" % key)
+		if _is_sensitive(parts[parts.size() - 1], PackedStringArray()):
+			return DotResult.fail(DotError.CODE_FORBIDDEN, "%s: secrets are file-only" % key)
+		if scratch != null:
+			var f := {}
+			for e in schema:
+				if e["name"] == parts[0]:
+					f = e
+			if f.is_empty():
+				return DotResult.fail(DotError.CODE_INVALID, "unknown key '%s'" % parts[0])
+			if parts.size() == 1:
+				var checked := scratch._check_field(f, value)
+				if checked.has("error"):
+					return DotResult.fail(DotError.CODE_INVALID, "%s: %s" % [key, checked["error"]])
+				value = checked["value"]
+		DotProfileSet._set_path(tree, parts, value)
+	var text: Variant = DotProfileRuntime._emit(tree, 0)
+	if text == null:
+		return DotResult.fail(DotError.CODE_INVALID, "%s holds a value yml cannot carry" % path)
+	var dir := DotPaths.ensure_parent_dir(path)
+	if not dir.ok:
+		return dir
+	var wrote := DotPaths.write_text(path, text)
+	if not wrote.ok:
+		return wrote.wrap("saving %s" % path)
+	DotWeb.sync_filesystem()
+	DotLog.info(CHANNEL, "saved to user layer", {"addon": addon_name, "file": file, "keys": paths.size()})
+	return DotResult.success({"saved": path})
+
+
+## Removes the user copy of [param file]: back to the tiers below. Value: true when a file was removed.
+static func reset_user(addon_name: String, file: String) -> DotResult:
+	if not _file_ok(file):
+		return DotResult.fail(DotError.CODE_INVALID, "bad file name '%s'" % file)
+	var path := user_file(addon_name, file)
+	if not FileAccess.file_exists(path):
+		return DotResult.success(false)
+	if DirAccess.remove_absolute(path) != OK:
+		return DotResult.fail(DotError.CODE_IO, "cannot remove %s" % path)
+	DotWeb.sync_filesystem()
+	DotLog.info(CHANNEL, "user layer reset", {"addon": addon_name, "file": file})
+	return DotResult.success(true)
+
+
+static func _file_ok(file: String) -> bool:
+	return file != "" and not file.contains("/") and not file.contains("\\") and not file.contains("..") and file.get_extension() == EXTENSION
+
+
+static func _leaf_values(tree: Dictionary, prefix: String, out: Dictionary) -> void:
+	for k in tree:
+		if tree[k] is Dictionary and (tree[k] as Dictionary).size() > 0:
+			_leaf_values(tree[k], prefix + str(k) + ".", out)
+		else:
+			out[prefix + str(k)] = tree[k]
+
+
 ## What an export preset needs so the yml files ship. Godot's exporter only packs resources
 ## it knows plus what `include_filter` names, so a game that keeps `res://cfg/addons/` ships
 ## none of it without this; it fails silently, as "no files".
@@ -186,6 +302,8 @@ static func load_dir(
 	for d in _candidate_dirs(addon_name):
 		all_dirs.append([d, ""])
 	for d in _tier_dirs(addon_name, GAME_SUBDIR):
+		all_dirs.append([d, ""])
+	for d in _tier_dirs(addon_name, USER_SUBDIR):
 		all_dirs.append([d, ""])
 	var news := _tier_dirs(addon_name, SERVER_SUBDIR)
 	var olds := _tier_dirs(addon_name, LEGACY_SERVER_SUBDIR)
@@ -284,6 +402,10 @@ static func _candidate_dirs(addon_name: String) -> PackedStringArray:
 ## One tier's directories (`addons`, `game/<game>`, `server/addons`, `server/game/<game>` or the legacy `server`) for an addon, weakest root first.
 static func _tier_dirs(addon_name: String, tier: String, extra_dir: String = "") -> PackedStringArray:
 	var out := PackedStringArray()
+	if tier == USER_SUBDIR:
+		if user_tier_enabled:
+			out.append(user_dir_for(addon_name))
+		return out
 	var sub_root := ""
 	if tier == GAME_SUBDIR or tier == SERVER_GAME_SUBDIR:
 		if game == "":

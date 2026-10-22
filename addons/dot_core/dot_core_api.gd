@@ -35,5 +35,7 @@ extends RefCounted
 #     read-only compat, which is why OLDEST stays 1). Also in 17: DotAddonConfig.replace_aware_layers; DotProfileSet reads
 #     tier first (schema < addon < game < server legacy < server/addons < server/game, roots res then user);
 #     DotProfileRuntime saves to <root>/server/game/<game>/ or server/addons/<addon>/ (server/<kind>/ with neither).
-const LEVEL := 17
+# 18: DotAddonConfig user tier (cfg/user/addons/<addon>/ in user://, solo and listen host only): set_user_tier,
+#     user_tier_enabled, user_file, user_paths, save_user, reset_user; DotProfileSet.set_user_tier switches both.
+const LEVEL := 18
 const OLDEST := 1
