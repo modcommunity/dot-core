@@ -22,6 +22,18 @@ Copy `addons/dot_core/` into your project and enable **dot-core** in *Project â†
 
 Requires Godot 4.7 or newer.
 
+## First 10 minutes
+
+1. Copy `addons/dot_core/` into your project, enable it, and run `godot --headless --path . --import` so the `Dot*` classes register.
+2. Return failures as a `DotResult` and branch on its `DotError.CODE_*`, never on the message.
+3. Log through `DotLog` with a `CHANNEL` per file.
+4. Run the example scene under [Try it](#try-it).
+5. Starting a game rather than an addon? Begin from [dot-game-template](https://github.com/modcommunity/dot-game-template).
+
+## Configuration tiers
+
+Settings layer the same way in every addon, weakest first: the addon's schema defaults, the addon's shipped `cfg/addons/<addon>/`, the game's `cfg/game/<game>/<addon>/`, the server operator's `cfg/server/addons/<addon>/` and `cfg/server/game/<game>/`, then environment variables, then the command line, then runtime changes (a console `set`). The folder is the addon name with `-` written as `_`. Secrets are read from files only: a key marked sensitive is refused from the environment and the command line. Details: [dot-core's addon-config.md](docs/addon-config.md).
+
 ## What is in it
 
 | | |
