@@ -30,6 +30,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | `core/dot_registry.gd`, `dot_registry_bus.gd` | name to instance, the autoload replacement; its signal carrier |
 | `core/dot_node_ref.gd` | configurable "which node". Read it first |
 | `core/dot_config.gd` | layered configuration base |
+| `core/dot_addon_config.gd` | `DotAddonConfig`: every addon's tuning is `cfg/addons/<addon_name>/*.yml`, all files read in name order, later keys win; `load_dir(name, defaults)`, `get_value`, `dir_for`, `describe`; [docs/addon-config.md](docs/addon-config.md); `examples/addon_config_selftest` |
 | `core/dot_job.gd`, `dot_scheduler.gd`, `dot_hash_job.gd` | sliceable work, frame budget and worker pool, chunked file hashing |
 | `core/dot_parallel.gd` | `DotParallel`: a fork/join on the worker pool that returns inside the tick (pure tasks, results applied in index order by the caller, `DOT_PARALLEL_VERIFY=1` runs each twice); dot-net's snapshot threads |
 | `core/dot_hash.gd`, `dot_rate_limiter.gd`, `dot_semver.gd`, `dot_value.gd` | SHA-256/HMAC/constant-time compare/base64url; token bucket; versions that do not sort 0.10 below 0.9; total comparisons |
@@ -40,7 +41,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | `random/` | `dot_random_stream.gd`, `_table.gd`, `_schedule.gd`, `_config.gd`, `_manager.gd` (the node a game holds; the only thing that knows the seed) |
 | `camera/` | `dot_camera_probe.gd` (a swept sphere from a pivot, eased in ahead of an obstacle and out behind it), `dot_camera_boom.gd` (the `SpringArm3D` replacement built on it), `dot_camera_fade.gd` (fades characters between the camera and its focus, hides one at the camera; `bodies_fn` for characters with no collider), `dot_camera_check.gd` (flies a camera along a scripted path, armed), `dot_camera_tool.gd` (the base of every game's `tools/render_cameras.gd`), `dot_render_warmup.gd` (draws a scene's materials once out of sight so shaders compile under a loading screen) |
 | `loading/` | `dot_load_gate.gd` (`DotLoadGate`: `hold`/`release`/`require` reasons, `freeze` nodes while held then settle them under the cover with input off (`settle_frames`, `freeze_input`, `is_settling`), `warm_up` items, a timeout that opens with a warning; finds a host by `dot_load_gate_host` metadata, else covers itself and runs `DotRenderWarmup`; registered as `dot_load_gate`), `dot_loading_cover.gd` (the stock cover) |
-| `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest`, `camera_selftest`, `scheduler_selftest`, `parallel_selftest`, `collision_audit_selftest`, `content_index_selftest`, `load_gate_selftest`, `parse_all_selftest` |
+| `examples/` | `capability_report`, `http_selftest`, `value_selftest`, `addon_api_selftest`, `dual_transport_selftest`, `randomness_selftest`, `camera_selftest`, `scheduler_selftest`, `parallel_selftest`, `collision_audit_selftest`, `content_index_selftest`, `load_gate_selftest`, `parse_all_selftest`, `addon_config_selftest` |
 
 ## Running and testing
 

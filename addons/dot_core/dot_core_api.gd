@@ -23,5 +23,7 @@ extends RefCounted
 #     results in index order, a verify mode that runs them twice).
 # 12: DotYaml (the YAML subset reader), DotRotationSpec (maps.yml / games.yml: rotations,
 #     wildcards, layering, `commands:`), DotCommandNames (renames, aliases, collision skip).
-const LEVEL := 12
+# 13: DotAddonConfig (cfg/addons/<name>/*.yml: every file read in name order over defaults,
+#     then environment, then command line).
+const LEVEL := 13
 const OLDEST := 1
