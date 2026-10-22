@@ -9,3 +9,4 @@
 | [camera.md](camera.md) | `camera/`: why not `SpringArm3D`, the look-ahead sweep, fading people instead of colliding with them, the armed check |
 | [loading.md](loading.md) | `loading/`: `DotLoadGate` (holds, requirements, freezing, the timeout), who covers the screen, `DotLoadingCover`, older shells |
 | [addon-config.md](addon-config.md) | `DotAddonConfig`: `cfg/addons/<addon>/*.yml`, the roots, the layers, secrets |
+| [profiles.md](profiles.md) | `DotProfileSet`/`DotProfile`: per-entity yml profiles, tiers, extends, folders, adopters |
