@@ -191,7 +191,8 @@ static func load_dir(
 	var olds := _tier_dirs(addon_name, LEGACY_SERVER_SUBDIR)
 	for i in news.size():
 		all_dirs.append([olds[i], news[i]])
-		all_dirs.append([news[i], ""])
+	for d in news:
+		all_dirs.append([d, ""])
 	for d in _tier_dirs(addon_name, SERVER_GAME_SUBDIR):
 		all_dirs.append([d, ""])
 	for pair in all_dirs:

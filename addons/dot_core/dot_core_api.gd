@@ -31,6 +31,9 @@ extends RefCounted
 #     an addon name's `-` is now `_` in its cfg/addons folder.
 # 16: DotAddonConfig.apply_file (one named yml through the addon, server and legacy layers, applied by the caller).
 # 17: DotAddonConfig.merge (public), config_root, DotAddonConfig.game and the cfg/game/<game>/<addon>/ tier; the operator
-#     tier is now cfg/server/addons/<addon>/ (the old cfg/server/<addon>/ is read through DotCfgLegacy).
+#     tier is now cfg/server/addons/<addon>/ (the old cfg/server/<addon>/ is read through DotCfgLegacy: old paths are
+#     read-only compat, which is why OLDEST stays 1). Also in 17: DotAddonConfig.replace_aware_layers; DotProfileSet reads
+#     tier first (schema < addon < game < server legacy < server/addons < server/game, roots res then user);
+#     DotProfileRuntime saves to <root>/server/game/<game>/ or server/addons/<addon>/ (server/<kind>/ with neither).
 const LEVEL := 17
 const OLDEST := 1

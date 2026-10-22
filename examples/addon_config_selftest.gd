@@ -7,7 +7,7 @@ extends Node
 ## [/codeblock]
 
 const SECTIONS := 9
-const CHECKS := 86
+const CHECKS := 87
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -235,6 +235,18 @@ func _test_server_mirror_and_game_tier() -> void:
 	_check(DotAddonConfig.replace_aware_layers(NAME, "10-base.yml").size() == 2, "merge: true keeps the layer below, which replaces on its own")
 	DotAddonConfig.game = ""
 	_check(DotAddonConfig.file_layers(NAME, "10-base.yml").size() == 2, "no game set: the game tier is skipped")
+	_clean()
+	var other := "user://cfg_selftest_root2"
+	_write_at(_server_dir(), "10-base.yml", "mode: addons\n")
+	_write_at(other.path_join("server/selftest_addon"), "10-base.yml", "mode: legacy\n")
+	DotAddonConfig.config_root = other
+	var multi := DotAddonConfig.load_dir(NAME)
+	DotAddonConfig.config_root = ""
+	DirAccess.remove_absolute(other.path_join("server/selftest_addon/10-base.yml"))
+	DirAccess.remove_absolute(other.path_join("server/selftest_addon"))
+	DirAccess.remove_absolute(other.path_join("server"))
+	DirAccess.remove_absolute(other)
+	_check(DotAddonConfig.get_value(multi.value, "mode") == "addons", "a later root's legacy server folder does not beat an earlier root's server/addons")
 	# The old operator path.
 	_clean()
 	DotCfgLegacy.reset()
