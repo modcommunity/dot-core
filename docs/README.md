@@ -11,3 +11,4 @@
 | [loading.md](loading.md) | `loading/`: `DotLoadGate` (holds, requirements, freezing, the timeout), who covers the screen, `DotLoadingCover`, older shells |
 | [addon-config.md](addon-config.md) | `DotAddonConfig`: `cfg/addons/<addon>/*.yml`, the roots, the layers, secrets |
 | [profiles.md](profiles.md) | `DotProfileSet`/`DotProfile`: per-entity yml profiles, tiers, extends, folders, adopters |
+| [dot-profile-split.md](dot-profile-split.md) | Plan only: moving the profile classes into their own addon, class names kept |
