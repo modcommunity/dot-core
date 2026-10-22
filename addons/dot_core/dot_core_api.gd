@@ -26,5 +26,8 @@ extends RefCounted
 # 13: DotAddonConfig (cfg/addons/<name>/*.yml: every file read in name order over defaults,
 #     then environment, then command line).
 # 14: DotHttpServer, DotHttpRequest, DotHttpResponse (net/: a small HTTP/1.1 server, desktop and server only).
-const LEVEL := 14
+# 15: DotCfgLegacy (old cfg path read through a warn-once shim until 2026-12-31),
+#     DotAddonConfig.folder_name / file_layers and the cfg/server/<addon>/ operator tier;
+#     an addon name's `-` is now `_` in its cfg/addons folder.
+const LEVEL := 15
 const OLDEST := 1

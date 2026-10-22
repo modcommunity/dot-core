@@ -29,7 +29,9 @@ extends RefCounted
 ## [b]Where `cfg/` is[/b], weakest first, each root merged over the one before: `res://cfg`
 ## (shipped with the game), beside the executable (`cfg/`), `user://cfg`, then a
 ## `--config DIR` the process was started with (its files sit directly in `DIR`, so the
-## addon directory is `DIR/addons/<name>`). A server run from a directory it does not own
+## addon directory is `DIR/addons/<name>`; the name is the folder form, `-` as `_`, so `dot-map`
+## reads `addons/dot_map`). The operator layer `server/<name>/` in the same roots is read after, so
+## it wins: it is how a box overrides what a game or addon ships. A server run from a directory it does not own
 ## thus still finds its files, and a shipped default is never edited to tune one box.
 ##
 ## [codeblock]
@@ -40,6 +42,8 @@ extends RefCounted
 
 const CHANNEL := "addon_config"
 const SUBDIR := "addons"
+## The operator override layer: `cfg/server/<addon_underscored>/`, read after (so over) `cfg/addons/`.
+const SERVER_SUBDIR := "server"
 const EXTENSION := "yml"
 ## Whole words that make any path segment secret. `key` is separate: only as the last word.
 const SECRET_WORDS: PackedStringArray = ["password", "passwords", "passwd", "secret", "secrets", "token", "tokens", "apikey"]
@@ -61,12 +65,30 @@ static func dir_for(addon_name: String) -> String:
 	return write_dir_for(addon_name)
 
 
-## Where a write belongs: `user://cfg/addons/<addon_name>`, the only root a game may write.
+## The folder name for an addon: the repository name with `-` as `_` (`dot-map` is `dot_map`).
+static func folder_name(addon_name: String) -> String:
+	return addon_name.replace("-", "_")
+
+
+## Every existing copy of one addon file, weakest first: `cfg/addons/<addon>/<file>` in each root,
+## then the operator layer `cfg/server/<addon>/<file>` in each root. For a single file such as
+## `maps.yml` that a reader layers itself; [param extra_dir] is a `--config`-style root put last.
+static func file_layers(addon_name: String, file: String, extra_dir: String = "") -> PackedStringArray:
+	var out := PackedStringArray()
+	for tier in [SUBDIR, SERVER_SUBDIR]:
+		for dir in _tier_dirs(addon_name, tier, extra_dir):
+			var path := dir.path_join(file)
+			if FileAccess.file_exists(path):
+				out.append(path)
+	return out
+
+
+## Where a write belongs: `user://cfg/addons/<addon_underscored>`, the only root a game may write.
 ## It is not always the directory [method dir_for] reads from, and a file written here is
 ## overridden by a `--config DIR` that also holds the addon. Call
 ## [code]DotWeb.sync_filesystem()[/code] after writing.
 static func write_dir_for(addon_name: String) -> String:
-	return "user://cfg".path_join(SUBDIR).path_join(addon_name)
+	return "user://cfg".path_join(SUBDIR).path_join(folder_name(addon_name))
 
 
 ## What an export preset needs so the yml files ship. Godot's exporter only packs resources
@@ -95,7 +117,9 @@ static func load_dir(
 	var files := PackedStringArray()
 	var roots := PackedStringArray()
 
-	for dir in _candidate_dirs(addon_name):
+	var all_dirs := _candidate_dirs(addon_name)
+	all_dirs.append_array(_tier_dirs(addon_name, SERVER_SUBDIR))
+	for dir in all_dirs:
 		if not DirAccess.dir_exists_absolute(dir):
 			continue
 		roots.append(dir)
@@ -171,10 +195,15 @@ static func _config_dir_arg() -> String:
 	return ""
 
 
-## Addon directories, weakest root first.
+## Addon directories (`cfg/addons/<addon_underscored>`), weakest root first.
 static func _candidate_dirs(addon_name: String) -> PackedStringArray:
+	return _tier_dirs(addon_name, SUBDIR)
+
+
+## One tier's directories (`addons` or `server`) for an addon, weakest root first.
+static func _tier_dirs(addon_name: String, tier: String, extra_dir: String = "") -> PackedStringArray:
 	var out := PackedStringArray()
-	var sub := SUBDIR.path_join(addon_name)
+	var sub := tier.path_join(folder_name(addon_name))
 	out.append("res://cfg".path_join(sub))
 	var exe := OS.get_executable_path().get_base_dir()
 	if exe != "":
@@ -183,6 +212,8 @@ static func _candidate_dirs(addon_name: String) -> PackedStringArray:
 	var given := _config_dir_arg()
 	if given != "":
 		out.append(given.path_join(sub))
+	if extra_dir != "" and extra_dir != given:
+		out.append(extra_dir.path_join(sub))
 	return out
 
 

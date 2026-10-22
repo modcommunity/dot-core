@@ -6,8 +6,8 @@ extends Node
 ## godot --headless --path . res://examples/addon_config_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 5
-const CHECKS := 42
+const SECTIONS := 7
+const CHECKS := 63
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -28,6 +28,8 @@ func _run() -> void:
 	_test_env()
 	_test_hardening()
 	_test_bad_file()
+	_test_server_tier()
+	_test_legacy_shim()
 	_clean()
 
 	_line("")
@@ -40,7 +42,7 @@ func _run() -> void:
 
 
 func _dir() -> String:
-	return "user://cfg/addons/" + NAME
+	return "user://cfg/addons/selftest_addon"
 
 
 func _write(file: String, text: String) -> void:
@@ -50,11 +52,23 @@ func _write(file: String, text: String) -> void:
 	f.close()
 
 
+func _server_dir() -> String:
+	return "user://cfg/server/selftest_addon"
+
+
+func _write_at(dir: String, file: String, text: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	var f := FileAccess.open(dir.path_join(file), FileAccess.WRITE)
+	f.store_string(text)
+	f.close()
+
+
 func _clean() -> void:
-	if DirAccess.dir_exists_absolute(_dir()):
-		for f in DirAccess.get_files_at(_dir()):
-			DirAccess.remove_absolute(_dir().path_join(f))
-		DirAccess.remove_absolute(_dir())
+	for dir in [_dir(), _server_dir(), "user://cfg/legacy_selftest"]:
+		if DirAccess.dir_exists_absolute(dir):
+			for f in DirAccess.get_files_at(dir):
+				DirAccess.remove_absolute(dir.path_join(f))
+			DirAccess.remove_absolute(dir)
 
 
 func _test_missing() -> void:
@@ -152,6 +166,59 @@ func _test_bad_file() -> void:
 	_check(res.error.code == DotError.CODE_PARSE, "with CODE_PARSE")
 	_check(res.error.message.contains("20-bad.yml"), "naming the file")
 	_check(not DotAddonConfig.load_dir("../evil").ok, "a path in the addon name is refused")
+
+
+func _test_server_tier() -> void:
+	_section("Dashed names, the cfg/server operator tier over cfg/addons")
+	_clean()
+	_check(DotAddonConfig.folder_name("dot-map") == "dot_map", "a dashed addon name becomes underscored")
+	_check(DotAddonConfig.folder_name("zombie_zone") == "zombie_zone", "an underscored name is unchanged")
+	_check(DotAddonConfig.write_dir_for("dot-map") == "user://cfg/addons/dot_map", "write_dir_for underscores")
+	_write("10-base.yml", "mode: addon\nkeep: 1\nnest:\n  a: 1\n  b: 2\n")
+	_write_at(_server_dir(), "90-ops.yml", "mode: server\nnest:\n  b: 9\n")
+	var res := DotAddonConfig.load_dir(NAME, {"mode": "default"})
+	_check(res.ok, "addon and server files load together")
+	_check(DotAddonConfig.get_value(res.value, "mode") == "server", "the server tier beats the addon tier")
+	_check(DotAddonConfig.get_value(res.value, "keep") == 1, "an addon key the server tier leaves alone survives")
+	_check(DotAddonConfig.get_value(res.value, "nest.a") == 1 and DotAddonConfig.get_value(res.value, "nest.b") == 9, "maps merge across tiers")
+	var layers := DotAddonConfig.file_layers(NAME, "10-base.yml")
+	_check(layers.size() == 1 and layers[0].ends_with("addons/selftest_addon/10-base.yml"), "file_layers finds the addon copy only when the server has none")
+	_write_at(_server_dir(), "10-base.yml", "mode: s\n")
+	layers = DotAddonConfig.file_layers(NAME, "10-base.yml")
+	_check(layers.size() == 2 and layers[1].contains("/server/"), "file_layers lists the server copy last (strongest)")
+	_check(DotAddonConfig.file_layers(NAME, "missing.yml").is_empty(), "file_layers of a missing file is empty")
+	_write_at(_server_dir(), "10-base.yml", "a:\n\tb: 1\n  - broken: [\n")
+	res = DotAddonConfig.load_dir(NAME)
+	_check(not res.ok and res.error.code == DotError.CODE_PARSE, "a bad server-tier file fails with CODE_PARSE")
+	_clean()
+	_write_at(_server_dir(), "only.yml", "x: 1\n")
+	_check(DotAddonConfig.get_value(DotAddonConfig.load_dir(NAME).value, "x") == 1, "a server-tier file alone is read")
+	_check(DotAddonConfig.dir_for(NAME) == _dir(), "dir_for stays on the addon tier")
+
+
+func _test_legacy_shim() -> void:
+	_section("DotCfgLegacy: new wins, old warns once, expiry")
+	_clean()
+	DotCfgLegacy.reset()
+	var dir := "user://cfg/legacy_selftest"
+	var old_p := dir.path_join("maps.yml")
+	var new_p := dir.path_join("new.yml")
+	_check(DotCfgLegacy.find(old_p, new_p) == "" and DotCfgLegacy.warned_count() == 0, "neither file: nothing, no warning")
+	_write_at(dir, "maps.yml", "a: 1\n")
+	_check(DotCfgLegacy.find(old_p, new_p) == old_p, "only the old file: it is still read")
+	_check(DotCfgLegacy.warned_count() == 1, "and warned")
+	DotCfgLegacy.find(old_p, new_p)
+	DotCfgLegacy.find(old_p, new_p)
+	_check(DotCfgLegacy.warned_count() == 1, "the warning is once per old path")
+	_write_at(dir, "new.yml", "a: 2\n")
+	_check(DotCfgLegacy.find(old_p, new_p) == new_p, "both files: the new one wins whole")
+	DotCfgLegacy.reset()
+	DotCfgLegacy.today_override = "2027-01-01"
+	DirAccess.remove_absolute(new_p)
+	_check(DotCfgLegacy.find(old_p, new_p) == "", "after the removal date the old path is ignored")
+	_check(DotCfgLegacy.warned_count() == 1, "and reported once as an error")
+	_check(DotCfgLegacy.REMOVE_AFTER == "2026-12-31", "the removal date is 2026-12-31")
+	DotCfgLegacy.reset()
 
 
 func _section(title: String) -> void:

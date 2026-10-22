@@ -12,6 +12,12 @@ var mode: String = DotAddonConfig.get_value(res.value, "rotation.mode", "sequent
 - `load_dir(addon_name, defaults := {}, sensitive := PackedStringArray()) -> DotResult`: value is the merged Dictionary (a copy; the defaults are not mutated).
 - `get_value(cfg, "dotted.path", default)`; `dir_for(addon_name) -> String` (read-strongest: the directory a read finds first, possibly read-only); `write_dir_for(addon_name) -> String` (always `user://cfg/addons/<name>`, the only place to write; call `DotWeb.sync_filesystem()` after); `describe(addon_name := "")` / `describe_lines(...)` say which files and overrides the last load used.
 
+## Folder names, the operator tier and the shim
+
+The folder is the addon name with `-` as `_`: `load_dir("dot-map")` reads `cfg/addons/dot_map/` (`DotAddonConfig.folder_name`). The operator's layer is `cfg/server/<addon_underscored>/`, read in the same roots after `cfg/addons/`, so it beats what a game or addon ships. `file_layers(addon, file, extra_dir := "")` lists every existing copy of one file weakest first, for a reader that layers one named file itself (dot-map's `maps.yml`). Secrets stay file-only in every layer; env and argv refusal is unchanged.
+
+A file that moved from a flat `cfg/<file>.yml` is found through `DotCfgLegacy.find(old_path, new_path)`: the new path wins whole when it exists (never merged with the old); otherwise the old path is returned with one WARN per old path naming both and `DotCfgLegacy.REMOVE_AFTER` (2026-12-31). After that date the old path is ignored and one ERROR names it. Design: [dot-map/docs/cfg-layout.md](../../dot-map/docs/cfg-layout.md). The self-test expects one ERROR line on stderr for the expired case.
+
 ## Order
 
 Files are sorted by file name; a later file's keys override an earlier one's. Maps merge key by key; a list or scalar is replaced whole. Number the files (`10-base.yml`, `20-event.yml`) to layer. Only `.yml` is read.
