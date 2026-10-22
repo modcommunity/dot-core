@@ -1,0 +1,11 @@
+# frame-hazards
+# Baselines only shrink: scripts/<gate> --update lowers or drops entries and refuses to add.
+addons/dot_core/camera/dot_camera_fade.gd::_colliders::alloc_array	1
+addons/dot_core/camera/dot_camera_fade.gd::_meshes::alloc_array	2
+addons/dot_core/core/dot_scheduler.gd::_drain_completed::duplicate	1
+addons/dot_core/core/dot_scheduler.gd::_finish_job::string_build	1
+addons/dot_core/loading/dot_load_gate.gd::_begin_warming::connect_unguarded	1
+addons/dot_core/loading/dot_load_gate.gd::_hold_input::alloc_array	1
+addons/dot_core/loading/dot_load_gate.gd::_hold_input::alloc_dict	1
+addons/dot_core/loading/dot_load_gate.gd::status_text::string_build	2
+examples/http_selftest.gd::_answer::string_build	5

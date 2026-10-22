@@ -106,11 +106,16 @@ func _process(delta: float) -> void:
 	update(camera.global_position, to, delta)
 
 
+var _wanted: Dictionary = {}
+
+
 ## One frame's fade, for a caller placing its own camera without this node's parent.
 ## Returns how many bodies are faded or fading.
 func update(camera_position: Vector3, focus_position: Vector3, delta: float) -> int:
 	var world := _world()
-	var wanted: Dictionary = {}
+	# Reused every frame: a fresh Dictionary per update is garbage at the camera's rate.
+	var wanted := _wanted
+	wanted.clear()
 
 	if world != null and collision_mask != 0:
 		var space := world.direct_space_state

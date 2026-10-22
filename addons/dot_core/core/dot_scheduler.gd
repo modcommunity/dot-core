@@ -349,6 +349,10 @@ func _worker_loop() -> void:
 ## this hands them over.
 func _drain_completed() -> void:
 	_mutex.lock()
+	# Most frames have nothing parked; copying an empty array every frame is waste.
+	if _completed.is_empty():
+		_mutex.unlock()
+		return
 	var done := _completed.duplicate()
 	_completed.clear()
 	_mutex.unlock()
