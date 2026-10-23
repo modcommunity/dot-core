@@ -239,6 +239,12 @@ static func clear_sinks() -> void:
 	_sinks.clear()
 
 
+## Drops the sinks and the signal bus so a headless run exits with nothing of the log alive.
+static func clear_cache() -> void:
+	_sinks.clear()
+	_bus = null
+
+
 static func sink_count() -> int:
 	return _sinks.size()
 

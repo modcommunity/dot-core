@@ -253,3 +253,9 @@ static func describe_lines() -> PackedStringArray:
 ## unreachable.
 static func clear() -> void:
 	_services.clear()
+
+
+## [method clear] plus the signal bus, so a headless run exits with nothing of the registry alive.
+static func clear_cache() -> void:
+	_services.clear()
+	_bus = null

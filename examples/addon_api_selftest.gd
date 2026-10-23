@@ -10,8 +10,8 @@ extends Node
 ## that a player reads "this server has level 2" instead of a parse error, so a check that
 ## the refusal is CODE_VERSION and nothing else would pass for a refusal nobody can read.
 
-const SECTIONS := 7
-const CHECKS := 56
+const SECTIONS := 8
+const CHECKS := 61
 
 const SCRATCH := "user://addon_api_selftest"
 
@@ -36,6 +36,7 @@ func _run() -> void:
 	_test_a_mounted_pack()
 	_test_deriving_and_auditing()
 	_test_floors()
+	_test_clear_cache()
 
 	print("")
 	print("%d of %d sections finished, %d passed, %d failed" % [_finished, _entered, _passed, _failed])
@@ -234,6 +235,29 @@ func _test_deriving_and_auditing() -> void:
 	DirAccess.remove_absolute(scene_dir + "/s.tscn")
 	DirAccess.remove_absolute(scene_dir)
 	DirAccess.remove_absolute(base)
+
+	_done()
+
+
+func _test_clear_cache() -> void:
+	_section("clear_cache frees the log and registry statics")
+
+	DotLog.signals()
+	DotLog.add_sink(func(_r): pass)
+	DotRegistry.signals()
+	DotRegistry.register("clear_cache_probe", Node.new())
+	var probe: Node = DotRegistry.get_service("clear_cache_probe")
+	_check(DotLog.sink_count() == 1 and probe != null, "a sink and a service are held")
+
+	DotLog.clear_cache()
+	DotRegistry.clear_cache()
+	probe.free()
+	_check(DotLog.sink_count() == 0, "the log holds no sink")
+	_check(DotRegistry.get_service("clear_cache_probe") == null, "the registry holds no service")
+	_check(DotLog.signals() != null and DotRegistry.signals() != null, "and both buses are made again on use")
+	DotLog.clear_cache()
+	DotRegistry.clear_cache()
+	_check(DotLog._bus == null and DotRegistry._bus == null, "a second call is harmless and leaves no bus")
 
 	_done()
 
