@@ -268,7 +268,7 @@ func _apply_timeouts_on_connect(peer: Object) -> void:
 	# connected to the peer's own signal is a reference cycle, and every server and client
 	# made here leaked at exit. Static because the transport is often a temporary
 	# (`DotTransportENet.new().create_client(...)`) that is gone before anybody connects.
-	peer.connect("peer_connected", DotTransportENet._set_peer_timeout.bind(weakref(peer),
+	peer.connect("peer_connected", _set_peer_timeout.bind(weakref(peer),
 		peer_timeout_limit, peer_timeout_min_ms, peer_timeout_max_ms,
 		[packet_throttle_interval_ms, packet_throttle_acceleration, packet_throttle_deceleration]))
 
