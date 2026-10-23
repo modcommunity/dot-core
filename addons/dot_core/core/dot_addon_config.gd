@@ -417,7 +417,23 @@ static func _candidate_dirs(addon_name: String) -> PackedStringArray:
 	return _tier_dirs(addon_name, SUBDIR)
 
 
-## One tier's directories (`addons`, `game/<game>`, `server/addons`, `server/game/<game>` or the legacy `server`) for an addon, weakest root first.
+## One tier's directories for an addon, weakest root first: [param tier] is one of the `*_SUBDIR` constants; [param for_game] reads another game's `game` tiers than [member game] (empty means [member game]).
+static func tier_dirs(addon_name: String, tier: String, extra_dir: String = "", for_game: String = "") -> PackedStringArray:
+	var saved := game
+	if for_game != "":
+		game = for_game
+	var out := _tier_dirs(addon_name, tier, extra_dir)
+	game = saved
+	return out
+
+
+## The command-line and environment overrides for every leaf of [param merged] (a flat or nested dictionary of one addon's settings), applied in place. Returns `"path <- source"` lines for what was overridden.
+static func apply_overrides(addon_name: String, merged: Dictionary) -> PackedStringArray:
+	var overrides := PackedStringArray()
+	_apply_layer(addon_name, merged, PackedStringArray(), overrides, PackedStringArray())
+	return overrides
+
+
 static func _tier_dirs(addon_name: String, tier: String, extra_dir: String = "") -> PackedStringArray:
 	var out := PackedStringArray()
 	if tier == USER_SUBDIR:

@@ -37,5 +37,6 @@ extends RefCounted
 #     DotProfileRuntime saves to <root>/server/game/<game>/ or server/addons/<addon>/ (server/<kind>/ with neither).
 # 18: DotAddonConfig user tier (cfg/user/addons/<addon>/ in user://, solo and listen host only): set_user_tier,
 #     user_tier_enabled, user_file, user_paths, save_user, reset_user; DotProfileSet.set_user_tier switches both.
-const LEVEL := 18
+# 19: DotAddonConfig.tier_dirs and apply_overrides (public; DotMapConfig no longer calls the private ones).
+const LEVEL := 19
 const OLDEST := 1
