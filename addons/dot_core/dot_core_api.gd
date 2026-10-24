@@ -38,5 +38,6 @@ extends RefCounted
 # 18: DotAddonConfig user tier (cfg/user/addons/<addon>/ in user://, solo and listen host only): set_user_tier,
 #     user_tier_enabled, user_file, user_paths, save_user, reset_user; DotProfileSet.set_user_tier switches both.
 # 19: DotAddonConfig.tier_dirs and apply_overrides (public; DotMapConfig no longer calls the private ones).
-const LEVEL := 19
+# 20: DotHttp max_bytes on get_bytes, request and download_to_file (a per-call body_size_limit).
+const LEVEL := 20
 const OLDEST := 1

@@ -176,11 +176,9 @@ func put_json(
 	return _parse_json(res.value)
 
 
-## GET raw bytes.
-func get_bytes(path: String, headers: Dictionary = {}) -> DotResult:
-	var res := await request(
-		HTTPClient.METHOD_GET, path, PackedByteArray(), headers
-	)
+## GET raw bytes. [param max_bytes] > 0 refuses a longer body (as does [member max_response_bytes]).
+func get_bytes(path: String, headers: Dictionary = {}, max_bytes: int = 0) -> DotResult:
+	var res := await _capped(max_bytes, HTTPClient.METHOD_GET, path, PackedByteArray(), headers, true)
 	if not res.ok:
 		return res
 	var response: Dictionary = res.value
@@ -202,6 +200,24 @@ func request(
 	headers: Dictionary = {},
 	decode_text: bool = true
 ) -> DotResult:
+	return await _request(method, path, body, headers, decode_text, 0)
+
+
+## [method request] when uncapped, so a subclass overriding it still sees every call it saw before.
+func _capped(max_bytes: int, method: int, path: String, body: PackedByteArray, headers: Dictionary, decode_text: bool) -> DotResult:
+	if max_bytes <= 0:
+		return await request(method, path, body, headers, decode_text)
+	return await _request(method, path, body, headers, decode_text, max_bytes)
+
+
+func _request(
+	method: int,
+	path: String,
+	body: PackedByteArray,
+	headers: Dictionary,
+	decode_text: bool,
+	max_bytes: int
+) -> DotResult:
 	var url := resolve_url(path)
 	var header_list := _build_headers(headers)
 
@@ -211,7 +227,7 @@ func request(
 	while attempt <= max_retries:
 		attempt += 1
 
-		last = await _attempt(method, url, body, header_list, decode_text)
+		last = await _attempt(method, url, body, header_list, decode_text, max_bytes)
 
 		if last.ok:
 			var v: Dictionary = last.value
@@ -244,7 +260,8 @@ func _attempt(
 	url: String,
 	body: PackedByteArray,
 	header_list: PackedStringArray,
-	decode_text: bool = true
+	decode_text: bool = true,
+	max_bytes: int = 0
 ) -> DotResult:
 	var req := _acquire()
 	if req == null:
@@ -253,6 +270,7 @@ func _attempt(
 			"Too many concurrent HTTP requests.",
 			"pool limit is %d" % MAX_POOL
 		)
+	req.body_size_limit = _limit_for(max_bytes)
 
 	_in_flight += 1
 
@@ -394,12 +412,16 @@ func _transport_error(result: int, url: String) -> DotError:
 ## belong to this resource — see dot-cloud's store, which keys partials by
 ## content hash so a resumed transfer cannot splice two different files together.
 ##
+## [param max_bytes] > 0 caps this response's body (the range asked for, not the whole file): a
+## host streaming past it fails ("The response was too large.") instead of filling the disk.
+##
 ## On success the value is [code]{status, headers, size, resumed}[/code].
 func download_to_file(
 	url_or_path: String,
 	dest_path: String,
 	range_start: int = 0,
-	headers: Dictionary = {}
+	headers: Dictionary = {},
+	max_bytes: int = 0
 ) -> DotResult:
 	var url := resolve_url(url_or_path)
 
@@ -421,7 +443,7 @@ func download_to_file(
 	# else, and it needs no list of which platforms those are -- a list that would be
 	# wrong the first time one of them was fixed.
 	if not _engine_writes_downloads:
-		return await _download_in_memory(url, dest_path, range_start, headers)
+		return await _download_in_memory(url, dest_path, range_start, headers, max_bytes)
 
 	var merged := headers.duplicate()
 
@@ -446,6 +468,7 @@ func download_to_file(
 		)
 
 	req.download_file = resume_target if resume_target != "" else dest_path
+	req.body_size_limit = _limit_for(max_bytes)
 	req.download_chunk_size = download_chunk_size if download_chunk_size > 0 else 65536
 
 	_in_flight += 1
@@ -571,7 +594,7 @@ func download_to_file(
 		DirAccess.remove_absolute(resume_target)
 
 	if out.ok and (out.value as Dictionary).get("retry_in_memory", false):
-		return await _download_in_memory(url, dest_path, range_start, headers)
+		return await _download_in_memory(url, dest_path, range_start, headers, max_bytes)
 
 	return out
 
@@ -594,14 +617,15 @@ func _download_in_memory(
 	url: String,
 	dest_path: String,
 	range_start: int,
-	headers: Dictionary
+	headers: Dictionary,
+	max_bytes: int = 0
 ) -> DotResult:
 	var merged := headers.duplicate()
 
 	if range_start > 0:
 		merged["Range"] = "bytes=%d-" % range_start
 
-	var res := await request(HTTPClient.METHOD_GET, url, PackedByteArray(), merged, false)
+	var res := await _capped(max_bytes, HTTPClient.METHOD_GET, url, PackedByteArray(), merged, false)
 
 	if not res.ok:
 		return res
@@ -756,6 +780,16 @@ func _redact(url: String) -> String:
 
 
 # --- HTTPRequest pool -----------------------------------------------------
+
+## The tighter of [param max_bytes] and [member max_response_bytes] as a body_size_limit; -1 for none.
+## Set on every request, so a pooled node never keeps the last caller's cap.
+func _limit_for(max_bytes: int) -> int:
+	if max_bytes > 0 and max_response_bytes > 0:
+		return mini(max_bytes, max_response_bytes)
+	if max_bytes > 0:
+		return max_bytes
+	return max_response_bytes if max_response_bytes > 0 else -1
+
 
 func _acquire() -> HTTPRequest:
 	for req in _pool:

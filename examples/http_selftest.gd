@@ -31,7 +31,7 @@ const PORT_LAST := 28330
 const BODY := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ\
 abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-const CHECKS := 36
+const CHECKS := 41
 
 ## The scratch directory. Removed at the start of every run and at the end.
 const SCRATCH := "user://http_selftest"
@@ -40,7 +40,7 @@ const SCRATCH := "user://http_selftest"
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total is the other half — see docs/testing.md.
-const SECTIONS := 7
+const SECTIONS := 8
 
 var _passed := 0
 var _failed := 0
@@ -90,6 +90,7 @@ func _run() -> void:
 	await _test_resume_ignored_range()
 	await _test_resume_failure_preserves_partial()
 	await _test_range_not_satisfiable()
+	await _test_max_bytes()
 	_test_append_file()
 	_test_replace_file()
 	DotPaths.remove_tree(SCRATCH)
@@ -245,6 +246,25 @@ func _test_range_not_satisfiable() -> void:
 
 # --- The filesystem primitive ----------------------------------------------
 
+func _test_max_bytes() -> void:
+	_section("max_bytes: a body longer than the caller allows is refused")
+	_mode = "range"
+	var dest := _scratch("capped.bin")
+	var res := await _http.download_to_file(_url(), dest, 0, {}, 10)
+	_check(not res.ok, "a download over its cap fails")
+	_mode = "no-length"
+	res = await _http.download_to_file(_url(), dest, 0, {}, 10)
+	_check(not res.ok, "and so does one with no Content-Length that streams past it")
+	_mode = "range"
+	var got := await _http.get_bytes(_url(), {}, 10)
+	_check(not got.ok, "get_bytes over its cap fails")
+	got = await _http.get_bytes(_url(), {}, 1000)
+	_check(got.ok and (got.value as PackedByteArray).size() == BODY.length(), "and under it succeeds")
+	res = await _http.download_to_file(_url(), dest)
+	_check(res.ok and _read(dest) == BODY, "the next uncapped request is not held to the last cap")
+	_done()
+
+
 func _test_append_file() -> void:
 	_section("DotPaths.append_file")
 
@@ -379,7 +399,8 @@ func _answer(c: StreamPeerTCP, raw: String) -> void:
 				body = BODY
 
 	head += "Accept-Ranges: bytes\r\n"
-	head += "Content-Length: %d\r\n" % body.length()
+	if _mode != "no-length":
+		head += "Content-Length: %d\r\n" % body.length()
 	head += "Connection: close\r\n\r\n"
 
 	c.put_data((head + body).to_utf8_buffer())
