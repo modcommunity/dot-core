@@ -191,10 +191,9 @@ static func write_dir_for(addon_name: String) -> String:
 
 
 ## Turns the player's user tier on for a solo or listen-host process, off for a server or a connected client.
-## Also switches [member DotProfileSet.user_tier_enabled].
+## dot-profile's set reads this same flag, so one call switches both.
 static func set_user_tier(enabled: bool) -> void:
 	user_tier_enabled = enabled
-	DotProfileSet.user_tier_enabled = enabled
 
 
 ## Directory of the user tier for an addon: `user://cfg/user/addon/<addon_underscored>`.
@@ -220,7 +219,7 @@ static func user_paths(addon_name: String, file: String) -> Dictionary:
 
 
 ## Writes [param paths] (`{dotted path: value}`) into the user copy of [param file], keeping its other keys.
-## With a [param schema] (the [method DotProfileSet.field] array the editor shows) each top-level key must
+## With a [param schema] (the field array `DotProfileSet.field` builds: name, type, default, min, max, enum) each top-level key must
 ## be in it and of its type (a dotted key only under a `dict` field); without one only yml-safe values are required.
 ## A key path or nested key holding a secret word, or listed in [param sensitive], is refused. `CODE_STATE` while the tier is off.
 static func save_user(addon_name: String, file: String, paths: Dictionary, schema: Array = [], sensitive: PackedStringArray = PackedStringArray()) -> DotResult:
@@ -228,7 +227,6 @@ static func save_user(addon_name: String, file: String, paths: Dictionary, schem
 		return DotResult.fail(DotError.CODE_STATE, "%s/%s: the user tier is off in this process" % [addon_name, file])
 	if not _file_ok(file) or not _addon_ok(addon_name):
 		return DotResult.fail(DotError.CODE_INVALID, "bad addon or file name '%s/%s'" % [addon_name, file])
-	var scratch: DotProfileSet = DotProfileSet.create(addon_name, "", "addon", schema) if not schema.is_empty() else null
 	var tree := {}
 	var path := user_file(addon_name, file)
 	var had := FileAccess.file_exists(path)
@@ -243,11 +241,11 @@ static func save_user(addon_name: String, file: String, paths: Dictionary, schem
 		if String(key).is_empty() or parts.has(""):
 			return DotResult.fail(DotError.CODE_INVALID, "bad key path '%s'" % key)
 		var value: Variant = paths[key]
-		if not DotProfileSet._finite(value):
+		if not is_finite_value(value):
 			return DotResult.fail(DotError.CODE_INVALID, "%s: NaN or infinity is refused" % key)
 		if _is_sensitive(String(key), sensitive) or _holds_secret(String(key), value, sensitive):
 			return DotResult.fail(DotError.CODE_FORBIDDEN, "%s: secrets are file-only" % key)
-		if scratch != null:
+		if not schema.is_empty():
 			var f := {}
 			for e in schema:
 				if e["name"] == parts[0]:
@@ -257,12 +255,12 @@ static func save_user(addon_name: String, file: String, paths: Dictionary, schem
 			if parts.size() > 1 and f["type"] != "dict":
 				return DotResult.fail(DotError.CODE_INVALID, "%s: '%s' is not a mapping, so it has no nested keys" % [key, parts[0]])
 			if parts.size() == 1:
-				var checked := scratch._check_field(f, value)
+				var checked := check_field(f, value)
 				if checked.has("error"):
 					return DotResult.fail(DotError.CODE_INVALID, "%s: %s" % [key, checked["error"]])
 				value = checked["value"]
-		DotProfileSet._set_path(tree, parts, value)
-	var text: Variant = DotProfileRuntime._emit(tree, 0)
+		set_nested(tree, parts, value)
+	var text: Variant = DotYaml.emit(tree)
 	if text == null:
 		return DotResult.fail(DotError.CODE_INVALID, "%s holds a value yml cannot carry" % path)
 	var dir := DotPaths.ensure_parent_dir(path)
@@ -274,6 +272,79 @@ static func save_user(addon_name: String, file: String, paths: Dictionary, schem
 	DotWeb.sync_filesystem()
 	DotLog.info(CHANNEL, "saved to user layer", {"addon": addon_name, "file": file, "keys": paths.size()})
 	return DotResult.success({"saved": path})
+
+
+## Sets the nested key [param parts] in [param root], creating mappings on the way; containers are copied.
+static func set_nested(root: Dictionary, parts: PackedStringArray, value: Variant) -> void:
+	var at := root
+	for i in parts.size() - 1:
+		if not (at.get(parts[i]) is Dictionary):
+			at[parts[i]] = {}
+		at = at[parts[i]]
+	at[parts[parts.size() - 1]] = value.duplicate(true) if value is Array or value is Dictionary else value
+
+
+## False when [param v] is, or holds, NaN or infinity.
+static func is_finite_value(v: Variant) -> bool:
+	if v is float:
+		return is_finite(v)
+	if v is Array:
+		for e in v:
+			if not is_finite_value(e):
+				return false
+	elif v is Dictionary:
+		for k in v:
+			if not is_finite_value(v[k]):
+				return false
+	return true
+
+
+## `{value}` or `{error}` after the type, enum and range checks of one schema field
+## (`{name, type, default, min, max, enum, required}`; type is int, float, string, bool, list, dict or any).
+static func check_field(f: Dictionary, v: Variant) -> Dictionary:
+	var t: String = f["type"]
+	var out: Variant = v
+	if v == null and not f.get("required", false) and f.get("default") == null:
+		return {"value": null}
+	match t:
+		"int":
+			if v is int:
+				out = v
+			elif v is float and is_finite(v) and v == floorf(v):
+				out = int(v)
+			else:
+				return {"error": "expected int, got %s" % str(v)}
+		"float":
+			if (v is int or v is float) and is_finite_value(v):
+				out = float(v)
+			else:
+				return {"error": "expected float, got %s" % str(v)}
+		"string":
+			if v is String or v is StringName:
+				out = String(v)
+			else:
+				return {"error": "expected string, got %s" % str(v)}
+		"bool":
+			if not (v is bool):
+				return {"error": "expected bool, got %s" % str(v)}
+		"list":
+			if not (v is Array):
+				return {"error": "expected list, got %s" % str(v)}
+		"dict":
+			if not (v is Dictionary):
+				return {"error": "expected mapping, got %s" % str(v)}
+		"any":
+			pass
+		_:
+			return {"error": "schema type '%s' is unknown" % t}
+	if t == "int" or t == "float":
+		if f.has("min") and out < f["min"]:
+			return {"error": "%s is below min %s" % [str(out), str(f["min"])]}
+		if f.has("max") and out > f["max"]:
+			return {"error": "%s is above max %s" % [str(out), str(f["max"])]}
+	if f.has("enum") and not (f["enum"] as Array).has(out):
+		return {"error": "%s is not one of %s" % [str(out), str(f["enum"])]}
+	return {"value": out}
 
 
 ## Removes the user copy of [param file]: back to the tiers below. Value: true when a file was removed.

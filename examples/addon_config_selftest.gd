@@ -7,7 +7,7 @@ extends Node
 ## [/codeblock]
 
 const SECTIONS := 11
-const CHECKS := 127
+const CHECKS := 129
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -407,13 +407,19 @@ func _line(text: String) -> void:
 	print(text)
 
 
+func _field(p_name: String, type: String, default: Variant = null, opts: Dictionary = {}) -> Dictionary:
+	var d := {"name": p_name, "type": type, "default": default}
+	d.merge(opts, true)
+	return d
+
+
 func _test_user_tier() -> void:
 	_section("user tier: off by default, between game and server, write, reset")
 	_clean()
 	DotAddonConfig.set_user_tier(false)
 	var schema := [
-		DotProfileSet.field("mode", "string", "a", {"enum": ["a", "b", "c"]}),
-		DotProfileSet.field("volume", "float", 1.0, {"min": 0.0, "max": 2.0}),
+		_field("mode", "string", "a", {"enum": ["a", "b", "c"]}),
+		_field("volume", "float", 1.0, {"min": 0.0, "max": 2.0}),
 	]
 	_write("t.yml", "mode: addon\nvolume: 1.0\n")
 	_write_at(DotAddonConfig.user_dir_for(NAME), "t.yml", "mode: user\n")
@@ -424,7 +430,7 @@ func _test_user_tier() -> void:
 	var saved := DotAddonConfig.save_user(NAME, "t.yml", {"volume": 0.5}, schema)
 	_check(not saved.ok and saved.error.code == DotError.CODE_STATE, "tier off: save_user is CODE_STATE")
 	DotAddonConfig.set_user_tier(true)
-	_check(DotProfileSet.user_tier_enabled, "set_user_tier also switches DotProfileSet")
+	_check(DotAddonConfig.user_tier_enabled, "set_user_tier(true) turns the tier on")
 	cfg = DotAddonConfig.load_dir(NAME, {})
 	_check(cfg.ok and cfg.value["mode"] == "user" and cfg.value["volume"] == 1.0, "tier on: the user file overrides key by key")
 	_write_at(_server_dir(), "t.yml", "mode: server\n")
@@ -449,7 +455,7 @@ func _test_user_tier() -> void:
 	saved = DotAddonConfig.save_user(NAME, "../t.yml", {"mode": "a"})
 	_check(not saved.ok and saved.error.code == DotError.CODE_INVALID, "a path-like file name is refused")
 	_check(DotAddonConfig.user_paths(NAME, "t.yml").get("volume") == 0.5, "refused saves left the file as it was")
-	var schema2 := schema + [DotProfileSet.field("max_players", "int", 8), DotProfileSet.field("auth", "dict", {}), DotProfileSet.field("box", "dict", {})]
+	var schema2 := schema + [_field("max_players", "int", 8), _field("auth", "dict", {}), _field("box", "dict", {})]
 	saved = DotAddonConfig.save_user(NAME, "t.yml", {"max_players.x": 999}, schema2)
 	_check(not saved.ok and saved.error.code == DotError.CODE_INVALID, "a dotted key under a non-dict field is refused")
 	_check(not DotAddonConfig.user_paths(NAME, "t.yml").has("max_players.x") and not DotAddonConfig.user_paths(NAME, "t.yml").has("max_players"), "the int field was not turned into a mapping")
@@ -475,5 +481,10 @@ func _test_user_tier() -> void:
 	reset = DotAddonConfig.reset_user(NAME, "t.yml")
 	_check(reset.ok and reset.value == false, "a second reset is a no-op")
 	DotAddonConfig.set_user_tier(false)
-	_check(not DotProfileSet.user_tier_enabled, "set_user_tier(false) switches both off")
+	_check(not DotAddonConfig.user_tier_enabled, "set_user_tier(false) turns the tier off")
+	var tree := {"a": 1, "b": {"c": "x\"y", "d": [1.0, "z"]}}
+	var text: Variant = DotYaml.emit(tree)
+	var back := DotYaml.parse(String(text))
+	_check(text != null and back.ok and back.value == tree, "DotYaml.emit round-trips nested maps, quotes and lists through parse")
+	_check(DotYaml.emit({"a": {1: Vector2.ZERO}}) == null, "DotYaml.emit refuses a value yml cannot carry")
 	_clean()

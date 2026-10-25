@@ -41,5 +41,9 @@ extends RefCounted
 # 20: DotHttp max_bytes on get_bytes, request and download_to_file (a per-call body_size_limit).
 # 21: cfg directory names are singular (cfg/addon/, cfg/game/, cfg/server/addon/, cfg/server/game/, user/addon/);
 #     the plural names are read through DotCfgLegacy until 2026-12-31, the singular file winning whole.
-const LEVEL := 21
+# 22: the profile classes (DotProfileSet, DotProfile, DotProfileRuntime, tools/profile_check.gd) moved to the dot-profile
+#     addon, class names unchanged: a project that used them now needs dot-profile (same class names, so OLDEST stays 1).
+#     New here for it: DotYaml.emit, DotAddonConfig.set_nested, is_finite_value and check_field (the schema check
+#     save_user uses). DotAddonConfig.set_user_tier no longer touches DotProfileSet; that set reads the same flag.
+const LEVEL := 22
 const OLDEST := 1

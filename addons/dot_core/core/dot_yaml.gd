@@ -533,3 +533,42 @@ static func at(tree: Dictionary, path: String, fallback: Variant = null) -> Vari
 		node = (node as Dictionary)[part]
 
 	return node
+
+
+# --- Writing a tree --------------------------------------------------------
+
+## yml text for [param tree] (nested mappings, scalars, flat lists of scalars), or null when a value
+## is anything else. Strings are always double-quoted so the reader gives back the same type.
+static func emit(tree: Dictionary, depth: int = 0) -> Variant:
+	var out := ""
+	var pad := "  ".repeat(depth)
+	for k in tree:
+		var v: Variant = tree[k]
+		if v is Dictionary:
+			var inner: Variant = emit(v, depth + 1)
+			if inner == null:
+				return null
+			out += "%s%s:\n%s" % [pad, k, inner]
+			continue
+		var s: Variant = _emit_scalar(v)
+		if s == null:
+			return null
+		out += "%s%s: %s\n" % [pad, k, s]
+	return out
+
+
+static func _emit_scalar(v: Variant) -> Variant:
+	if v is Array:
+		var parts := PackedStringArray()
+		for e in v:
+			if e is Array or e is Dictionary:
+				return null
+			parts.append(_emit_scalar(e))
+		return "[" + ", ".join(parts) + "]"
+	if v is bool or v is int:
+		return str(v)
+	if v is float:
+		return str(v) if str(v).contains(".") or str(v).contains("e") else str(v) + ".0"
+	if v is String or v is StringName:
+		return "\"" + String(v).replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
+	return null
