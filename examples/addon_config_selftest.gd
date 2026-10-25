@@ -1,13 +1,13 @@
 extends Node
 
-## Exercises [DotAddonConfig]: `cfg/addons/<name>/*.yml` read in file-name order over defaults.
+## Exercises [DotAddonConfig]: `cfg/addon/<name>/*.yml` read in file-name order over defaults.
 ##
 ## [codeblock]
 ## godot --headless --path . res://examples/addon_config_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 10
-const CHECKS := 117
+const SECTIONS := 11
+const CHECKS := 127
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -31,6 +31,7 @@ func _run() -> void:
 	_test_server_tier()
 	_test_server_mirror_and_game_tier()
 	_test_legacy_shim()
+	_test_plural_legacy()
 	_test_apply_file()
 	_test_user_tier()
 	_clean()
@@ -45,7 +46,7 @@ func _run() -> void:
 
 
 func _dir() -> String:
-	return "user://cfg/addons/selftest_addon"
+	return "user://cfg/addon/selftest_addon"
 
 
 func _write(file: String, text: String) -> void:
@@ -56,7 +57,7 @@ func _write(file: String, text: String) -> void:
 
 
 func _server_dir() -> String:
-	return "user://cfg/server/addons/selftest_addon"
+	return "user://cfg/server/addon/selftest_addon"
 
 
 func _old_server_dir() -> String:
@@ -71,6 +72,11 @@ func _game_dir() -> String:
 	return "user://cfg/game/selftest_game/selftest_addon"
 
 
+## An old plural-name directory of the selftest addon, under [param prefix].
+func _plural(prefix: String) -> String:
+	return "user://cfg".path_join(prefix).path_join("selftest_addon")
+
+
 func _write_at(dir: String, file: String, text: String) -> void:
 	DirAccess.make_dir_recursive_absolute(dir)
 	var f := FileAccess.open(dir.path_join(file), FileAccess.WRITE)
@@ -79,7 +85,7 @@ func _write_at(dir: String, file: String, text: String) -> void:
 
 
 func _clean() -> void:
-	for dir in [_dir(), _server_dir(), _old_server_dir(), _game_dir(), _server_game_dir(), DotAddonConfig.user_dir_for(NAME), "user://cfg/legacy_selftest"]:
+	for dir in [_dir(), _server_dir(), _old_server_dir(), _game_dir(), _plural("addons"), _plural("games/selftest_game"), _plural("server/addons"), _plural("server/games/selftest_game"), _server_game_dir(), DotAddonConfig.user_dir_for(NAME), "user://cfg/legacy_selftest"]:
 		if DirAccess.dir_exists_absolute(dir):
 			for f in DirAccess.get_files_at(dir):
 				DirAccess.remove_absolute(dir.path_join(f))
@@ -188,7 +194,7 @@ func _test_server_tier() -> void:
 	_clean()
 	_check(DotAddonConfig.folder_name("dot-map") == "dot_map", "a dashed addon name becomes underscored")
 	_check(DotAddonConfig.folder_name("zombie_zone") == "zombie_zone", "an underscored name is unchanged")
-	_check(DotAddonConfig.write_dir_for("dot-map") == "user://cfg/addons/dot_map", "write_dir_for underscores")
+	_check(DotAddonConfig.write_dir_for("dot-map") == "user://cfg/addon/dot_map", "write_dir_for underscores")
 	_write("10-base.yml", "mode: addon\nkeep: 1\nnest:\n  a: 1\n  b: 2\n")
 	_write_at(_server_dir(), "90-ops.yml", "mode: server\nnest:\n  b: 9\n")
 	var res := DotAddonConfig.load_dir(NAME, {"mode": "default"})
@@ -197,10 +203,10 @@ func _test_server_tier() -> void:
 	_check(DotAddonConfig.get_value(res.value, "keep") == 1, "an addon key the server tier leaves alone survives")
 	_check(DotAddonConfig.get_value(res.value, "nest.a") == 1 and DotAddonConfig.get_value(res.value, "nest.b") == 9, "maps merge across tiers")
 	var layers := DotAddonConfig.file_layers(NAME, "10-base.yml")
-	_check(layers.size() == 1 and layers[0].ends_with("addons/selftest_addon/10-base.yml"), "file_layers finds the addon copy only when the server has none")
+	_check(layers.size() == 1 and layers[0].ends_with("addon/selftest_addon/10-base.yml"), "file_layers finds the addon copy only when the server has none")
 	_write_at(_server_dir(), "10-base.yml", "mode: s\n")
 	layers = DotAddonConfig.file_layers(NAME, "10-base.yml")
-	_check(layers.size() == 2 and layers[1].contains("/server/addons/"), "file_layers lists the server copy last (strongest)")
+	_check(layers.size() == 2 and layers[1].contains("/server/addon/"), "file_layers lists the server copy last (strongest)")
 	_check(DotAddonConfig.file_layers(NAME, "missing.yml").is_empty(), "file_layers of a missing file is empty")
 	_write_at(_server_dir(), "10-base.yml", "a:\n\tb: 1\n  - broken: [\n")
 	res = DotAddonConfig.load_dir(NAME)
@@ -225,7 +231,7 @@ func _test_server_mirror_and_game_tier() -> void:
 	res = DotAddonConfig.load_dir(NAME)
 	_check(DotAddonConfig.get_value(res.value, "mode") == "server" and DotAddonConfig.get_value(res.value, "low") == 2, "the server tier beats the game tier, which beats the addon")
 	var layers := DotAddonConfig.file_layers(NAME, "10-base.yml")
-	_check(layers.size() == 3 and layers[1].contains("/game/selftest_game/") and layers[2].contains("/server/addons/"), "file_layers: addon, game, server")
+	_check(layers.size() == 3 and layers[1].contains("/game/selftest_game/") and layers[2].contains("/server/addon/"), "file_layers: addon, game, server")
 	_write_at(_server_game_dir(), "10-base.yml", "mode: server-game\n")
 	layers = DotAddonConfig.file_layers(NAME, "10-base.yml")
 	_check(layers.size() == 4 and layers[3].contains("/server/game/"), "the operator's per-game copy is strongest")
@@ -263,12 +269,12 @@ func _test_server_mirror_and_game_tier() -> void:
 	res = DotAddonConfig.load_dir(NAME)
 	_check(DotAddonConfig.get_value(res.value, "mode") == "new", "the new path wins over the old one")
 	DotAddonConfig.config_root = "user://cfg_root_selftest"
-	_write_at("user://cfg_root_selftest/addons/selftest_addon", "root.yml", "r: 1\n")
+	_write_at("user://cfg_root_selftest/addon/selftest_addon", "root.yml", "r: 1\n")
 	_check(DotAddonConfig.get_value(DotAddonConfig.load_dir(NAME).value, "r") == 1, "config_root is read like --config")
 	DotAddonConfig.config_root = ""
-	DirAccess.remove_absolute("user://cfg_root_selftest/addons/selftest_addon/root.yml")
-	DirAccess.remove_absolute("user://cfg_root_selftest/addons/selftest_addon")
-	DirAccess.remove_absolute("user://cfg_root_selftest/addons")
+	DirAccess.remove_absolute("user://cfg_root_selftest/addon/selftest_addon/root.yml")
+	DirAccess.remove_absolute("user://cfg_root_selftest/addon/selftest_addon")
+	DirAccess.remove_absolute("user://cfg_root_selftest/addon")
 	DirAccess.remove_absolute("user://cfg_root_selftest")
 	var merged := {"a": {"x": 1}, "l": [1]}
 	DotAddonConfig.merge(merged, {"a": {"y": 2}, "l": [2, 3]})
@@ -299,6 +305,43 @@ func _test_legacy_shim() -> void:
 	_check(DotCfgLegacy.find(old_p, new_p) == "", "after the removal date the old path is ignored")
 	_check(DotCfgLegacy.warned_count() == 1, "and reported once as an error")
 	_check(DotCfgLegacy.REMOVE_AFTER == "2026-12-31", "the removal date is 2026-12-31")
+	DotCfgLegacy.reset()
+
+
+func _test_plural_legacy() -> void:
+	_section("Singular dirs are canonical; the plural names are read with one WARN each")
+	_clean()
+	DotCfgLegacy.reset()
+	_check(DotAddonConfig.SUBDIR == "addon" and DotAddonConfig.SERVER_SUBDIR == "server/addon" and DotAddonConfig.GAME_SUBDIR == "game", "the canonical tier names are singular")
+	_write("10-base.yml", "mode: singular\n")
+	var res := DotAddonConfig.load_dir(NAME)
+	_check(DotAddonConfig.get_value(res.value, "mode") == "singular" and DotCfgLegacy.warned_count() == 0, "a singular file is read with no warning")
+	_clean()
+	_write_at(_plural("addons"), "10-base.yml", "mode: plural\nold: 1\n")
+	res = DotAddonConfig.load_dir(NAME)
+	_check(res.ok and DotAddonConfig.get_value(res.value, "mode") == "plural", "cfg/addons/<addon> is still read")
+	_check(DotCfgLegacy.warned_count() == 1, "with one warning")
+	DotAddonConfig.load_dir(NAME)
+	DotAddonConfig.file_layers(NAME, "10-base.yml")
+	_check(DotCfgLegacy.warned_count() == 1, "and not again on a reload")
+	_write("10-base.yml", "mode: singular\n")
+	res = DotAddonConfig.load_dir(NAME)
+	_check(DotAddonConfig.get_value(res.value, "mode") == "singular" and DotAddonConfig.get_value(res.value, "old") == null, "both present: the singular file wins whole, nothing of the plural is merged")
+	_check(DotAddonConfig.file_layers(NAME, "10-base.yml").size() == 1, "and file_layers lists one copy")
+	_clean()
+	DotCfgLegacy.reset()
+	DotAddonConfig.game = "selftest_game"
+	_write_at(_plural("games/selftest_game"), "10-base.yml", "mode: games\n")
+	_write_at(_plural("server/addons"), "10-base.yml", "mode: server-addons\n")
+	_write_at(_plural("server/games/selftest_game"), "10-base.yml", "mode: server-games\n")
+	var layers := DotAddonConfig.file_layers(NAME, "10-base.yml")
+	_check(layers.size() == 3 and layers[0].contains("/games/") and layers[1].contains("/server/addons/") and layers[2].contains("/server/games/"), "games/, server/addons/ and server/games/ are read, weakest to strongest")
+	_check(DotCfgLegacy.warned_count() == 3, "one warning per old path")
+	_write_at(_server_game_dir(), "10-base.yml", "mode: new\n")
+	layers = DotAddonConfig.file_layers(NAME, "10-base.yml")
+	_check(layers.size() == 3 and layers[2].contains("/server/game/selftest_game/"), "a singular server/game copy replaces the plural one")
+	DotAddonConfig.game = ""
+	_clean()
 	DotCfgLegacy.reset()
 
 
@@ -388,7 +431,7 @@ func _test_user_tier() -> void:
 	cfg = DotAddonConfig.load_dir(NAME, {})
 	_check(cfg.value["mode"] == "server", "the operator tier beats the user tier")
 	var layers := DotAddonConfig.file_layers(NAME, "t.yml")
-	_check(layers.size() == 3 and layers[1].contains("/user/addons/") and layers[2].contains("/server/addons/"), "file_layers order: addon, user, server")
+	_check(layers.size() == 3 and layers[1].contains("/user/addon/") and layers[2].contains("/server/addon/"), "file_layers order: addon, user, server")
 	_clean()
 	_write("t.yml", "mode: addon\nvolume: 1.0\n")
 	saved = DotAddonConfig.save_user(NAME, "t.yml", {"volume": 0.5, "mode": "b"}, schema)

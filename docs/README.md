@@ -9,6 +9,6 @@
 | [randomness.md](randomness.md) | `random/`: the (key, index) idea, the mixer's three traps, who still hand-rolls a generator |
 | [camera.md](camera.md) | `camera/`: why not `SpringArm3D`, the look-ahead sweep, fading people instead of colliding with them, the armed check |
 | [loading.md](loading.md) | `loading/`: `DotLoadGate` (holds, requirements, freezing, the timeout), who covers the screen, `DotLoadingCover`, older shells |
-| [addon-config.md](addon-config.md) | `DotAddonConfig`: `cfg/addons/<addon>/*.yml`, the roots, the layers, secrets |
+| [addon-config.md](addon-config.md) | `DotAddonConfig`: `cfg/addon/<addon>/*.yml`, the roots, the layers, secrets |
 | [profiles.md](profiles.md) | `DotProfileSet`/`DotProfile`: per-entity yml profiles, tiers, extends, folders, adopters |
 | [dot-profile-split.md](dot-profile-split.md) | Plan only: moving the profile classes into their own addon, class names kept |

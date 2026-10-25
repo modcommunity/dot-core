@@ -39,5 +39,7 @@ extends RefCounted
 #     user_tier_enabled, user_file, user_paths, save_user, reset_user; DotProfileSet.set_user_tier switches both.
 # 19: DotAddonConfig.tier_dirs and apply_overrides (public; DotMapConfig no longer calls the private ones).
 # 20: DotHttp max_bytes on get_bytes, request and download_to_file (a per-call body_size_limit).
-const LEVEL := 20
+# 21: cfg directory names are singular (cfg/addon/, cfg/game/, cfg/server/addon/, cfg/server/game/, user/addon/);
+#     the plural names are read through DotCfgLegacy until 2026-12-31, the singular file winning whole.
+const LEVEL := 21
 const OLDEST := 1
