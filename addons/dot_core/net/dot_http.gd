@@ -432,20 +432,9 @@ func _transport_error(result: int, url: String) -> DotError:
 
 # --- Downloads -------------------------------------------------------------
 
-## Downloads to a file rather than into memory.
-##
-## The only sane way to fetch content: a 500 MB PCK read into a
-## [PackedByteArray] costs 500 MB of RAM plus a copy, and on a phone that is a
-## termination.
-##
-## [param range_start] resumes a partial file by sending a [code]Range[/code]
-## header. The caller is responsible for having verified that the existing bytes
-## belong to this resource — see dot-cloud's store, which keys partials by
-## content hash so a resumed transfer cannot splice two different files together.
-##
-## [param max_bytes] > 0 caps this response's body (the range asked for, not the whole file): a
-## host streaming past it fails ("The response was too large.") instead of filling the disk.
-##
+## Downloads to a file rather than into memory (a 500 MB PCK in a [PackedByteArray] is a phone termination).
+## [param range_start] resumes a partial file with a [code]Range[/code] header; the caller must have verified the existing bytes belong to this resource.
+## [param max_bytes] > 0 caps this response's body: a host streaming past it fails instead of filling the disk.
 ## On success the value is [code]{status, headers, size, resumed}[/code].
 func download_to_file(
 	url_or_path: String,
@@ -460,30 +449,15 @@ func download_to_file(
 	if not parent.ok:
 		return parent
 
-	# [b]The engine does not always write the file it was asked to.[/b] On the web
-	# export a 2xx arrives, `HTTPRequest.download_file` reports success, and there is
-	# nothing at the path afterwards -- which surfaced three layers away in dot-cloud as
-	# "There is no partial download to commit", an INTEGRITY error against a mirror that
-	# had just served the right bytes, followed by that source backing itself off and
-	# every remaining file reporting "No content source is available". A browser client
-	# could not download a single object.
-	#
-	# Detected rather than asked about, in the family's own style: try the engine's
-	# writer once, and if a success leaves no file, do it in memory from then on. That is
-	# one wasted request per process on a platform where it does not work, none anywhere
-	# else, and it needs no list of which platforms those are -- a list that would be
-	# wrong the first time one of them was fixed.
+	# On web a 2xx can leave no file behind. Detect it once (see below) and fall back
+	# to memory, rather than keeping a list of platforms that would go stale.
 	if not _engine_writes_downloads:
 		return await _download_in_memory(url, dest_path, range_start, headers, max_bytes)
 
 	var merged := headers.duplicate()
 
-	# HTTPRequest has no append mode: it truncates whatever download_file points
-	# at. A ranged body written straight to dest_path therefore *replaces* the
-	# partial with its own tail, which looks like a success and is a corrupt
-	# file. So the response lands in a sibling and is joined on below — which
-	# also means a resume that fails leaves the partial untouched rather than
-	# destroying the bytes it was trying to extend.
+	# HTTPRequest truncates download_file, so a ranged body goes to a sibling and is
+	# joined on: a failed resume then leaves the partial untouched.
 	var resume_target := ""
 
 	if range_start > 0:
@@ -519,10 +493,7 @@ func download_to_file(
 		if result != HTTPRequest.RESULT_SUCCESS:
 			out = DotResult.failure(_transport_error(result, url))
 		elif status == 416:
-			# "Range not satisfiable" means the local partial is at least as
-			# long as the resource. Treated as a failure the caller retries
-			# from zero, because the alternative is trusting a file we cannot
-			# explain.
+			# Local partial is at least as long as the resource: fail so the caller restarts from zero.
 			out = DotResult.fail(
 				DotError.CODE_INVALID,
 				"The server rejected the resume range.",
@@ -531,8 +502,7 @@ func download_to_file(
 		elif status < 200 or status >= 300:
 			out = DotResult.failure(DotError.from_http(status))
 		else:
-			# A server that ignores Range replies 200 with the whole body; only
-			# 206 means what arrived is a continuation of what is on disk.
+			# Only 206 continues what is on disk; 200 is the whole body.
 			var resumed := status == 206
 			var joined := DotResult.success(0)
 
@@ -548,9 +518,7 @@ func download_to_file(
 							"joining the resumed range onto '%s'" % dest_path
 						)
 				else:
-					# The body is the whole resource, so the sibling *is* the
-					# file. Replacing rather than appending is the difference
-					# between the file and the file with its prefix twice.
+					# Whole resource: replace, or the prefix lands twice.
 					DotLog.debug(
 						CHANNEL,
 						"server ignored Range; restarted from zero",
@@ -561,41 +529,15 @@ func download_to_file(
 			if not joined.ok:
 				out = joined
 			else:
-				# [b]No flush here, deliberately, and removing it is what made
-				# downloading work in a browser at all.[/b] On web `user://` is an
-				# emscripten IDBFS mirror and `force_fs_sync` is an ASYNCHRONOUS
-				# `FS.syncfs`; overlapping calls are not safe, and this ran once per
-				# completed download with `parallel_downloads` of them in flight. The
-				# result was a file that existed when this function measured it and
-				# was gone a moment later, three layers away, as
-				#
-				#     [io] There is no partial download to commit.
-				#
-				# reported as an integrity failure against a mirror that had just
-				# served a 200 with the right bytes. Six objects, six false
-				# accusations, and then the source backed itself off and every
-				# remaining file said "No content source is available".
-				#
-				# Nothing is lost by not flushing: what is written here is a PARTIAL,
-				# and a partial that does not survive a closed tab costs a re-download
-				# of one object. `DotCloudStore` flushes after each object is
-				# COMMITTED, which is the durable thing and is already one flush at a
-				# time.
-
-				# [b]A 2xx with no file on disk is a failure, and it used to be
-				# reported as a success.[/b] HTTPRequest writes the body itself and
-				# says nothing about whether the write landed, so a caller got
-				# `ok` and then found nothing where it had asked for it -- which
-				# surfaced three layers away as "There is no partial download to
-				# commit", an integrity error blaming a mirror that had served the
-				# right bytes. Checked here, where the answer is still specific.
+				# No flush here, deliberately: web `user://` sync is async and overlapping
+				# calls lose files. A partial costs one re-download; DotCloudStore flushes
+				# after each COMMITTED object.
+				# A 2xx with no file on disk is a failure, not a success: HTTPRequest does
+				# not say whether its write landed.
 				var written := DotPaths.file_size(dest_path)
 
 				if not FileAccess.file_exists(dest_path):
-					# Said once. The flag is set on the first one, but with parallel
-					# downloads several are already in flight and each finds the same
-					# thing -- six identical warnings about one property of the
-					# platform, which is how a line stops being read.
+					# Said once: parallel downloads each find the same thing.
 					if _engine_writes_downloads:
 						DotLog.warn(
 							CHANNEL,
@@ -618,9 +560,7 @@ func download_to_file(
 	req.download_file = ""
 	_release(req)
 
-	# Nothing resumable survives a failed attempt: the next one re-requests the
-	# same range. Leaving the sibling behind would grow a second copy of every
-	# interrupted download beside the first.
+	# A failed attempt keeps nothing resumable; the next one re-requests the range.
 	if resume_target != "" and FileAccess.file_exists(resume_target):
 		DirAccess.remove_absolute(resume_target)
 
@@ -630,20 +570,11 @@ func download_to_file(
 	return out
 
 
-## Whether [HTTPRequest] on this platform actually writes [code]download_file[/code].
-##
-## Assumed true and demoted on the first counter-example, which is the only honest
-## default: every platform this family has run on but one does write it, and the one
-## that does not says so by leaving no file behind.
+## Whether [HTTPRequest] actually writes [code]download_file[/code]; assumed true, demoted on the first success that leaves no file.
 static var _engine_writes_downloads: bool = true
 
 
-## [method download_to_file] for a platform whose HTTP client will not write one.
-##
-## The body comes back in memory and is written here, through [DotPaths] -- which is
-## what flushes the web filesystem, and is why this works where the engine's own writer
-## did not. The cost is the whole object in RAM at once, which is what a content object
-## is sized for: dot-cloud addresses files, not packs, and the largest here is a map mesh.
+## [method download_to_file] for a platform whose HTTP client will not write a file: the body is held in memory and written through [DotPaths] (which flushes the web filesystem). Content objects are file-sized, so RAM is bounded.
 func _download_in_memory(
 	url: String,
 	dest_path: String,
@@ -665,9 +596,7 @@ func _download_in_memory(
 	var status := int(response.get("status", 0))
 	var body: PackedByteArray = response.get("body", PackedByteArray())
 
-	# A server that ignores Range answers 200 with the whole resource, so the body
-	# REPLACES what is on disk; 206 means it continues it. Getting this backwards writes
-	# the file's first half twice and is invisible until a hash check.
+	# 200 (Range ignored) REPLACES what is on disk; 206 continues it.
 	var resumed := status == 206
 
 	var written := (
