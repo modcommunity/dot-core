@@ -91,9 +91,40 @@ const MAX_POOL := 16
 
 ## Bytes per read. 0 uses the engine default.
 ##
-## Raised for content downloads, where the default's small reads add measurable
-## overhead across hundreds of megabytes.
-@export var download_chunk_size: int = 65536
+## HTTPRequest reads one chunk per frame without threads, so this is the per-frame
+## ceiling: 64 KiB left a rendered client at ~190 KiB/s. Default from [method default_chunk_size].
+@export var download_chunk_size: int = default_chunk_size()
+
+## Read downloads on a worker thread. Off by default, ignored without [method DotPlatform.has_threads].
+## Default from [method default_use_threads].
+@export var use_threads: bool = default_use_threads()
+
+const DEFAULT_CHUNK_SIZE := 1048576
+const MAX_CHUNK_SIZE := 16777216
+
+## Chunk size from [code]--dot-http-chunk=N[/code], env [code]DOT_HTTP_CHUNK_SIZE[/code],
+## project setting [code]dot/http/download_chunk_size[/code], then 1 MiB; clamped to 16 MiB.
+static func default_chunk_size() -> int:
+	var v: Variant = _setting("dot-http-chunk", "DOT_HTTP_CHUNK_SIZE", "dot/http/download_chunk_size", DEFAULT_CHUNK_SIZE)
+	return clampi(int(v), 0, MAX_CHUNK_SIZE)
+
+
+## Threaded reads, opt-in: [code]--dot-http-threads[/code] / [code]=1[/code], env
+## [code]DOT_HTTP_THREADS[/code], or project setting [code]dot/http/use_threads[/code].
+static func default_use_threads() -> bool:
+	return str(_setting("dot-http-threads", "DOT_HTTP_THREADS", "dot/http/use_threads", false)) in ["true", "1", "yes", "on", ""]
+
+
+static func _setting(arg: String, env: String, project: String, fallback: Variant) -> Variant:
+	for a in OS.get_cmdline_user_args() + OS.get_cmdline_args():
+		if a == "--" + arg:
+			return ""
+		if a.begins_with("--" + arg + "="):
+			return a.substr(arg.length() + 3)
+	var e := OS.get_environment(env)
+	if e != "":
+		return e
+	return ProjectSettings.get_setting(project, fallback)
 
 @export_range(0, 20, 1) var max_redirects: int = 8
 
@@ -469,7 +500,7 @@ func download_to_file(
 
 	req.download_file = resume_target if resume_target != "" else dest_path
 	req.body_size_limit = _limit_for(max_bytes)
-	req.download_chunk_size = download_chunk_size if download_chunk_size > 0 else 65536
+	req.download_chunk_size = download_chunk_size if download_chunk_size > 0 else DEFAULT_CHUNK_SIZE
 
 	_in_flight += 1
 
@@ -836,7 +867,7 @@ func _acquire() -> HTTPRequest:
 	# use_threads must stay false on single-threaded web builds; setting it
 	# there is not an error, it simply never takes effect and hides the reason
 	# requests still block.
-	req.use_threads = DotPlatform.has_threads()
+	req.use_threads = use_threads and DotPlatform.has_threads()
 
 	add_child(req)
 	_pool.append(req)

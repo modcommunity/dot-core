@@ -31,7 +31,7 @@ const PORT_LAST := 28330
 const BODY := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ\
 abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-const CHECKS := 41
+const CHECKS := 45
 
 ## The scratch directory. Removed at the start of every run and at the end.
 const SCRATCH := "user://http_selftest"
@@ -40,7 +40,7 @@ const SCRATCH := "user://http_selftest"
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total is the other half — see docs/testing.md.
-const SECTIONS := 8
+const SECTIONS := 9
 
 var _passed := 0
 var _failed := 0
@@ -85,6 +85,7 @@ func _run() -> void:
 	_http.max_retries = 0
 	add_child(_http)
 
+	_test_transfer_defaults()
 	await _test_plain_download()
 	await _test_resume_joins()
 	await _test_resume_ignored_range()
@@ -121,6 +122,20 @@ func _run() -> void:
 
 
 # --- Downloads -------------------------------------------------------------
+
+func _test_transfer_defaults() -> void:
+	_entered += 1
+	print("transfer defaults")
+	var h := DotHttp.new()
+	_check(h.download_chunk_size >= 1048576, "chunk size defaults to 1 MiB or more", str(h.download_chunk_size))
+	_check(h.download_chunk_size <= DotHttp.MAX_CHUNK_SIZE, "and stays within HTTPRequest's 16 MiB limit")
+	_check(not h.use_threads, "threaded reads are opt-in")
+	add_child(h)
+	var req := h._acquire()
+	_check(req != null and req.download_chunk_size == h.download_chunk_size, "pooled requests carry the chunk size")
+	h.queue_free()
+	_completed += 1
+
 
 func _test_plain_download() -> void:
 	_section("a download with no range at all")
