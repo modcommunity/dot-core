@@ -45,5 +45,6 @@ extends RefCounted
 #     addon, class names unchanged: a project that used them now needs dot-profile (same class names, so OLDEST stays 1).
 #     New here for it: DotYaml.emit, DotAddonConfig.set_nested, is_finite_value and check_field (the schema check
 #     save_user uses). DotAddonConfig.set_user_tier no longer touches DotProfileSet; that set reads the same flag.
-const LEVEL := 22
+# 23: DotCollisionSweep (drawn floor and walls against the physics world, and collision nothing is drawn at).
+const LEVEL := 23
 const OLDEST := 1
