@@ -7,8 +7,8 @@ extends Node
 ## godot --headless --path . res://examples/collision_sweep_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 6
-const CHECKS := 29
+const SECTIONS := 7
+const CHECKS := 35
 
 var _passed := 0
 var _failed := 0
@@ -31,6 +31,7 @@ func _ready() -> void:
 	_test_invisible()
 	_test_play_filter()
 	_test_report()
+	_test_verdict()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -205,6 +206,23 @@ func _test_report() -> void:
 	_check(s.count("nonexistent") == 0, "an unknown kind counts zero")
 	var cells := s.count("floor_missing")
 	_check(cells <= int(ceil(16.0 / DotCollisionSweep.CELL)) * int(ceil(16.0 / DotCollisionSweep.CELL)) + 8, "findings are cells, not triangles")
+
+
+func _test_verdict() -> void:
+	_section("Verdict: a sweep over nothing is a failure, not a clean report")
+	var empty := _sweep()
+	empty.sweep_drawn()
+	var r := empty.verdict()
+	_check(not r.ok, "no drawn faces fails the verdict")
+	_check(not r.ok and r.error.code == DotError.CODE_STATE, "with the state code")
+	_check(empty.verdict(false, false).ok, "asking for no samples passes")
+	var drawn := _sweep()
+	drawn.add_faces(&"world", _floor_faces(Vector3(25, 0, 0), 8.0))
+	drawn.sweep_drawn()
+	_check(drawn.verdict().ok, "a sampled floor passes, findings or not")
+	var walls := drawn.verdict(true, true)
+	_check(not walls.ok and walls.error.code == DotError.CODE_STATE, "a wall is required and none was sampled")
+	_check(drawn.floor_samples > 0, "the floor samples were counted")
 
 
 func _check(cond: bool, what: String) -> void:

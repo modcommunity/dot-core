@@ -120,6 +120,16 @@ func sweep_collision(stands: PackedVector3Array, label_of: Callable = Callable()
 				_record("invisible_floor" if d == Vector3.DOWN else "invisible_wall", at, label, "")
 
 
+## Failure when a sweep that ran sampled nothing (a world built with draw off has no meshes, so "0 findings" would be false comfort).
+## [param need_floor] and [param need_wall] say which samples this level must have produced.
+func verdict(need_floor: bool = true, need_wall: bool = false) -> DotResult:
+	if need_floor and floor_samples == 0:
+		return DotResult.fail(DotError.CODE_STATE, "the sweep sampled no drawn floor", "is the world built with draw on? %d wall samples, %d probe rays" % [wall_samples, probe_rays])
+	if need_wall and wall_samples == 0:
+		return DotResult.fail(DotError.CODE_STATE, "the sweep sampled no drawn wall", "%d floor samples, %d probe rays" % [floor_samples, probe_rays])
+	return DotResult.success(results.size())
+
+
 ## Counts of cells per kind and label as lines, then examples.
 func describe_lines() -> PackedStringArray:
 	var out := PackedStringArray()
