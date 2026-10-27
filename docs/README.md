@@ -11,3 +11,4 @@
 | [loading.md](loading.md) | `loading/`: `DotLoadGate` (holds, requirements, freezing, the timeout), who covers the screen, `DotLoadingCover`, older shells |
 | [addon-config.md](addon-config.md) | `DotAddonConfig`: `cfg/addon/<addon>/*.yml`, the roots, the layers, secrets |
 | [dot-profile-split.md](dot-profile-split.md) | Done at API level 22: the profile classes moved to the dot-profile addon, class names kept; what was skipped and why |
+| [profile.md](profile.md) | `profile/`: `DotHitchLog`, naming a lag spike from the frame split and counters |
