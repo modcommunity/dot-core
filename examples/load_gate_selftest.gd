@@ -8,8 +8,8 @@ extends Node
 ## godot --headless --path . res://examples/load_gate_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 10
-const CHECKS := 84
+const SECTIONS := 11
+const CHECKS := 98
 
 var _passed := 0
 var _failed := 0
@@ -58,6 +58,7 @@ func _run() -> void:
 	await _test_camera_and_own_warmup()
 	await _test_hosted()
 	await _test_finding_and_old_shells()
+	await _test_cover_title_tip()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -522,6 +523,52 @@ func _test_finding_and_old_shells() -> void:
 	root.free()
 	remove_child(own)
 	own.free()
+
+
+func _test_cover_title_tip() -> void:
+	_section("the stock cover: title and tip are opt-in")
+	var plain := DotLoadingCover.new()
+	add_child(plain)
+	plain.set_status("Working")
+	_check(plain.find_children("*", "Label", true, false).size() == 1, "default cover has only the status label")
+	_check(plain.describe()["title"] == "" and plain.describe()["tip"] == "", "and describe() reports no title or tip")
+	plain.set_tip("late")
+	_check(plain.find_children("*", "Label", true, false).size() == 2, "a tip set after build adds its label")
+	remove_child(plain)
+	plain.free()
+
+	var cover := DotLoadingCover.new()
+	cover.title = "Game"
+	cover.tip = "Hint"
+	cover.title_color = Color(1, 0.7, 0.1)
+	add_child(cover)
+	cover.show_cover()
+	var labels := cover.find_children("*", "Label", true, false)
+	_check(labels.size() == 3, "title, tip and status are built")
+	_check((labels[0] as Label).text == "Game" and (labels[1] as Label).text == "Hint", "title above tip above the status line")
+	_check((labels[0] as Label).get_theme_color("font_color") == Color(1, 0.7, 0.1), "title_color applies")
+	cover.set_tip("")
+	_check(not (labels[1] as Label).visible, "an empty tip hides its label")
+	cover.set_tip("Next")
+	_check((labels[1] as Label).visible and (labels[1] as Label).text == "Next", "and a new tip shows again")
+	cover.set_status("Loading")
+	cover.set_progress(0.5)
+	_check(cover.status() == "Loading" and absf(float(cover.describe()["fraction"]) - 0.5) < 0.001, "status and bar still work")
+	cover.set_title("")
+	_check(not (labels[0] as Label).visible, "an empty title hides its label")
+	_check(cover.describe()["tip"] == "Next", "describe() reports the tip")
+	remove_child(cover)
+	cover.free()
+
+	var sub := DotLoadingCover.new()
+	sub.title = "Early"
+	_check(sub.title == "Early", "a title set before the tree is kept")
+	add_child(sub)
+	sub.set_progress(-1.0)
+	_check(sub.find_children("*", "Label", true, false).size() == 2 and bool(sub.describe()["showing"]) == false, "set before entering the tree builds with it, hidden until shown")
+	_check(float(sub.describe()["fraction"]) < 0.0, "indeterminate bar reports no fraction")
+	remove_child(sub)
+	sub.free()
 
 
 func _section(title: String) -> void:
