@@ -1,10 +1,5 @@
 # size
 # Baselines only shrink: scripts/<gate> --update lowers or drops entries and refuses to add.
-addons/dot_core/camera/dot_camera_probe.gd::resolve	95
-addons/dot_core/core/dot_config.gd::_coerce	83
-addons/dot_core/core/dot_paths.gd::safe_relative	88
-addons/dot_core/loading/dot_load_gate.gd	810
-addons/dot_core/net/dot_http.gd	826
 examples/dual_transport_selftest.gd	1038
 examples/dual_transport_selftest.gd::_test_tls_hello_screened	123
 examples/dual_transport_selftest.gd::_test_websocket_leaving	97

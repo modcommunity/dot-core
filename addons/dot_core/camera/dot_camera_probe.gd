@@ -146,44 +146,9 @@ func resolve(pivot: Vector3, wanted: Vector3, delta: float) -> Vector3:
 	var pace := 0.0
 
 	if not cut and delta > 0.0 and look_ahead > 0.0:
-		# Where the line will be if it keeps moving as it has, sampled at several points
-		# over the look-ahead: one sample at the end steps over a pillar the line is about
-		# to cross, which is the exact case this is for. Each answer is a fraction of THAT
-		# line; the same fraction of this one is where the camera should be heading now.
-		# Standing still, every sample is this line and the camera rests at the hard limit,
-		# not in front of it.
-		var pivot_step := (pivot - _last_pivot) / delta
-		# The line turns about the pivot more than it slides: a camera orbiting a head is
-		# a rotation, and extrapolating its end in a straight line cuts the corner of the
-		# arc and misses the pillar the arc meets. So the offset is turned at the rate it
-		# turned, and stretched at the rate it stretched.
-		var offset_last := _last_wanted_point - _last_pivot
-		var axis := offset_last.cross(offset)
-		var turn_rate := offset_last.angle_to(offset) / delta if axis.length_squared() > 1e-10 else 0.0
-		axis = axis.normalized() if turn_rate != 0.0 else Vector3.UP
-		var stretch_rate := (length - offset_last.length()) / delta
-
-		for i in range(1, LOOK_AHEAD_SAMPLES + 1):
-			var seconds := look_ahead * float(i) / float(LOOK_AHEAD_SAMPLES)
-			var pivot_ahead := pivot + pivot_step * seconds
-			if pivot_ahead.distance_to(pivot) > cut_distance:
-				break
-			var reach := maxf(length + stretch_rate * seconds, 0.0)
-			# Both readings of the motion: turning about the pivot (an orbit), and the end
-			# sliding in a straight line (a strafe past a pillar). Each catches what the
-			# other cuts the corner of; the nearer answer wins.
-			for wanted_ahead in [
-				pivot_ahead + direction.rotated(axis, turn_rate * seconds) * reach,
-				wanted + (wanted - _last_wanted_point) / delta * seconds,
-			]:
-				var soon_length := pivot_ahead.distance_to(wanted_ahead)
-				if soon_length < 0.0001:
-					continue
-				var soon := clear_length(space, pivot_ahead, wanted_ahead, radius + skin, mask, _excluded)
-				var limit := soon / soon_length * length
-				target = minf(target, limit)
-				if _distance > limit:
-					pace = maxf(pace, (_distance - limit) / seconds)
+		var ahead := _look_ahead_limit(space, pivot, wanted, direction, length, delta, hard)
+		target = ahead.x
+		pace = ahead.y
 
 	if cut:
 		_distance = target
@@ -209,6 +174,47 @@ func resolve(pivot: Vector3, wanted: Vector3, delta: float) -> Vector3:
 	_last_wanted = length
 
 	return pivot + direction * _distance
+
+
+## The nearest limit the line will hit over the look-ahead (x) and the slowest steady
+## pull-in pace, in metres a second, that is inside every predicted limit in time (y).
+func _look_ahead_limit(space: PhysicsDirectSpaceState3D, pivot: Vector3, wanted: Vector3, direction: Vector3, length: float, delta: float, hard: float) -> Vector2:
+	var offset := wanted - pivot
+	var mask := collision_mask
+	var target := hard
+	var pace := 0.0
+	# Sampled at several points over the look-ahead: one sample at the end steps over a pillar
+	# the line is about to cross. Each answer is a fraction of THAT line; the same fraction
+	# of this one is where the camera should head now.
+	var pivot_step := (pivot - _last_pivot) / delta
+	# A camera orbiting a head rotates: a straight-line extrapolation cuts the arc's corner,
+	# so turn the offset at its turn rate and stretch it at its stretch rate.
+	var offset_last := _last_wanted_point - _last_pivot
+	var axis := offset_last.cross(offset)
+	var turn_rate := offset_last.angle_to(offset) / delta if axis.length_squared() > 1e-10 else 0.0
+	axis = axis.normalized() if turn_rate != 0.0 else Vector3.UP
+	var stretch_rate := (length - offset_last.length()) / delta
+
+	for i in range(1, LOOK_AHEAD_SAMPLES + 1):
+		var seconds := look_ahead * float(i) / float(LOOK_AHEAD_SAMPLES)
+		var pivot_ahead := pivot + pivot_step * seconds
+		if pivot_ahead.distance_to(pivot) > cut_distance:
+			break
+		var reach := maxf(length + stretch_rate * seconds, 0.0)
+		# Orbit and strafe readings of the motion; each catches what the other misses.
+		for wanted_ahead in [
+			pivot_ahead + direction.rotated(axis, turn_rate * seconds) * reach,
+			wanted + (wanted - _last_wanted_point) / delta * seconds,
+		]:
+			var soon_length := pivot_ahead.distance_to(wanted_ahead)
+			if soon_length < 0.0001:
+				continue
+			var soon := clear_length(space, pivot_ahead, wanted_ahead, radius + skin, mask, _excluded)
+			var limit := soon / soon_length * length
+			target = minf(target, limit)
+			if _distance > limit:
+				pace = maxf(pace, (_distance - limit) / seconds)
+	return Vector2(target, pace)
 
 
 ## [method resolve] for a whole transform: the basis is kept, the origin pulled in.

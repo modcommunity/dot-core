@@ -85,41 +85,11 @@ static func safe_relative(path: String, max_length: int = 1024) -> DotResult:
 
 	var out := PackedStringArray()
 	for seg in p.split("/", false):
-		if seg == "." :
+		if seg == ".":
 			continue
-		if seg == "..":
-			return DotResult.fail(
-				DotError.CODE_INVALID,
-				"Path traversal is not allowed.",
-				path
-			)
-
-		for ch in ILLEGAL_CHARS:
-			if seg.contains(ch):
-				return DotResult.fail(
-					DotError.CODE_INVALID,
-					"Path contains an illegal character '%s'." % ch,
-					path
-				)
-
-		# Trailing dots and spaces: Windows drops them at creation time, so
-		# "a." and "a" would become the same file while the manifest believes
-		# they are two.
-		if seg.ends_with(".") or seg.ends_with(" ") or seg.begins_with(" "):
-			return DotResult.fail(
-				DotError.CODE_INVALID,
-				"Path segment has leading or trailing whitespace or a trailing dot.",
-				path
-			)
-
-		var stem := seg.get_basename().to_upper()
-		if WINDOWS_RESERVED.has(stem):
-			return DotResult.fail(
-				DotError.CODE_INVALID,
-				"Path uses the reserved device name '%s'." % stem,
-				path
-			)
-
+		var bad := _check_segment(seg, path)
+		if not bad.ok:
+			return bad
 		out.append(seg)
 
 	if out.is_empty():
@@ -128,6 +98,33 @@ static func safe_relative(path: String, max_length: int = 1024) -> DotResult:
 		)
 
 	return DotResult.success("/".join(out))
+
+
+## One path segment against traversal, illegal characters, Windows drop rules and reserved names.
+static func _check_segment(seg: String, path: String) -> DotResult:
+	if seg == "..":
+		return DotResult.fail(DotError.CODE_INVALID, "Path traversal is not allowed.", path)
+
+	for ch in ILLEGAL_CHARS:
+		if seg.contains(ch):
+			return DotResult.fail(
+				DotError.CODE_INVALID, "Path contains an illegal character '%s'." % ch, path
+			)
+
+	# Windows drops trailing dots and spaces, so "a." and "a" would collide.
+	if seg.ends_with(".") or seg.ends_with(" ") or seg.begins_with(" "):
+		return DotResult.fail(
+			DotError.CODE_INVALID,
+			"Path segment has leading or trailing whitespace or a trailing dot.",
+			path
+		)
+
+	var stem := seg.get_basename().to_upper()
+	if WINDOWS_RESERVED.has(stem):
+		return DotResult.fail(
+			DotError.CODE_INVALID, "Path uses the reserved device name '%s'." % stem, path
+		)
+	return DotResult.success(seg)
 
 
 ## Rewrites a string so it is safe to use as a single filename component.

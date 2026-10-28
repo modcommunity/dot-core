@@ -221,35 +221,10 @@ func _coerce(value: Variant, want: int) -> DotResult:
 
 	match want:
 		TYPE_BOOL:
-			if have == TYPE_STRING or have == TYPE_STRING_NAME:
-				var s := str(value).strip_edges().to_lower()
-				if ["1", "true", "yes", "on", "enabled"].has(s):
-					return DotResult.success(true)
-				if ["0", "false", "no", "off", "disabled", ""].has(s):
-					return DotResult.success(false)
-				return DotResult.fail(
-					DotError.CODE_INVALID, "'%s' is not a boolean." % s
-				)
-			if have == TYPE_INT or have == TYPE_FLOAT:
-				return DotResult.success(float(value) != 0.0)
+			return _coerce_bool(value, have)
 
 		TYPE_INT:
-			if have == TYPE_FLOAT:
-				return DotResult.success(int(value))
-			if have == TYPE_BOOL:
-				return DotResult.success(1 if value else 0)
-			if have == TYPE_STRING or have == TYPE_STRING_NAME:
-				var s := str(value).strip_edges()
-				if s.is_valid_int():
-					return DotResult.success(s.to_int())
-				# JSON has no integers, so whole floats arrive as "27015.0".
-				if s.is_valid_float():
-					var f := s.to_float()
-					if is_equal_approx(f, roundf(f)):
-						return DotResult.success(int(f))
-				return DotResult.fail(
-					DotError.CODE_INVALID, "'%s' is not an integer." % s
-				)
+			return _coerce_int(value, have)
 
 		TYPE_FLOAT:
 			if have == TYPE_INT:
@@ -284,10 +259,45 @@ func _coerce(value: Variant, want: int) -> DotResult:
 			if arr2 != null:
 				return DotResult.success(Array(arr2))
 
+	return _expected(want, have)
+
+
+func _expected(want: int, have: int) -> DotResult:
 	return DotResult.fail(
 		DotError.CODE_INVALID,
 		"Expected %s, got %s." % [type_string(want), type_string(have)]
 	)
+
+
+func _coerce_bool(value: Variant, have: int) -> DotResult:
+	if have == TYPE_STRING or have == TYPE_STRING_NAME:
+		var s := str(value).strip_edges().to_lower()
+		if ["1", "true", "yes", "on", "enabled"].has(s):
+			return DotResult.success(true)
+		if ["0", "false", "no", "off", "disabled", ""].has(s):
+			return DotResult.success(false)
+		return DotResult.fail(DotError.CODE_INVALID, "'%s' is not a boolean." % s)
+	if have == TYPE_INT or have == TYPE_FLOAT:
+		return DotResult.success(float(value) != 0.0)
+	return _expected(TYPE_BOOL, have)
+
+
+func _coerce_int(value: Variant, have: int) -> DotResult:
+	if have == TYPE_FLOAT:
+		return DotResult.success(int(value))
+	if have == TYPE_BOOL:
+		return DotResult.success(1 if value else 0)
+	if have == TYPE_STRING or have == TYPE_STRING_NAME:
+		var s := str(value).strip_edges()
+		if s.is_valid_int():
+			return DotResult.success(s.to_int())
+		# JSON has no integers, so whole floats arrive as "27015.0".
+		if s.is_valid_float():
+			var f := s.to_float()
+			if is_equal_approx(f, roundf(f)):
+				return DotResult.success(int(f))
+		return DotResult.fail(DotError.CODE_INVALID, "'%s' is not an integer." % s)
+	return _expected(TYPE_INT, have)
 
 
 ## Reads a list from an Array, a JSON array string, or a comma-separated string.
