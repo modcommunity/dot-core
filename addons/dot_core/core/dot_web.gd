@@ -2,17 +2,8 @@ class_name DotWeb
 extends RefCounted
 
 ## Access to the browser from GDScript, safely callable on every platform.
-##
-## [b]Why every call here goes through [method Engine.get_singleton] rather than
-## naming [code]JavaScriptBridge[/code] directly.[/b] That singleton is only
-## registered in web builds. A desktop build that mentions the identifier fails
-## to parse the script, which would make every file touching it web-only —
-## including files that merely want to ask "am I in a browser?". Resolving it
-## dynamically costs a dictionary lookup and keeps the whole codebase compiling
-## on one target.
-##
-## Everything here degrades to a no-op or a failed [DotResult] off-web, so
-## callers can use it unguarded.
+## Everything goes through [method Engine.get_singleton]: naming JavaScriptBridge fails to parse on desktop builds.
+## Off-web each call is a no-op or a failed [DotResult], so callers can use it unguarded.
 
 # No log channel: static bridges to the browser, each of which is a no-op or a failed
 # DotResult off the web. Whether "not in a browser" or "no quota API" matters is the
@@ -22,11 +13,7 @@ static var _bridge: Object = null
 static var _bridge_looked_up: bool = false
 
 ## Callbacks handed to JS are kept alive here.
-##
-## [method JavaScriptBridge.create_callback] returns a reference the engine does
-## NOT retain — if GDScript drops the last reference, the JS side is left
-## calling into freed memory. Anything long-lived (a fetch completion, a
-## visibility listener) must be rooted, so it goes in here keyed by name.
+## [method JavaScriptBridge.create_callback] does not retain its reference; a dropped one leaves JS calling freed memory.
 static var _callbacks: Dictionary = {}
 
 
@@ -44,20 +31,8 @@ static func available() -> bool:
 
 
 ## A global object from the page, without evaluating anything.
-##
-## [b]Prefer this to [method eval] for reading, and on a hardened page it is the
-## only thing that works.[/b] [method eval] is a JavaScript `eval`, so a
-## Content-Security-Policy that does not grant `'unsafe-eval'` refuses it — and
-## that is the CORRECT policy for a page hosting a game, which needs
-## `'wasm-unsafe-eval'` to compile WebAssembly and nothing more. Godot catches
-## the `EvalError` and hands back null, so every read through [method eval] on
-## such a page returns "nothing is there" rather than "I was not allowed to
-## look": a silent, total failure that looks exactly like an empty page.
-##
-## Returns a [JavaScriptObject] for an object, or null when the global is absent
-## (and for a primitive — `get_interface` resolves `window[name]` and wraps only
-## objects, so a boolean or a string global cannot be read this way; park what
-## the game needs to read on an OBJECT).
+## Prefer to [method eval]: a CSP without 'unsafe-eval' refuses eval and Godot returns null, indistinguishable from an empty page.
+## Returns null for an absent global and for a primitive (only objects are wrapped); park values on an object.
 static func get_global(name: String) -> Variant:
 	var b := bridge()
 	if b == null:
@@ -66,19 +41,9 @@ static func get_global(name: String) -> Variant:
 	return b.call("get_interface", name)
 
 
-## Evaluates JavaScript and returns its value.
-##
-## [b]Requires `'unsafe-eval'` in the page's CSP.[/b] See [method get_global],
-## which does not, and which is what a reader should reach for first.
-##
-## Only values JS-to-Godot conversion covers come back: numbers, strings,
-## booleans and null. Objects and arrays arrive as null, so anything structured
-## must be [code]JSON.stringify[/code]-ed on the JS side and parsed here — see
-## [method eval_json].
-##
-## [param use_global_scope] runs the code at global scope instead of inside a
-## function body, which is what you want for declaring things that must outlive
-## the call.
+## Evaluates JavaScript and returns its value; needs 'unsafe-eval' in the CSP (see [method get_global]).
+## Only numbers, strings, booleans and null convert; stringify anything structured and use [method eval_json].
+## [param use_global_scope] runs at global scope, for declarations that must outlive the call.
 static func eval(code: String, use_global_scope: bool = false) -> Variant:
 	var b := bridge()
 	if b == null:
@@ -87,10 +52,7 @@ static func eval(code: String, use_global_scope: bool = false) -> Variant:
 
 
 ## Evaluates JavaScript expected to produce a JSON string, and parses it.
-##
-## The standard way to get a structured answer out of the browser. Returns a
-## failed [DotResult] rather than null-and-a-warning so the caller can tell
-## "the browser said no" from "the browser said null".
+## Fails with a [DotResult] rather than null, so "the browser said no" differs from "the browser said null".
 static func eval_json(code: String, use_global_scope: bool = false) -> DotResult:
 	if not available():
 		return DotResult.fail(
@@ -117,9 +79,7 @@ static func eval_json(code: String, use_global_scope: bool = false) -> DotResult
 
 
 ## Creates a JS-callable wrapper around a GDScript [Callable] and roots it.
-##
-## [param name] identifies the callback for lifetime purposes: registering the
-## same name twice replaces the first. Returns null off-web.
+## Registering the same [param name] twice replaces the first. Returns null off-web.
 static func create_callback(name: String, callable: Callable) -> Variant:
 	var b := bridge()
 	if b == null:
@@ -134,20 +94,9 @@ static func release_callback(name: String) -> void:
 	_callbacks.erase(name)
 
 
-## Flushes the emulated filesystem to IndexedDB.
-##
-## [b]The single most important call in this file.[/b] On web, [code]user://[/code]
-## is an in-memory IDBFS mirror. Writes land in memory immediately and are
-## persisted asynchronously; a tab closed before the flush completes loses them.
-## Godot syncs on its own schedule, which is fine for a settings file and not
-## fine for a 400 MB content cache the player just waited to download.
-##
-## dot-cloud therefore calls this after each object is committed to the store,
-## not once at the end — a sync that never happens because the player closed the
-## tab mid-download costs the whole cache, and re-downloading is exactly what
-## the cache exists to prevent.
-##
-## No-op off-web.
+## Flushes the emulated filesystem to IndexedDB; no-op off-web.
+## On web [code]user://[/code] is an in-memory mirror persisted asynchronously, so a tab closed before the flush loses writes.
+## dot-cloud calls it after each committed object, not once at the end.
 static func sync_filesystem() -> void:
 	var b := bridge()
 	if b == null:
@@ -157,12 +106,7 @@ static func sync_filesystem() -> void:
 
 
 ## Best-effort storage quota, as [code]{"usage": bytes, "quota": bytes}[/code].
-##
-## Uses [code]navigator.storage.estimate()[/code], which is a Promise, so this
-## is [code]await[/code]-ed via a rooted callback. Returns a failed result when
-## the API is missing (older Safari) — callers must treat "unknown quota" as a
-## normal case and fall back to a configured cache ceiling rather than assuming
-## unlimited space.
+## Fails when the API is missing (older Safari); treat an unknown quota as normal and fall back to a configured ceiling.
 static func estimate_storage() -> DotResult:
 	if not available():
 		return DotResult.fail(
@@ -178,10 +122,7 @@ static func estimate_storage() -> DotResult:
 			"navigator.storage.estimate is unavailable."
 		)
 
-	# Park the result on a global the poll below reads. Awaiting a JS Promise
-	# from GDScript has no direct bridge, so we start it, then poll — the
-	# estimate resolves in microseconds and this costs a handful of frames at
-	# worst.
+		# A JS Promise cannot be awaited from GDScript: park the result on a global and poll; it resolves in microseconds.
 	eval(
 		"""
 		window.__dotStorageEstimate = null;
@@ -215,13 +156,8 @@ static func estimate_storage() -> DotResult:
 	)
 
 
-## Asks the browser to make storage persistent so it is not evicted under
-## pressure.
-##
-## Without this, a browser low on disk may clear the origin's IndexedDB — taking
-## the content cache with it. Chrome grants it silently for installed or
-## engaged origins; Firefox prompts; Safari ignores it. Always call, never rely
-## on it: the cache must survive being wiped, which it does, by re-downloading.
+## Asks the browser to make storage persistent so it is not evicted under pressure.
+## Chrome grants silently, Firefox prompts, Safari ignores: always call, never rely on it.
 static func request_persistent_storage() -> void:
 	if not available():
 		return
@@ -236,9 +172,7 @@ static func request_persistent_storage() -> void:
 
 
 ## The page's origin, e.g. [code]https://example.com[/code]. Empty off-web.
-##
-## Needed to build same-origin content URLs, which is the one way to sidestep
-## CORS entirely.
+## Needed for same-origin content URLs, which sidestep CORS.
 static func origin() -> String:
 	if not available():
 		return ""
@@ -260,10 +194,7 @@ static func query_param(key: String) -> String:
 
 
 ## Whether the page is served over HTTPS.
-##
-## Decides whether a WebSocket connection must use [code]wss://[/code]: a secure
-## page cannot open an insecure socket, and the failure is a console message the
-## player never sees.
+## Decides whether a WebSocket must use [code]wss://[/code]: a secure page cannot open an insecure socket.
 static func is_secure_context() -> bool:
 	if not available():
 		return false
@@ -272,18 +203,8 @@ static func is_secure_context() -> bool:
 
 
 ## Whether the page itself was served over HTTPS.
-##
-## [b]Not the same question as [method is_secure_context], and confusing the two breaks
-## every local test.[/b] A browser treats [code]http://localhost[/code] and
-## [code]http://127.0.0.1[/code] as trustworthy origins, so [code]isSecureContext[/code]
-## is [code]true[/code] on a plain HTTP page served from either — while mixed-content
-## blocking, which is the rule that actually decides whether a [code]ws://[/code] socket
-## may be opened, exempts exactly those origins.
-##
-## So a caller asking "may I open an insecure socket" wants this, not the other one. Asking
-## the other one refuses every `ws://` connection from a development page, upgrades it to
-## `wss://`, and fails against a server that has no certificate — which is every server
-## anybody tests against locally.
+## Not [method is_secure_context]: browsers treat http://localhost as a secure context, but mixed-content blocking
+## (what decides whether [code]ws://[/code] may open) exempts exactly those origins; the wrong one breaks local tests.
 static func is_https_page() -> bool:
 	if not available():
 		return false
@@ -293,47 +214,23 @@ static func is_https_page() -> bool:
 
 
 ## Whether the page is on screen, as [code]document.hidden[/code] reports it.
-##
-## [b]True off-web, and that is the useful answer rather than a placeholder.[/b] The
-## question a caller is really asking is "is my main loop about to stop", and on a
-## desktop or mobile build the answer is no: a window behind another window, or
-## minimised, still runs its frames. Only a browser stops the loop outright.
+## True off-web, deliberately: only a browser stops the main loop for a hidden window.
 static func is_page_visible() -> bool:
 	var doc: Variant = get_global("document")
 	if doc == null:
 		return true
 
-	# Read with `.hidden`, never `.get("hidden")`. A [JavaScriptObject] routes both
-	# `get` and `call` straight through to the JS object as method invocations, so
-	# `.get("hidden")` looks for a `get` method on `document`, does not find one, and
-	# fails with "obj[method] is not a function" — an error that reads like the bridge
-	# is broken when it is only being asked the wrong way. dot-auth's handoff says the
-	# same thing about the same trap.
+		# Read with `.hidden`, never `.get("hidden")`: a [JavaScriptObject] routes `get` and `call` to JS method
+		# invocations, so `.get("hidden")` fails with "obj[method] is not a function".
 	var hidden: Variant = doc.hidden
 	if hidden == null:
 		return true
 	return not bool(hidden)
 
 
-## Calls [param callable] with a single [code]bool[/code] — visible — whenever the
-## page is shown or hidden.
-##
-## [b]This is the only warning a web build gets that it is about to stop running.[/b]
-## A browser drives the Godot main loop from [code]requestAnimationFrame[/code], and
-## for a hidden tab it stops calling it altogether: [code]_process[/code] stops,
-## every [Timer] stops, and — the part that costs a player their game — the
-## multiplayer peer is never polled again, so nothing is sent and nothing is read
-## while the socket stays open. The `visibilitychange` event fires on the way into
-## that, with the page still live, which is the last moment anything can be done
-## about it.
-##
-## The listener is a JS-to-wasm call, not a frame callback, so the [Callable] runs
-## even though the loop is stopping. Work done in it must be synchronous and must
-## not [code]await[/code]: there is no next frame to resume on.
-##
-## [param name] identifies the rooted callback — see [method create_callback] — so
-## registering twice under one name replaces rather than stacks. Returns false
-## off-web, where there is nothing to watch.
+## Calls [param callable] with a bool (visible) whenever the page is shown or hidden.
+## The only warning a web build gets that its loop is about to stop: a hidden tab stops [code]requestAnimationFrame[/code],
+## so nothing is polled or sent. The [Callable] must not [code]await[/code]. [param name] roots it ([method create_callback]); false off-web.
 static func watch_visibility(name: String, callable: Callable) -> bool:
 	var doc: Variant = get_global("document")
 	if doc == null:

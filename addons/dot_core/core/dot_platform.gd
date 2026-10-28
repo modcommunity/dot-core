@@ -2,19 +2,8 @@ class_name DotPlatform
 extends RefCounted
 
 ## What this build can actually do, asked once and cached.
-##
-## The dot-* family targets desktop, mobile and the browser from one codebase,
-## and the browser is missing things the other targets take for granted: no UDP
-## (so no ENet), no threads unless the export template was built for them, no
-## raw [HTTPClient], a filesystem that is an IndexedDB mirror needing explicit
-## flushes, and a storage quota the user can refuse.
-##
-## Every one of those differences is a branch somewhere. Centralising them here
-## means the branches read as capability questions
-## ([code]DotPlatform.has_threads()[/code]) rather than platform sniffing
-## ([code]OS.get_name() == "Web"[/code]) — which matters because the mapping is
-## not one-to-one: a threads-enabled web template has threads, and a
-## single-threaded desktop build does not.
+## The browser lacks UDP, threads (unless the template has them), [HTTPClient] and a plain filesystem; callers ask
+## capability questions ([code]DotPlatform.has_threads()[/code]), not [code]OS.get_name() == "Web"[/code], since the mapping is not one-to-one.
 
 enum Kind {
 	UNKNOWN,
@@ -77,9 +66,7 @@ static func kind_name() -> String:
 
 
 ## The platform label the website-city backbone's app API accepts.
-##
-## Its `ClientInfoSchema.platform` enum has no `web` member, so a browser build
-## reports `unknown` rather than sending a value that fails validation.
+## Its enum has no [code]web[/code], so a browser build reports [code]unknown[/code].
 static func backbone_platform() -> String:
 	match kind():
 		Kind.WINDOWS: return "windows"
@@ -105,9 +92,7 @@ static func is_desktop() -> bool:
 
 
 ## True when this build runs without a display server.
-##
-## The distinction a dedicated server cares about, and it is not the same as
-## "is a server": a listen server has a window, a headless test run does not.
+## Not "is a server": a listen server has a window, a headless test run does not.
 static func is_headless() -> bool:
 	return DisplayServer.get_name() == "headless"
 
@@ -126,14 +111,9 @@ static func storage() -> int:
 	return _storage
 
 
-# --- Capabilities ----------------------------------------------------------
 
 ## Whether [Thread] does real work.
-##
-## On web this is false unless the export template was built with thread
-## support, and calling into threads anyway does not error — it silently runs
-## on the main thread and janks. Everything expensive in dot-* is written to
-## work either way; this only decides whether it gets a worker.
+## On web it is false without a threads template, and threads then silently run on the main thread and jank.
 static func has_threads() -> bool:
 	# The "threads" feature tag is set by the export template when it was built
 	# with thread support. Godot 4 has no OS.can_use_threads(); the tag is the
@@ -144,10 +124,7 @@ static func has_threads() -> bool:
 
 
 ## Whether UDP sockets exist, and therefore whether ENet can be used.
-##
-## The browser sandbox has no UDP at all: [ENetMultiplayerPeer] is not even
-## compiled into the web template, so this is also a "does the class exist"
-## question, not just a policy one.
+## The web template has no UDP and does not compile [ENetMultiplayerPeer], so it is also a "does the class exist" question.
 static func has_udp() -> bool:
 	if is_web():
 		return false
@@ -167,94 +144,59 @@ static func has_webrtc() -> bool:
 
 
 ## Whether raw [HTTPClient] works.
-##
-## False on web: only [HTTPRequest] does, because the browser forces requests
-## through `fetch()`. Anything in dot-* that talks HTTP therefore uses
-## [HTTPRequest] unconditionally rather than branching — this exists to explain
-## why, and for callers who genuinely need streaming sockets.
+## False on web, where only [HTTPRequest] does (through [code]fetch()[/code]); dot-* uses [HTTPRequest] unconditionally.
 static func has_raw_http_client() -> bool:
 	return not is_web()
 
 
 ## Whether HTTP range requests can be used to resume a partial download.
-##
-## Technically a server-side question, but on web the answer is also gated by
-## CORS exposing `Accept-Ranges`, so treat it as a capability and fall back to
-## restarting the transfer when it turns out to be false.
+## On web it also depends on CORS exposing [code]Accept-Ranges[/code]; fall back to restarting the transfer.
 static func can_resume_downloads() -> bool:
 	return true
 
 
-## Whether a resource pack can be mounted from user:// at runtime.
-##
-## True everywhere, including web — [code]user://[/code] is backed by IndexedDB
-## there and [method ProjectSettings.load_resource_pack] reads it happily. What
-## is NOT possible on any platform is *unmounting*; see [DotPlatform.can_unmount_packs].
+## Whether a resource pack can be mounted from user:// at runtime; true everywhere, web included.
+## Unmounting is the impossible part; see [method can_unmount_packs].
 static func can_mount_packs() -> bool:
 	return true
 
 
 ## Whether a mounted resource pack can be removed again. Always false.
-##
-## Godot has no [code]unload_resource_pack[/code]. Once a PCK is mounted its
-## file table stays merged into the virtual filesystem for the process
-## lifetime. This is the single hardest constraint on hot-swapping content and
-## the reason dot-cloud namespaces every game under its own path prefix instead
-## of unmounting; see dot-cloud's docs/mounting.md.
+## Godot has no [code]unload_resource_pack[/code]; dot-cloud namespaces content by path prefix instead (docs/mounting.md).
 static func can_unmount_packs() -> bool:
 	return false
 
 
 ## Whether the process can restart itself to get a clean filesystem.
-##
-## The escape hatch for the constraint above. Desktop can re-exec; a browser
-## tab can reload; mobile cannot do either reliably.
+## The escape hatch for [method can_unmount_packs]: desktop re-execs, a tab reloads, mobile cannot reliably.
 static func can_self_restart() -> bool:
 	return is_desktop() or is_web()
 
 
 ## Whether this build can open a listening socket at all.
-##
-## A browser tab cannot, which is what makes "host a server" a desktop/mobile
-## affordance and leaves web builds as clients only.
+## A browser tab cannot, so web builds are clients only.
 static func can_listen() -> bool:
 	return not is_web()
 
 
 ## Whether [method OS.get_unique_id] may be CALLED, never mind what it returns.
-##
-## [b]It is not a query that fails quietly.[/b] On web and iOS the engine pushes
-## `OS::get_unique_id() is not available on the <platform> platform` and then returns
-## the empty string — so every caller that politely checks the result for emptiness
-## has already printed a red error to the console. In a browser that is on the page a
-## player opens, in the log a bug report is pasted from, and it names a function
-## nobody called deliberately.
-##
-## The family's rule with the check on the other side: ask whether the capability is
-## there before reaching for it, rather than reaching for it and reading the wreckage.
+## On web and iOS the engine pushes an error before returning the empty string, so checking the result for emptiness is too late.
 static func has_unique_id() -> bool:
 	return not (is_web() or kind() == Kind.IOS)
 
 
-## The machine's own identifier, or the empty string where there is none.
-##
-## Never errors. Callers that need a stable id where this is empty generate and store
-## one — see [code]DotClientLink._device_id[/code], which is the shape to copy.
+## The machine's own identifier, or the empty string where there is none. Never errors.
+## Callers needing a stable id generate and store one; see [code]DotClientLink._device_id[/code].
 static func unique_id() -> String:
 	return OS.get_unique_id() if has_unique_id() else ""
 
 
 ## Whether [FileAccess] encrypted files are usable for the token store.
-##
-## Works everywhere the engine has a filesystem. Note that on web the key
-## material lives in the same origin as the ciphertext, so this is obfuscation
-## against casual inspection rather than real at-rest protection — dot-auth says
-## so where it matters.
+## On web the key lives beside the ciphertext, so this is obfuscation, not at-rest protection.
 static func has_encrypted_files() -> bool:
 	return true
 
 
-# --- Reporting -------------------------------------------------------------
 
 ## A flat snapshot for logs, `status` output and bug reports.
 static func describe() -> Dictionary:

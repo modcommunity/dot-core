@@ -1,89 +1,36 @@
 class_name DotLog
 extends RefCounted
 
-## Levelled, channelled logging with pluggable sinks.
-##
-## A dedicated server's log is an operational artefact, not developer noise:
-## admins grep it, moderation decisions are justified from it, and on a headless
-## box it is the only UI. So this is deliberately more than a [method print]
-## wrapper — it carries a channel (which subsystem), a level (how much you care)
-## and structured fields (what the machine needs), and it fans out to as many
-## sinks as are attached.
-##
-## Static rather than an autoload because a logger you cannot call from a
-## [Resource], a static function or an early [method _init] is a logger people
-## work around. Configure it once at boot:
-##
-## [codeblock]
-## DotLog.set_level(DotLog.Level.INFO)
-## DotLog.set_channel_level("net", DotLog.Level.DEBUG)  # noisy, just this one
-## DotLog.info("server", "listening", {"port": 27015})
-## [/codeblock]
-##
-## To capture output (a file, an in-game console, UDP forwarding to a log host)
-## attach a [DotLogSink] node or register a [Callable] via [method add_sink].
+## Levelled, channelled logging with pluggable sinks: a channel (subsystem), a level and structured fields.
+## Static, not an autoload, so it can be called from a [Resource], a static function or an early [method _init].
+## Capture output by attaching a [DotLogSink] node or a [Callable] via [method add_sink].
 
-## The six levels, and what each one means here.
-##
-## [b]A level is a promise to the person reading, not a volume knob.[/b] These are the
-## levels every log system in the industry converged on, and they are only useful if a
-## server agrees with every other server about which is which — an admin who has learned
-## that ERROR means "something failed" stops reading them the first time one turns out to
-## mean "a player typed an unknown command".
-##
-## The test for each is in the right-hand column: who is expected to do something, and
-## when.
-##
-## [codeblock]
-## TRACE  per-frame, per-packet, per-entity     nobody; you are debugging right now
-## DEBUG  a decision or a state transition      you, later, reading it back
-## INFO   something an admin would want kept    nobody; it is the record
-## WARN   recoverable, and somebody should look eventually
-## ERROR  the operation failed                  somebody, today
-## FATAL  the process cannot continue           somebody, now
-## [/codeblock]
+## The six levels; a level is a promise to the reader, not a volume knob.
+## TRACE per-frame detail; DEBUG a decision or transition; INFO what an admin keeps; WARN recoverable, someone should look;
+## ERROR the operation failed; FATAL the process cannot continue.
 enum Level {
-	## Per-frame or per-packet detail. Off outside debugging.
-	##
-	## The level whose cost is the message itself: guard an expensive one with
-	## [method enabled], because building a formatted dump of 64 entities in order to
-	## drop it is the one cost a levelled logger cannot optimise away.
+		## Per-frame or per-packet detail. Off outside debugging.
+		## Guard an expensive message with [method enabled]: building a dump only to drop it is the one cost a logger cannot remove.
 	TRACE,
 
 	## Decisions and state transitions. What you turn on to answer "why did it do that".
 	DEBUG,
 
-	## Things an admin would want in the log by default.
-	##
-	## A map change, a player admitted, a service listening. The default threshold, so
-	## anything at this level is something you are willing to have in every log forever.
+		## Things an admin would want in the log by default.
+		## The default threshold: anything here is worth keeping in every log forever.
 	INFO,
 
-	## Recoverable; someone should look eventually.
-	##
-	## The operation continued, possibly degraded. An optional lookup that was refused, a
-	## vote that cannot open yet, a config key that was ignored. [b]This level does not
-	## mirror to the engine[/b] — see [member mirror_min_level] for why.
+		## Recoverable; someone should look eventually.
+		## The operation continued, possibly degraded. Not mirrored to the engine; see [member mirror_min_level].
 	WARN,
 
-	## The operation failed.
-	##
-	## Something a caller asked for did not happen, and the caller was told. The server is
-	## still running and the next request may well work.
+		## The operation failed.
+		## The caller was told; the server is still running and the next request may work.
 	ERROR,
 
-	## The process cannot continue.
-	##
-	## [b]Reserve this one.[/b] FATAL means a crash or a total breakage: boot failed, the
-	## listener could not be opened, the state the process needs is gone. It is not "a
-	## very bad error" — it is a promise that what follows this line is a shutdown, and
-	## the value of the promise is entirely in how rarely it is made. There is exactly one
-	## FATAL in this whole family, in [code]DotServer._boot_failed[/code], and that is the
-	## right number of them.
-	##
-	## A sink is entitled to treat it specially: dot-log flushes every target immediately
-	## on one, because a record still sitting in a buffer when the process goes is a
-	## record that was never written.
+		## The process cannot continue.
+		## Reserve it: it promises a shutdown follows, and there is exactly one in the family ([code]DotServer._boot_failed[/code]).
+		## Sinks flush every target on one, since a buffered record is lost when the process goes.
 	FATAL,
 
 	## Never emitted. Only valid as a threshold.
@@ -92,12 +39,7 @@ enum Level {
 
 
 ## How the level is rendered in the console line.
-##
-## The level is [b]always[/b] printed — the question is only how wide. Tags are the
-## default because they are a fixed three characters, so the message column lines up in a
-## wall of them and the eye finds the upper-case ones without reading. Names are for a
-## log something else parses by eye or by column, and for anyone who would rather not
-## learn that [code]FTL[/code] is fatal.
+## Tags are the default: a fixed three characters keep the message column aligned. Names suit a log parsed by eye or column.
 enum LevelStyle {
 	TAG,   ## [code]inf[/code], [code]WRN[/code]. Three characters, aligned.
 	NAME,  ## [code]INFO[/code], [code]WARN[/code]. Padded to five.
@@ -117,31 +59,13 @@ static var _level: int = Level.INFO
 static var _channel_levels: Dictionary = {}
 static var _sinks: Array[Callable] = []
 
-## Whether to also route the serious levels through [method push_warning] /
-## [method push_error] so failures surface in the editor's Errors dock and in
-## crash reports. Off in exported builds by default: the sinks own the log
-## there, and duplicating every warning into stderr doubles a busy server's
-## output for no reader.
+## Whether to also route the serious levels through [method push_warning] / [method push_error] so failures reach the Errors dock.
+## Off in exported builds by default: the sinks own the log there and stderr would double.
 static var mirror_to_engine: bool = OS.is_debug_build()
 
-## The lowest level [member mirror_to_engine] actually mirrors.
-##
-## [b]ERROR rather than WARN, because of what the engine adds.[/b] In a debug
-## build [method push_warning] prints the message, then an [code]at:[/code] line
-## naming a file inside the engine's own source, then a GDScript backtrace — and
-## none of that is suppressible per call. [method Engine.print_error_messages] is
-## the only switch and it silences real runtime errors too, so it is not one you
-## want left off in a server.
-##
-## The result is that a recoverable, entirely expected warning — an optional
-## profile lookup that was refused, a vote that cannot open yet — costs eight
-## lines of stderr and looks, to an admin reading the log, exactly like a crash.
-## The [code]WRN[/code] line this class prints itself already carries the same
-## message, so the mirror was adding a stack trace and nothing else.
-##
-## ERROR and above keep it: there the stack [i]is[/i] the information, and there
-## are few enough of them that the noise is worth the origin. Set this to
-## [constant Level.WARN] while hunting the source of a specific warning.
+## The lowest level [member mirror_to_engine] mirrors.
+## ERROR, not WARN: [method push_warning] adds an engine [code]at:[/code] line and a backtrace that cannot be suppressed per call,
+## so an expected warning looks like a crash. Set [constant Level.WARN] while hunting a specific warning.
 static var mirror_min_level: int = Level.ERROR
 
 ## Whether to print to stdout. A dedicated server wants this on; a shipped
@@ -162,7 +86,6 @@ static var timestamps: bool = false
 static var _bus: DotLogBus = null
 
 
-# --- Configuration ---------------------------------------------------------
 
 static func set_level(level: int) -> void:
 	_level = clampi(level, Level.TRACE, Level.OFF)
@@ -173,10 +96,7 @@ static func get_level() -> int:
 
 
 ## Raise or lower the threshold for one channel only.
-##
-## The reason level-per-channel exists: turning on DEBUG globally to diagnose a
-## download bug also turns on every physics and RPC trace, and the interesting
-## lines scroll past. Pass [constant Level.OFF] to silence a channel entirely.
+## DEBUG globally also turns on every physics and RPC trace. [constant Level.OFF] silences a channel.
 static func set_channel_level(channel: String, level: int) -> void:
 	_channel_levels[channel] = clampi(level, Level.TRACE, Level.OFF)
 
@@ -207,9 +127,7 @@ static func level_name(level: int) -> String:
 
 
 ## The level as it appears in a console line, padded to a fixed width.
-##
-## Fixed width in both styles, because the whole reason the level goes first is that a
-## reader scanning a hundred lines finds the message column in the same place on each.
+## Fixed width so the message column starts in the same place on every line.
 static func level_column(level: int) -> String:
 	if level < 0 or level >= LEVEL_NAMES.size():
 		return "???" if level_style == LevelStyle.TAG else "?????"
@@ -218,14 +136,9 @@ static func level_column(level: int) -> String:
 	return LEVEL_TAGS[level]
 
 
-# --- Sinks -----------------------------------------------------------------
 
-## Registers a sink. The callable receives one [Dictionary] record; see
-## [method _emit] for its shape.
-##
-## Sinks are called synchronously in registration order. A sink that blocks
-## blocks the frame, so file sinks buffer and flush on a timer rather than
-## writing per line — see [DotLogSink].
+## Registers a sink. The callable receives one [Dictionary] record; see [method _emit].
+## Sinks run synchronously in registration order; a blocking sink blocks the frame, so file sinks buffer ([DotLogSink]).
 static func add_sink(sink: Callable) -> void:
 	if not _sinks.has(sink):
 		_sinks.append(sink)
@@ -257,7 +170,6 @@ static func signals() -> DotLogBus:
 	return _bus
 
 
-# --- Emitting --------------------------------------------------------------
 
 static func trace(channel: String, message: String, fields: Dictionary = {}) -> void:
 	_emit(Level.TRACE, channel, message, fields)
@@ -284,15 +196,8 @@ static func fatal(channel: String, message: String, fields: Dictionary = {}) -> 
 
 
 ## Logs at a level chosen at runtime.
-##
-## The six named functions above are what code should call — a level written into the
-## call is a level a reader can grep for. This is for the cases where the level genuinely
-## is data: a console command that emits a test record, a config-driven severity, a bridge
-## replaying records that arrived from somewhere else with their own level attached.
-##
-## [constant Level.OFF] is refused rather than silently dropped, because "log this at OFF"
-## is a caller that has confused a threshold with a severity and would otherwise never
-## find out.
+## Code should call the six named functions (greppable); this is for levels that are data, such as a console command or a bridge.
+## [constant Level.OFF] is refused: it is a threshold, not a severity.
 static func at(
 	level: int, channel: String, message: String, fields: Dictionary = {}
 ) -> void:
@@ -303,19 +208,8 @@ static func at(
 
 
 ## Logs a [DotResult] failure, or nothing at all on success.
-##
-## Collapses the extremely common three-line "if not res.ok: log; return" into
-## one call at the sites where the caller has nothing to add.
-##
-## [b][param level] is not decoration, and the default is not always right.[/b] ERROR
-## means the operation failed and somebody is going to want to know why; a great many
-## refusals in this family are not that. An optional subsystem that is not installed, a
-## query provider on a server with no query listener, a backbone that nobody configured —
-## each is a [DotResult] that is not [code]ok[/code] and a *configuration* rather than a
-## fault, and reporting one at ERROR teaches an operator to scroll past the level that
-## means something. Pass [constant Level.DEBUG] or [constant Level.WARN] where that is what
-## it is. [constant Level.OFF] is refused for the reason [method at] refuses it: it is a
-## threshold and not a severity.
+## [param level] matters: ERROR means a fault, and an optional subsystem not installed or an unconfigured backbone is
+## configuration, so pass [constant Level.DEBUG] or [constant Level.WARN] there. [constant Level.OFF] is refused.
 static func result(
 	channel: String, what: String, res: DotResult, level: int = Level.ERROR
 ) -> void:
@@ -339,10 +233,7 @@ static func result(
 
 
 ## True when a record at this level and channel would be emitted.
-##
-## Guard genuinely expensive message construction with this — building a
-## formatted dump of 64 entities only to drop it is the one real cost a levelled
-## logger cannot optimise away on its own.
+## Guard genuinely expensive message construction with it.
 static func enabled(level: int, channel: String = "") -> bool:
 	var threshold: int = _channel_levels.get(channel, _level) if channel != "" else _level
 	return level >= threshold and threshold != Level.OFF
