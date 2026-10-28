@@ -309,6 +309,11 @@ func _test_settle() -> void:
 		await get_tree().physics_frame
 	_check(gate.is_open() and body.input_enabled, "and it opens after settling afresh")
 	_drop(gate)
+	await _settle_frames_zero()
+
+
+
+func _settle_frames_zero() -> void:
 	# settle_frames 0: the old behaviour, frozen until open.
 	var gate2 := _make()
 	gate2.settle_frames = 0
@@ -317,7 +322,7 @@ func _test_settle() -> void:
 	var mode_at_open: Array = []
 	gate2.opened.connect(func() -> void: mode_at_open.append(body2.ticks))
 	gate2.freeze(body2)
-	t0 = Time.get_ticks_msec()
+	var t0 := Time.get_ticks_msec()
 	var settling2 := false
 	while not gate2.is_open() and Time.get_ticks_msec() - t0 < 2000:
 		settling2 = settling2 or gate2.is_settling()

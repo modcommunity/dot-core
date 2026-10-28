@@ -397,10 +397,46 @@ func _test_tables() -> void:
 	deck.draw(s)
 	_check(deck.deck_remaining() == 2, "and reshuffles itself")
 
-	# Pity is the whole reason this class is not four lines, and it has to be measured
-	# in two dimensions at once. A check on the drought alone passes for a table running
-	# at seven times its advertised rate; a check on the rate alone passes for a table
-	# that still makes one player in fifty wait for ever.
+	var pity := _tables_pity(s)
+	# `misses_of`, `draw_tagged` and `reset_state` were public, documented and called by
+	# nothing -- the family's most repeated bug, which is why the detector is run over
+	# methods as well as over settings.
+	var missed := pity.misses_of(&"rare")
+	_check(missed > 0, "a run of misses is counted (%d)" % missed)
+	_check(pity.misses_of(&"nothing_like_this") == 0, "and something not in the table has none")
+
+	# `forget_state` was written as `reset_state`, which is a method `Resource` already has
+	# -- so it parsed, ran on every call, and did nothing. The check is on the DROUGHT
+	# rather than on the pity weight, because at this point in the run the weight is
+	# legitimately zero either way and would have passed with the bug in place.
+	pity.forget_state()
+	_check(pity.misses_of(&"rare") == 0, "resetting the state forgets the drought")
+	_check(pity.pity_of(&"rare") == 0.0, "and the weight it had earned")
+	_check(pity.size() == 2, "while the entries themselves are untouched")
+
+	_tables_tagged(s)
+
+	var round_trip := DotRandomTable.from_dictionary(pity.to_dictionary())
+	_check(round_trip.size() == pity.size(), "a table round-trips through a dictionary")
+	_check(round_trip.policy == pity.policy, "with its policy")
+	_check(
+		is_equal_approx(round_trip.weights[1], pity.weights[1]),
+		"and its weights"
+	)
+	_check(round_trip.pity_after == pity.pity_after, "and the setting that makes pity honest")
+	# The two ends of a serialisation are exactly as capable of never meeting as the two
+	# ends of a wire: a stored voice mute in this family came back as a warning.
+	var d := pity.to_dictionary()
+	d["weights"][0] = 1.0
+	_check(
+		not is_equal_approx(pity.weights[0], 1.0),
+		"and the dictionary it hands out is a copy, not its own state"
+	)
+
+
+func _tables_pity(s: DotRandomStream) -> DotRandomTable:
+	# Pity is measured in two dimensions: a drought-only check passes a table at seven times its
+	# rate, a rate-only check one that still makes a player in fifty wait for ever.
 	var eager := DotRandomTable.new()
 	eager.policy = DotRandomTable.Policy.PITY
 	eager.add(&"common", 98.0).add(&"rare", 2.0, 4.0)
@@ -432,26 +468,12 @@ func _test_tables() -> void:
 	for _i in range(30):
 		pity.draw(s)
 	_check(pity.pity_of(&"rare") == 0.0, "and nothing accumulates inside pity_after")
+	return pity
 
-	# `misses_of`, `draw_tagged` and `reset_state` were public, documented and called by
-	# nothing -- the family's most repeated bug, which is why the detector is run over
-	# methods as well as over settings.
-	var missed := pity.misses_of(&"rare")
-	_check(missed > 0, "a run of misses is counted (%d)" % missed)
-	_check(pity.misses_of(&"nothing_like_this") == 0, "and something not in the table has none")
 
-	# `forget_state` was written as `reset_state`, which is a method `Resource` already has
-	# -- so it parsed, ran on every call, and did nothing. The check is on the DROUGHT
-	# rather than on the pity weight, because at this point in the run the weight is
-	# legitimately zero either way and would have passed with the bug in place.
-	pity.forget_state()
-	_check(pity.misses_of(&"rare") == 0, "resetting the state forgets the drought")
-	_check(pity.pity_of(&"rare") == 0.0, "and the weight it had earned")
-	_check(pity.size() == 2, "while the entries themselves are untouched")
-
-	# The reason filtering happens inside the table rather than by building a second one:
-	# two tables over the same entries have two pity counters, and a player drawing from
-	# both sees the rare entry at twice the stated rate.
+func _tables_tagged(s: DotRandomStream) -> void:
+	# Filtering happens inside the table: two tables over the same entries have two pity
+	# counters, and drawing from both shows the rare entry at twice the stated rate.
 	var tagged := DotRandomTable.new()
 	tagged.add(&"sword", 1.0, 0.0, &"weapon")
 	tagged.add(&"shield", 1.0, 0.0, &"armour")
@@ -466,23 +488,6 @@ func _test_tables() -> void:
 	_check(
 		tagged.draw_tagged(s, &"no_such_tag") == &"",
 		"and a tag nothing carries draws nothing, rather than falling back to the whole table"
-	)
-
-	var round_trip := DotRandomTable.from_dictionary(pity.to_dictionary())
-	_check(round_trip.size() == pity.size(), "a table round-trips through a dictionary")
-	_check(round_trip.policy == pity.policy, "with its policy")
-	_check(
-		is_equal_approx(round_trip.weights[1], pity.weights[1]),
-		"and its weights"
-	)
-	_check(round_trip.pity_after == pity.pity_after, "and the setting that makes pity honest")
-	# The two ends of a serialisation are exactly as capable of never meeting as the two
-	# ends of a wire: a stored voice mute in this family came back as a warning.
-	var d := pity.to_dictionary()
-	d["weights"][0] = 1.0
-	_check(
-		not is_equal_approx(pity.weights[0], 1.0),
-		"and the dictionary it hands out is a copy, not its own state"
 	)
 
 

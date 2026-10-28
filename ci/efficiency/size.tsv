@@ -1,7 +1,2 @@
 # size
 # Baselines only shrink: scripts/<gate> --update lowers or drops entries and refuses to add.
-examples/dual_transport_selftest.gd	1038
-examples/dual_transport_selftest.gd::_test_tls_hello_screened	123
-examples/dual_transport_selftest.gd::_test_websocket_leaving	97
-examples/load_gate_selftest.gd::_test_settle	88
-examples/randomness_selftest.gd::_test_tables	123
