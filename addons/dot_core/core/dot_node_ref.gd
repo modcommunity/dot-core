@@ -2,33 +2,9 @@
 class_name DotNodeRef
 extends Resource
 
-## A configurable, inspector-editable description of "which node".
-##
-## [b]The problem this solves.[/b] An addon that needs to attach to something in
-## the host project has three bad options: hardcode a path
-## ([code]/root/Game/Players[/code], which breaks the moment anyone reorganises
-## their scene), demand an autoload (which reserves a global name and forces a
-## fixed tree shape), or expose a bare [NodePath] (which cannot express "the node
-## in this group", "make one if it is missing", or "ask the registry").
-##
-## So every dot-* component that needs a host node exports one of these instead,
-## and the host decides — in the inspector, per instance — how it gets resolved.
-## Nothing in dot-* ever hardcodes a scene path.
-##
-## [codeblock]
-## @export var players_root: DotNodeRef
-##
-## func _ready() -> void:
-##     var res := players_root.resolve(self)
-##     if not res.ok:
-##         DotLog.result("game", "players root", res)
-##         return
-##     _players = res.value
-## [/codeblock]
-##
-## Resolution is cached per context node, because these are read on hot paths
-## (spawning, RPC routing) and a group query per call is wasteful. Call
-## [method invalidate] if the tree changes under you.
+## A configurable, inspector-editable description of "which node", so no dot-* component
+## hardcodes a scene path. Resolution is cached per context node; call [method invalidate]
+## if the tree changes. [code]var res := players_root.resolve(self)[/code]
 
 enum Mode {
 	## [member path] relative to the context node passed to [method resolve].
@@ -79,11 +55,8 @@ enum OnMissing {
 ## Used by [constant Mode.REGISTRY]. See [DotRegistry].
 @export var service: StringName = &""
 
-## Used by the two [code]*_OF_TYPE[/code] modes.
-##
-## Matched against the engine class name and against the [code]class_name[/code]
-## of the attached script, so both [code]"CharacterBody3D"[/code] and
-## [code]"MyPlayer"[/code] work.
+## Used by the two [code]*_OF_TYPE[/code] modes; matched against the engine class name and
+## the script's [code]class_name[/code].
 @export var type_name: StringName = &""
 
 @export_group("Fallback")
@@ -107,18 +80,13 @@ enum OnMissing {
 
 @export_group("Validation")
 
-## When set, resolution fails if the node found is not of this type. Matched the
-## same way as [member type_name].
-##
-## Worth setting on anything a host project configures by path: the failure
-## "MultiplayerSpawner expected, got Sprite2D" at boot is enormously better than
-## a null method call twenty minutes into a session.
+## When set, resolution fails if the node found is not of this type (matched like
+## [member type_name]), so a wrong node fails at boot and not as a null call later.
 @export var require_type: StringName = &""
 
 var _cache: Dictionary = {}
 
 
-# --- Construction ----------------------------------------------------------
 
 ## Builds a ref that resolves a path relative to the context.
 static func of_path(p: NodePath) -> DotNodeRef:
@@ -149,15 +117,9 @@ static func of_service(s: StringName) -> DotNodeRef:
 	return r
 
 
-## Builds a ref that creates the node if it is not already there.
-##
-## The pattern for optional infrastructure a component needs but a host should
-## not have to place by hand — a timer, a spawner, a container.
-##
-## [param script_or_class] accepts a [Script] (including any [code]class_name[/code]
-## global), a class name as a [String] or [StringName], or a built-in class
-## reference such as [code]Node[/code]. All four appear in real call sites and
-## getting any of them wrong produces a ref that silently resolves to nothing.
+## Builds a ref that creates the node if it is missing, for optional infrastructure (a timer,
+## a spawner). [param script_or_class] takes a [Script], a class name String or StringName,
+## or a built-in class reference such as [code]Node[/code].
 static func of_created(
 	child_name: StringName,
 	script_or_class: Variant
@@ -176,15 +138,9 @@ static func of_created(
 	return r
 
 
-## Resolves a class name from whatever a caller passed.
-##
-## [b]The subtle case is a built-in class reference.[/b] Writing
-## [code]of_created(&"Root", Node)[/code] passes a [code]GDScriptNativeClass[/code],
-## and [method String.new] on it yields
-## [code]<GDScriptNativeClass#-92233...>[/code] rather than [code]"Node"[/code] —
-## which becomes a create_class nothing can instantiate, so the ref resolves to null
-## and whatever needed the node quietly does not work. This cost a broken game-root
-## in dot-server that no parse check could have caught.
+## Resolves a class name from whatever a caller passed. A built-in class reference is a
+## GDScriptNativeClass whose String is not "Node"; without this the ref resolves to null
+## and the node is silently never made.
 static func _class_name_of(value: Variant) -> StringName:
 	if value is StringName:
 		return value
@@ -219,13 +175,9 @@ static func _class_name_of(value: Variant) -> StringName:
 	return fallback
 
 
-# --- Resolution ------------------------------------------------------------
 
-## Finds the node.
-##
-## [param context] is the node doing the asking — almost always [code]self[/code].
-## It anchors the relative modes and is the default parent for
-## [constant OnMissing.CREATE].
+## Finds the node. [param context] is the node asking, usually [code]self[/code]; it anchors
+## the relative modes and is the default parent for [constant OnMissing.CREATE].
 func resolve(context: Node) -> DotResult:
 	if context == null:
 		return DotResult.fail(
@@ -336,11 +288,8 @@ func _find(context: Node) -> Node:
 	return null
 
 
-## Breadth-first so the closest match wins.
-##
-## Depth-first would make the answer depend on child ordering in a way that
-## changes when someone reorders a scene — a resolution that silently retargets
-## after a cosmetic edit is worse than no resolution.
+## Breadth-first so the closest match wins; depth-first would retarget silently when a
+## scene is reordered.
 func _find_descendant(root: Node, wanted: StringName) -> Node:
 	var queue: Array[Node] = root.get_children()
 	while not queue.is_empty():

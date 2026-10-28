@@ -2,22 +2,16 @@ extends Node
 
 ## Exercises dot-randomness with no world, no transport and no scene.
 ##
-## [b]Every check here is about a distribution or about agreement, never about one
-## particular number.[/b] Asserting that draw 4,192 is 0.31 asserts the mixer, which
-## nobody is going to change and which tells you nothing when it fails. What this family
-## has actually been bitten by is the other kind: a hash that returned only the bottom
-## half of its range, and every shotgun pattern a half-moon while a maximum-magnitude
-## assertion passed throughout. So the uniformity checks count quadrants and buckets.
+## Every check is about a distribution or about agreement, never one particular number: a
+## hash that returned only half its range once passed a maximum-magnitude assertion, so
+## the uniformity checks count quadrants and buckets.
 ##
 ## [codeblock]
 ## godot --headless --path . res://examples/randomness_selftest.tscn
 ## [/codeblock]
 
-## [b]CHECKS is the guard the section counter cannot be.[/b] A script error inside a test
-## aborts THAT TEST, not the run — and this suite proved it: a mismatched-type comparison
-## in one section took eight checks out of a run that reported "0 failed" and exited 0.
-## The section counter did not fire, because the section had already announced itself.
-## A total does fire, and it is one line.
+## CHECKS is the guard the section counter cannot be: a script error aborts a test, not
+## the run, and a section that already announced itself still counts. A total does fire.
 const SECTIONS := 9
 const CHECKS := 90
 
@@ -64,7 +58,6 @@ func _run() -> void:
 	get_tree().quit(1 if _failed > 0 else 0)
 
 
-# --- 1 ----------------------------------------------------------------------
 
 func _test_determinism() -> void:
 	_section("A seed is the whole state")
@@ -119,7 +112,6 @@ func _test_determinism() -> void:
 	)
 
 
-# --- 2 ----------------------------------------------------------------------
 
 func _test_uniformity() -> void:
 	_section("The range is the whole range")
@@ -177,7 +169,6 @@ func _test_uniformity() -> void:
 	_check(not s.chance_at(1, 0.0) and s.chance_at(1, 1.0), "0 never and 1 always")
 
 
-# --- 3 ----------------------------------------------------------------------
 
 func _test_independence() -> void:
 	_section("Drawing from one stream does not move another")
@@ -213,7 +204,6 @@ func _test_independence() -> void:
 	)
 
 
-# --- 4 ----------------------------------------------------------------------
 
 func _test_indexed_purity() -> void:
 	_section("An indexed draw advances nothing")
@@ -239,7 +229,6 @@ func _test_indexed_purity() -> void:
 	)
 
 
-# --- 5 ----------------------------------------------------------------------
 
 func _test_collections() -> void:
 	_section("Shuffles, samples and weights")
@@ -287,7 +276,6 @@ func _test_collections() -> void:
 	_check(s.next_weighted(PackedFloat32Array([0.0, 0.0])) == -1, "all-zero weights answer -1")
 
 
-# --- 6 ----------------------------------------------------------------------
 
 	# `next_pick` and `next_sign` were public and called by nothing. Both are asserted on
 	# their DISTRIBUTION rather than on one draw: a picker that always returns the first
@@ -362,7 +350,6 @@ func _test_geometry() -> void:
 	_check(outside == 0, "a cone never leaves its angle")
 
 
-# --- 7 ----------------------------------------------------------------------
 
 func _test_tables() -> void:
 	_section("Tables: replacement, decks and pity")
@@ -405,10 +392,8 @@ func _test_tables() -> void:
 	_check(missed > 0, "a run of misses is counted (%d)" % missed)
 	_check(pity.misses_of(&"nothing_like_this") == 0, "and something not in the table has none")
 
-	# `forget_state` was written as `reset_state`, which is a method `Resource` already has
-	# -- so it parsed, ran on every call, and did nothing. The check is on the DROUGHT
-	# rather than on the pity weight, because at this point in the run the weight is
-	# legitimately zero either way and would have passed with the bug in place.
+	# `reset_state` is a method Resource already has, so a misnamed forget_state parsed and did
+	# nothing. Check the DROUGHT, not the pity weight: the weight is legitimately zero here.
 	pity.forget_state()
 	_check(pity.misses_of(&"rare") == 0, "resetting the state forgets the drought")
 	_check(pity.pity_of(&"rare") == 0.0, "and the weight it had earned")
@@ -491,7 +476,6 @@ func _tables_tagged(s: DotRandomStream) -> void:
 	)
 
 
-# --- 8 ----------------------------------------------------------------------
 
 func _test_schedules() -> void:
 	_section("Events in ticks, decided without simulating")
@@ -547,7 +531,6 @@ func _test_schedules() -> void:
 	_check(off.next_fire(s, 0, 0, 500) == -1, "and next_fire says so rather than looping")
 
 
-# --- 9 ----------------------------------------------------------------------
 
 func _test_manager() -> void:
 	_section("The manager a game holds")
@@ -595,7 +578,6 @@ func _test_manager() -> void:
 	unseeded.queue_free()
 
 
-# --- Harness ---------------------------------------------------------------
 
 func _section(title: String) -> void:
 	_section_count += 1

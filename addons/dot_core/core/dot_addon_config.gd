@@ -2,45 +2,11 @@ class_name DotAddonConfig
 extends RefCounted
 
 ## Where an addon's or pack's tuning lives: every `*.yml` in `cfg/addon/<addon_name>/`.
-##
-## [b]The convention.[/b] One directory per addon, any number of files in it. All of them are
-## read, sorted by file name, and a later file's keys override an earlier one's (maps merge
-## key by key; a list or a scalar is replaced whole). Sorting is the whole ordering contract:
-## `10-base.yml` then `20-event.yml` is how an operator layers a seasonal change without
-## editing the shipped file. A directory that is absent is not an error, because an addon
-## must run with nothing configured.
-##
-## [b]Layers[/b], weakest first, the same as every [DotConfig]: the [param defaults] the addon
-## passes < the yml files < environment < command line. Environment is
-## `<ADDON>_<PATH>` upper-cased with `-`, `.` and `/` as `_` (addon `dot-map`, key
-## `rotation.mode`: `DOT_MAP_ROTATION_MODE`); the command line is
-## `--<addon_name>.<path>=value` (`--dot-map.rotation.mode=random`). Only a key that already
-## exists in the defaults or a file can be overridden, and only with its own type, because
-## that is the only way to know which `_` in the variable name is a separator. A key is
-## refused from both when any segment of its path, split on `_`, `-` and camelCase, holds the
-## word `password`, `secret`, `token` (or their plurals) or ends in the word `key` (`api_key`
-## yes; `hotkey`, `keybind`, `key_repeat` no), or when it is listed in [param sensitive]. Two
-## leaf paths that map to the same variable name (`a_b.c` and `a.b_c`) are ambiguous: the
-## variable is applied to neither, with one WARN; the command line is unambiguous.
-##
-## [b]Shipping.[/b] An export drops `.yml` from the PCK unless the preset's `include_filter`
-## lists it: see [method export_filter_hint].
-##
-## [b]Where `cfg/` is[/b], weakest first, each root merged over the one before: `res://cfg`
-## (shipped with the game), beside the executable (`cfg/`), `user://cfg`, then a
-## `--config DIR` the process was started with (its files sit directly in `DIR`, so the
-## addon directory is `DIR/addon/<name>`; the name is the folder form, `-` as `_`, so `dot-map`
-## reads `addon/dot_map`). Two more tiers in the same roots are read after, so they win: the
-## game's `game/<game>/<name>/` (only when [member game] is set) and the operator's
-## `server/addon/<name>/`, which is how a box overrides what a game or addon ships. A server run
-## from a directory it does not own thus still finds its files, and a shipped default is never
-## edited to tune one box. Every directory name is singular. The plural names (`addons/`, `games/`,
-## `server/addons/`, `server/games/`, `user/addons/`) and the oldest `server/<name>/` are still read
-## through [DotCfgLegacy] until its removal date; a file in the singular path wins whole.
-##
+## Files are read sorted by name and a later key overrides an earlier one (maps merge, lists
+## and scalars replace); layers: defaults < yml < environment < command line. The roots,
+## env/argv naming and secret refusal are in docs/addon-config.md and [method export_filter_hint].
 ## [codeblock]
 ## var res := DotAddonConfig.load_dir("dot-map", {"rotation": {"mode": "sequential"}})
-## if not res.ok: return res
 ## var mode: String = DotAddonConfig.get_value(res.value, "rotation.mode", "sequential")
 ## [/codeblock]
 
@@ -101,10 +67,9 @@ static func folder_name(addon_name: String) -> String:
 	return addon_name.replace("-", "_")
 
 
-## Every existing copy of one addon file, weakest first: `cfg/addon/<addon>/<file>`, then
-## `cfg/game/<game>/<addon>/<file>`, then the operator's `cfg/server/addon/<addon>/<file>` and
-## `cfg/server/game/<game>/<addon>/<file>`, each in every root (an old plural path stands in for a missing singular copy). For a single file such as
-## `maps.yml` that a reader layers itself; [param extra_dir] is a `--config`-style root put last.
+## Every existing copy of one addon file, weakest first: shipped addon, game, then the
+## operator's server tiers, in every root (an old plural path stands in for a missing
+## singular one). [param extra_dir] is a `--config`-style root put last.
 static func file_layers(addon_name: String, file: String, extra_dir: String = "") -> PackedStringArray:
 	var out := PackedStringArray()
 	for tier in [SUBDIR, GAME_SUBDIR, USER_SUBDIR, SERVER_SUBDIR, SERVER_GAME_SUBDIR]:
@@ -154,11 +119,9 @@ static func replace_aware_layers(addon_name: String, file: String, extra_dir: St
 	return all.slice(start)
 
 
-## Reads one named yml for an addon that applies it to its own typed config: `cfg/addon/<folder>/`
-## the game's, then the operator's `cfg/server/addon/<folder>/` (weakest first), each handed to [param apply], a
-## `func(values: Dictionary, path: String) -> PackedStringArray`. A flat [param legacy_dir]/[param file_name]
-## is read instead, with one WARN, while no new copy exists. Value: the strings [param apply] returned.
-## Secrets are the caller's to keep file-only: this never touches the environment or command line.
+## Reads one named yml for an addon that applies it to its own typed config: the game's,
+## then the operator's copy (weakest first), each handed to [param apply]
+## (`func(values, path) -> PackedStringArray`). Secrets stay file-only: no env or argv.
 static func apply_file(addon_name: String, file_name: String, legacy_dir: String, apply: Callable) -> DotResult:
 	var layers := file_layers(addon_name, file_name)
 	var newest := (
@@ -182,10 +145,8 @@ static func apply_file(addon_name: String, file_name: String, legacy_dir: String
 	return DotResult.success(applied)
 
 
-## Where a write belongs: `user://cfg/addon/<addon_underscored>`, the only root a game may write.
-## It is not always the directory [method dir_for] reads from, and a file written here is
-## overridden by a `--config DIR` that also holds the addon. Call
-## [code]DotWeb.sync_filesystem()[/code] after writing.
+## Where a write belongs: `user://cfg/addon/<addon_underscored>`, the only root a game may
+## write. A `--config DIR` holding the addon overrides it. Call [code]DotWeb.sync_filesystem()[/code] after.
 static func write_dir_for(addon_name: String) -> String:
 	return "user://cfg".path_join(SUBDIR).path_join(folder_name(addon_name))
 
@@ -218,10 +179,9 @@ static func user_paths(addon_name: String, file: String) -> Dictionary:
 	return out
 
 
-## Writes [param paths] (`{dotted path: value}`) into the user copy of [param file], keeping its other keys.
-## With a [param schema] (the field array `DotProfileSet.field` builds: name, type, default, min, max, enum) each top-level key must
-## be in it and of its type (a dotted key only under a `dict` field); without one only yml-safe values are required.
-## A key path or nested key holding a secret word, or listed in [param sensitive], is refused. `CODE_STATE` while the tier is off.
+## Writes [param paths] (`{dotted path: value}`) into the user copy of [param file], keeping
+## its other keys. A [param schema] limits each key to a declared field and type; a secret
+## key or one in [param sensitive] is refused. `CODE_STATE` while the tier is off.
 static func save_user(addon_name: String, file: String, paths: Dictionary, schema: Array = [], sensitive: PackedStringArray = PackedStringArray()) -> DotResult:
 	if not user_tier_enabled:
 		return DotResult.fail(DotError.CODE_STATE, "%s/%s: the user tier is off in this process" % [addon_name, file])
@@ -395,10 +355,9 @@ static func export_filter_hint() -> String:
 	return "Add `cfg/*` (or `*.yml`) to include_filter in every export preset (Project > Export > Resources > Filters to export non-resource files), or res://cfg/addon/ is left out of the PCK."
 
 
-## Reads every yml for [param addon_name] over [param defaults]. Value: the merged Dictionary
-## (a fresh copy; [param defaults] is never mutated). A missing directory returns the
-## defaults. Pass the addon's own defaults only: rows a profile set already merged, passed as
-## [param defaults], are overwritten silently. A bad file fails with [constant DotError.CODE_PARSE] (or CODE_IO) naming the file.
+## Reads every yml for [param addon_name] over [param defaults] (never mutated) and returns
+## the merged copy; a missing directory returns the defaults. Pass only the addon's own
+## defaults. A bad file fails with [constant DotError.CODE_PARSE] or CODE_IO naming it.
 static func load_dir(
 	addon_name: String,
 	defaults: Dictionary = {},
@@ -492,7 +451,6 @@ static func describe_lines(addon_name: String = "") -> PackedStringArray:
 	return lines
 
 
-# --- Internals -------------------------------------------------------------
 
 static func _config_dir_arg() -> String:
 	var args := OS.get_cmdline_user_args() + OS.get_cmdline_args()

@@ -4,17 +4,8 @@ extends Node
 
 ## Writes [DotLog] output to a rotating file, and optionally forwards it.
 ##
-## Place one in the tree to give a server a durable log. Everything about where
-## it writes and what it keeps is configurable, because a dedicated server's log
-## policy is an operator decision: a box with 2 GB free wants aggressive
-## rotation, a debugging session wants everything.
-##
-## [b]Buffered, not line-by-line.[/b] A busy server emits hundreds of lines a
-## second and a [method FileAccess.flush] per line is a syscall per line — on web
-## it is also an IndexedDB transaction per line, which is catastrophic. Lines
-## accumulate and flush on a timer or when the buffer fills, so the worst case is
-## losing [member flush_interval_sec] of log on a hard crash. [member flush_on_error]
-## narrows that to zero for the lines that matter.
+## Buffered, not line-by-line: a flush per line is a syscall (an IndexedDB transaction on
+## web). A crash loses at most [member flush_interval_sec]; [member flush_on_error] narrows it.
 
 const CHANNEL := "logsink"
 
@@ -30,10 +21,7 @@ const CHANNEL := "logsink"
 ## what a browser build wants — there is nobody to read a file inside IndexedDB.
 @export var write_file: bool = true
 
-## Start a new file each run instead of appending.
-##
-## On by default: interleaved runs in one file make "what happened last night"
-## much harder to answer than a directory listing does.
+## Start a new file each run instead of appending, so one file is one run.
 @export var new_file_per_run: bool = true
 
 @export_group("Rotation")
@@ -46,22 +34,14 @@ const CHANNEL := "logsink"
 
 @export_group("Format")
 
-## One JSON object per line instead of the human format.
-##
-## For servers whose logs are shipped to a collector. Off by default because the
-## primary reader is an admin over SSH.
+## One JSON object per line instead of the human format, for logs shipped to a collector.
 @export var json_lines: bool = false
 
-## Minimum level this sink records, independent of [DotLog]'s own threshold.
-##
-## Lets a file keep DEBUG while the console shows INFO — the console has a human
-## reading it in real time, the file has grep.
+## Minimum level this sink records, independent of [DotLog]'s threshold, so a file can keep
+## DEBUG while the console shows INFO.
 @export var level: DotLog.Level = DotLog.Level.DEBUG
 
-## Include wall-clock timestamps in file output.
-##
-## On here even though [DotLog] defaults it off, because a file outlives the
-## session that wrote it and a monotonic tick count is then meaningless.
+## Include wall-clock timestamps; on here because a file outlives the session's tick count.
 @export var timestamps: bool = true
 
 @export_group("Flushing")
@@ -71,19 +51,13 @@ const CHANNEL := "logsink"
 ## Lines buffered before an immediate flush.
 @export_range(1, 10000, 1) var max_buffered_lines: int = 256
 
-## Flush immediately on ERROR and above.
-##
-## The lines you most want after a crash are the ones written just before it, so
-## these skip the buffer.
+## Flush immediately on ERROR and above: the lines just before a crash skip the buffer.
 @export var flush_on_error: bool = true
 
 @export_group("Forwarding")
 
-## UDP destination for log forwarding, as [code]host:port[/code]. Empty disables.
-##
-## The familiar [code]logaddress_add[/code]: an admin panel or log host can
-## tail a server without filesystem access. Unencrypted and unauthenticated, so
-## keep it on a private network.
+## UDP destination for log forwarding, as [code]host:port[/code]; empty disables. Unencrypted
+## and unauthenticated, so keep it on a private network.
 @export var forward_address: String = ""
 
 var _buffer: PackedStringArray = PackedStringArray()
@@ -139,7 +113,6 @@ func _exit_tree() -> void:
 		_udp = null
 
 
-# --- Record handling -------------------------------------------------------
 
 func _on_record(record: Dictionary) -> void:
 	var rec_level: int = record.get("level", DotLog.Level.INFO)
@@ -191,7 +164,6 @@ func _format(record: Dictionary) -> String:
 	return " ".join(parts)
 
 
-# --- File management -------------------------------------------------------
 
 func _open_file() -> DotResult:
 	var dir_res := DotPaths.ensure_dir(directory)

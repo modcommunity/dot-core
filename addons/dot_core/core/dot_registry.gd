@@ -1,31 +1,13 @@
 class_name DotRegistry
 extends RefCounted
 
-## A name-to-object registry that replaces autoloads.
-##
-## [b]Why not autoloads.[/b] An addon that ships an autoload reserves a global
-## identifier in every project that installs it, forces its own initialisation
-## order, and cannot be instantiated twice — which rules out the two things
-## dot-server actually needs to do: run a listen server and a client in one
-## process for testing, and run two independent server instances in one editor
-## session.
-##
-## So dot-* components register themselves here under a name, and anything that
-## needs them either resolves a [DotNodeRef] in [constant DotNodeRef.Mode.REGISTRY]
-## mode or asks directly. Registration is explicit, ordering is the host's, and
-## nothing is global except this table.
-##
+## A name-to-object registry that replaces autoloads: an autoload reserves a global name and
+## cannot be instantiated twice, which rules out a server and a client in one process.
 ## [codeblock]
-## # In DotServer._ready()
 ## DotRegistry.register(&"dot_server", self)
-##
-## # Anywhere else
 ## var server := DotRegistry.get_node_service(&"dot_server") as DotServer
 ## [/codeblock]
-##
-## Names are namespaced by convention ([code]dot_server[/code],
-## [code]dot_auth_client[/code]). Use [method register_scoped] when you really
-## do need two of something.
+## Names are namespaced by convention; use [method register_scoped] when you need two.
 
 ## Emitted through this bus so late arrivals can wait for a service instead of
 ## polling. See [method await_service].
@@ -40,17 +22,9 @@ static func signals() -> DotRegistryBus:
 	return _bus
 
 
-# --- Registration ----------------------------------------------------------
 
-## Publishes [param instance] under [param name].
-##
-## Replacing an existing registration is allowed but logged at WARN: it is
-## occasionally what you want (a hot-reloaded module) and much more often two
-## copies of a node that should have been one.
-##
-## Nodes are automatically unregistered when they leave the tree, so callers do
-## not have to pair every register with an unregister in [method Node._exit_tree]
-## — the common cause of a registry holding freed objects.
+## Publishes [param instance] under [param name]; replacing a registration is logged at WARN.
+## Nodes unregister when they leave the tree, so callers need not pair every register.
 static func register(name: StringName, instance: Object) -> void:
 	if instance == null:
 		push_error("DotRegistry.register(%s) with a null instance." % name)
@@ -80,12 +54,8 @@ static func register(name: StringName, instance: Object) -> void:
 	signals().service_registered.emit(name, instance)
 
 
-## Registers under [code]name#scope[/code], for the genuinely-two-of-them case.
-##
-## A test harness running a server and a client in one process registers
-## [code]dot_server#host[/code] and [code]dot_server#client[/code]; each side's
-## [DotNodeRef] names the scope it wants and neither can accidentally reach the
-## other.
+## Registers under [code]name#scope[/code], so a server and a client in one process each
+## reach only their own.
 static func register_scoped(
 	name: StringName,
 	scope: StringName,
@@ -108,10 +78,8 @@ static func unregister(name: StringName) -> void:
 	signals().service_unregistered.emit(name)
 
 
-## Removes a registration only if it still points at [param instance].
-##
-## The safe form for teardown: a node that was replaced while it was shutting
-## down must not remove its successor's entry.
+## Removes a registration only if it still points at [param instance], so a replaced node
+## shutting down cannot remove its successor.
 static func unregister_instance(name: StringName, instance: Object) -> void:
 	if _services.get(name) == instance:
 		unregister(name)
@@ -121,12 +89,8 @@ static func _on_node_exiting(name: StringName, node: Node) -> void:
 	unregister_instance(name, node)
 
 
-# --- Lookup ----------------------------------------------------------------
 
-## The registered object, or null.
-##
-## Freed instances are treated as absent and their entry is dropped, so a
-## registry that outlived its contents cannot hand back a dangling reference.
+## The registered object, or null. Freed instances are treated as absent and dropped.
 static func get_service(name: StringName) -> Object:
 	if not _services.has(name):
 		return null
@@ -152,12 +116,8 @@ static func has(name: StringName) -> bool:
 	return get_service(name) != null
 
 
-## The object, or a failed [DotResult] naming what was missing.
-##
-## Preferred over [method get_service] at boot, where "the server never
-## registered" and "the server registered something of the wrong type" are
-## different bugs and both deserve to be reported once, loudly, rather than as a
-## null dereference later.
+## The object, or a failed [DotResult] naming what was missing, so "never registered" and
+## "wrong type" are different, loud boot errors.
 static func require(name: StringName, expected_class: String = "") -> DotResult:
 	var inst := get_service(name)
 	if inst == null:
@@ -186,12 +146,8 @@ static func require(name: StringName, expected_class: String = "") -> DotResult:
 	return DotResult.success(inst)
 
 
-## Waits until [param name] is registered, then returns it.
-##
-## For components whose start order the host controls and who would otherwise
-## need a polling timer. Times out rather than hanging forever, because a typo
-## in a service name should surface as an error at boot and not as a scene that
-## never finishes loading.
+## Waits until [param name] is registered, then returns it. Times out so a typo surfaces
+## as a boot error and not a scene that never loads.
 static func await_service(
 	name: StringName,
 	timeout_sec: float = 10.0
@@ -220,7 +176,6 @@ static func await_service(
 	)
 
 
-# --- Introspection ---------------------------------------------------------
 
 static func names() -> PackedStringArray:
 	var out := PackedStringArray()
@@ -246,11 +201,8 @@ static func describe_lines() -> PackedStringArray:
 	return out
 
 
-## Drops every registration.
-##
-## For test teardown. Never call it in shipping code: it does not shut the
-## services down, it only forgets them, so anything still running keeps running
-## unreachable.
+## Drops every registration. For test teardown only: it forgets services, it does not
+## shut them down.
 static func clear() -> void:
 	_services.clear()
 

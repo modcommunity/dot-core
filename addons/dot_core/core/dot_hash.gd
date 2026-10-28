@@ -3,29 +3,18 @@ extends RefCounted
 
 ## Hashing and HMAC, in slices where the input can be large.
 ##
-## Content integrity is the whole basis of dot-cloud's trust model: a downloaded
-## PCK is mounted into the running game's filesystem, so a mismatched hash is the
-## difference between a cache and an arbitrary-code-execution vector. That makes
-## hashing hot, unavoidable, and applied to files far too large to hash in one
-## frame — hence [DotHashJob].
-##
-## SHA-256 throughout. Godot exposes SHA-1 and MD5 too; neither is used here,
-## because a content-addressed store whose addresses collide on demand is not a
-## store.
+## SHA-256 throughout, because a downloaded PCK is mounted into the running game and its
+## hash is the only integrity check. Files too large for one frame go through [DotHashJob].
 
 # No log channel: pure static hashing. The one engine failure it can meet (an HMAC
 # context that will not start) is a push_error, because the person who can fix it is
 # the one editing the code; everything else returns a value.
 
-## Bytes hashed per [method DotJob._step].
-##
-## 256 KiB is roughly 0.3 ms on a mid-range desktop and a few ms on a phone —
-## small enough to fit a frame budget slice, large enough that per-chunk overhead
-## disappears.
+## Bytes hashed per [method DotJob._step]: about 0.3 ms on a desktop, small enough to fit a
+## frame slice and large enough that per-chunk overhead disappears.
 const CHUNK_SIZE := 262_144
 
 
-# --- One-shot --------------------------------------------------------------
 
 static func sha256_bytes(data: PackedByteArray) -> String:
 	var ctx := HashingContext.new()
@@ -44,11 +33,8 @@ static func sha256_text(text: String) -> String:
 	return sha256_bytes(text.to_utf8_buffer())
 
 
-## Hashes a whole file at once. Blocks for the duration.
-##
-## Fine for a manifest or a config file. For content, use [DotHashJob]: this
-## call on a 500 MB pack freezes the process for the better part of a second,
-## and on web that is a frame the browser may decide has hung.
+## Hashes a whole file at once, blocking. For content use [DotHashJob]: a 500 MB pack
+## freezes the process, and on web the browser may call that a hang.
 static func sha256_file(path: String) -> DotResult:
 	if not FileAccess.file_exists(path):
 		return DotResult.fail(DotError.CODE_IO, "File not found.", path)
@@ -73,12 +59,8 @@ static func sha256_file(path: String) -> DotResult:
 	return DotResult.success(ctx.finish().hex_encode())
 
 
-# --- HMAC ------------------------------------------------------------------
 
-## HMAC-SHA256, hex encoded.
-##
-## Used for signing the integration-API requests dot-auth sends to the backbone
-## and for HS256 JWT verification.
+## HMAC-SHA256, hex encoded. Signs backbone integration requests and verifies HS256 JWTs.
 static func hmac_sha256(key: PackedByteArray, message: PackedByteArray) -> PackedByteArray:
 	var ctx := HMACContext.new()
 	var err := ctx.start(HashingContext.HASH_SHA256, key)
@@ -93,13 +75,9 @@ static func hmac_sha256_hex(key: String, message: String) -> String:
 	return hmac_sha256(key.to_utf8_buffer(), message.to_utf8_buffer()).hex_encode()
 
 
-## Constant-time comparison of two byte arrays.
-##
-## [b]Not a micro-optimisation — a correctness requirement.[/b] Comparing a
-## received MAC with [code]==[/code] returns as soon as two bytes differ, so the
-## time taken leaks how many leading bytes were right. That turns forging a
-## signature from 2^256 guesses into 32 rounds of 256, which is a coffee break.
-## Every verification path in dot-* routes through here.
+## Constant-time comparison of two byte arrays. Required, not an optimisation: [code]==[/code]
+## returns at the first differing byte, which leaks how many leading bytes of a MAC were
+## right. Every verification path routes through here.
 static func constant_time_equal(a: PackedByteArray, b: PackedByteArray) -> bool:
 	# Length is not secret (it is fixed by the algorithm), so an early return on
 	# a length mismatch leaks nothing.
@@ -118,13 +96,8 @@ static func constant_time_equal_hex(a: String, b: String) -> bool:
 	)
 
 
-# --- Base64url -------------------------------------------------------------
 
-## Base64url without padding, as JWTs and PKCE use.
-##
-## Godot only ships standard base64, so the two substitutions and the padding
-## strip live here rather than being re-derived at each of the five call sites
-## that need them.
+## Base64url without padding, as JWTs and PKCE use; Godot only ships standard base64.
 static func base64url_encode(data: PackedByteArray) -> String:
 	return (
 		Marshalls.raw_to_base64(data)
@@ -158,22 +131,16 @@ static func base64url_decode_text(s: String) -> String:
 	return base64url_decode(s).get_string_from_utf8()
 
 
-# --- Random ----------------------------------------------------------------
 
-## Cryptographically secure random bytes.
-##
-## [Crypto] rather than [RandomNumberGenerator]: the latter is a seeded PRNG
-## whose output is predictable from its state, which is fine for gameplay and
-## disqualifying for a PKCE verifier or a nonce.
+## Cryptographically secure random bytes. [Crypto], not [RandomNumberGenerator]: a seeded
+## PRNG is predictable from its state, which disqualifies it for a nonce or PKCE verifier.
 static func random_bytes(n: int) -> PackedByteArray:
 	var crypto := Crypto.new()
 	return crypto.generate_random_bytes(n)
 
 
-## A URL-safe random token, for nonces and PKCE verifiers.
-##
-## 32 bytes is the PKCE minimum that yields a 43-character verifier, which is
-## what the backbone's `DeviceStartRequest` schema requires.
+## A URL-safe random token for nonces and PKCE verifiers; 32 bytes is the PKCE minimum
+## for a 43-character verifier.
 static func random_token(bytes: int = 32) -> String:
 	return base64url_encode(random_bytes(bytes))
 

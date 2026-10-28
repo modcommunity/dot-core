@@ -3,16 +3,8 @@ extends RefCounted
 
 ## Token-bucket rate limiting, keyed by whatever you are limiting.
 ##
-## Everything a client can make the server do needs one of these. Without them, a
-## single peer can flood chat, brute-force an RCON password, spam reconnects, or
-## make the server issue an HTTP request to the backbone per packet — none of
-## which need a botnet, only a modified client and a loop.
-##
-## Token bucket rather than a fixed window because it permits legitimate bursts.
-## A player typing three chat lines quickly is normal; a fixed window either
-## refuses the third or, if sized for it, permits 3× the intended rate straddling
-## a window boundary.
-##
+## A bucket, not a fixed window, because it permits legitimate bursts without allowing
+## 3x the rate across a window boundary.
 ## [codeblock]
 ## var chat := DotRateLimiter.new(3.0, 5.0)     # 3/sec sustained, burst of 5
 ## if not chat.allow(peer_id):
@@ -43,11 +35,8 @@ func _init(p_rate: float = 1.0, p_burst: float = 1.0) -> void:
 	burst = maxf(1.0, p_burst)
 
 
-## Consumes a token for [param key]. Returns false when the caller should be
-## refused.
-##
-## [param cost] charges more than one token for expensive operations — an RCON
-## auth attempt or a backbone round trip should not cost the same as a chat line.
+## Consumes a token for [param key]; false means refuse. [param cost] charges expensive
+## operations (an RCON attempt, a backbone round trip) more than a chat line.
 func allow(key: Variant, cost: float = 1.0) -> bool:
 	var now := Time.get_ticks_msec()
 	_maybe_sweep(now)
@@ -67,9 +56,6 @@ func allow(key: Variant, cost: float = 1.0) -> bool:
 
 
 ## Whether a call would be allowed, without consuming anything.
-##
-## For deciding whether to build an expensive payload before committing to send
-## it — and for showing a countdown in a UI without the check itself resetting it.
 func peek(key: Variant, cost: float = 1.0) -> bool:
 	if not _buckets.has(key):
 		return burst >= cost
@@ -79,10 +65,7 @@ func peek(key: Variant, cost: float = 1.0) -> bool:
 	return minf(burst, float(entry[0]) + elapsed * rate) >= cost
 
 
-## Seconds until [param cost] tokens are available. 0 when allowed now.
-##
-## Feeds the [code]retry_after[/code] a well-behaved client honours instead of
-## retrying immediately and getting refused again.
+## Seconds until [param cost] tokens are available, 0 when allowed now; feeds retry_after.
 func retry_after(key: Variant, cost: float = 1.0) -> float:
 	if not _buckets.has(key):
 		return 0.0 if burst >= cost else (cost - burst) / rate
@@ -96,11 +79,8 @@ func retry_after(key: Variant, cost: float = 1.0) -> float:
 	return (cost - tokens) / rate
 
 
-## Forgets a key, restoring its full burst.
-##
-## Call on successful authentication: once a peer has proved who it is, the
-## failure budget that was throttling its guesses should not also throttle its
-## legitimate use.
+## Forgets a key, restoring its full burst. Call on successful authentication so the
+## failure budget does not also throttle legitimate use.
 func reset(key: Variant) -> void:
 	_buckets.erase(key)
 
@@ -118,10 +98,8 @@ func is_tracked(key: Variant) -> bool:
 	return _buckets.has(key)
 
 
-## Drops buckets nobody has touched recently.
-##
-## Amortised: swept at most once every 30 seconds, and only when something is
-## being checked anyway, so an idle server does no work.
+## Drops buckets nobody has touched recently, swept at most every 30 seconds and only
+## while something is being checked.
 func _maybe_sweep(now: int) -> void:
 	if now - _last_sweep_ms < sweep_interval_ms:
 		return
@@ -131,11 +109,8 @@ func _maybe_sweep(now: int) -> void:
 	var dead: Array = []
 	for key in _buckets:
 		var entry: Array = _buckets[key]
-		# Only evict a bucket that has refilled: dropping a throttled peer's
-		# bucket early would hand it a fresh burst, which is precisely the
-		# thing being prevented. "Refilled" is by elapsed time, not the stored
-		# count: a bucket is stored as it was when last touched, so one left at
-		# 0 tokens would otherwise never read as full and never be evicted.
+		# Evict only a refilled bucket, judged by elapsed time: a bucket is stored as last touched,
+		# so one left at 0 tokens would never read as full, and early eviction hands out a burst.
 		var refilled := float(entry[0]) + float(now - int(entry[1])) / 1000.0 * rate
 		if int(entry[1]) < cutoff and refilled >= burst - 0.001:
 			dead.append(key)
