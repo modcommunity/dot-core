@@ -2,65 +2,28 @@
 class_name DotTransportDual
 extends DotTransport
 
-## One server, two audiences: browsers over WebSocket and native clients over ENet,
-## in the same match.
-##
-## WebSocket listens on TCP [code]port[/code]; ENet on UDP [member enet_port] (0:
-## the same number — TCP and UDP ports are separate namespaces, so that costs
-## nothing). The server peer is a [DotDualPeer], which [SceneMultiplayer] sees as
-## a single peer.
-##
-## [b]Sharing the UDP port with a query protocol.[/b] A2S and DQP answer on the game
-## port by default. ENet cannot share a socket with them (Godot binds no receive
-## hook on [code]ENetConnection[/code]), so when [member share_udp_port] is on the
-## public UDP port belongs to a [DotUdpDemux]: query datagrams go to the handlers
-## a query host registers with [method add_datagram_handler], everything else is
-## relayed to an ENet host on loopback. With it off, ENet binds [member enet_port]
-## itself and the query protocols need a port of their own.
-##
-## [b]It never fails to start because of ENet.[/b] No ENet in this build, a busy
-## UDP port, a failed loopback bind: each degrades to WebSocket only with a WARN
-## that names the setting, because a server browsers can still join is better than
-## one that is down.
-##
-## A client never uses this class. A client connects with one transport; see
-## [DotTransportAuto] and dot-server's client link, which try ENet first on a
-## native build when the server advertises it.
+## One server, two audiences: browsers over WebSocket (TCP [code]port[/code]) and native
+## clients over ENet (UDP [member enet_port], 0 = same number) in the same match, as a [DotDualPeer].
+## With [member share_udp_port] the public UDP port belongs to a [DotUdpDemux] shared with query
+## protocols. Never fails to start for ENet: it degrades to WebSocket only with a WARN. Clients use [DotTransportAuto].
 
 ## UDP port for ENet. 0: the same number as the game port.
 @export var enet_port: int = 0
 
-## Interface ENet's UDP port binds. Empty: the server's bind address.
-##
-## Separate because a reverse-proxied server binds its WebSocket to loopback and lets
-## the proxy face the world — and a proxy for WebSocket cannot carry UDP, so ENet has
-## to face the world itself.
+## Interface ENet's UDP port binds; empty is the server's bind address. Separate because a
+## proxied server binds WebSocket to loopback while ENet, which a proxy cannot carry, faces the world.
 @export var enet_bind_address: String = ""
 
-## Put ENet and the connectionless query protocols on one UDP port via a
-## [DotUdpDemux]. Only has an effect when a handler is registered on the same port,
-## but costs a relay per ENet packet either way, so a server whose query protocols
-## are on another port should turn it off.
+## Put ENet and the query protocols on one UDP port via a [DotUdpDemux]. Costs a relay per
+## ENet packet, so turn it off when the query protocols use another port.
 @export var share_udp_port: bool = true
 
 enum TlsHelloScreen { AUTO = 0, ON = 1, OFF = 2 }
 
-## Whether a [DotTcpScreen] holds the public TCP port, with the WebSocket server behind it on
-## loopback, so a TLS ClientHello at this plain listener is closed at once.
-##
-## A native client dials a public [code]host:port[/code] as [code]wss://[/code] first; at a
-## server with no certificate the WebSocket server waits for an HTTP header that never comes,
-## and the client waited out its whole TLS timeout (2.5 s) before trying [code]ws://[/code].
-## Screened, the wrong guess costs one round trip. Addresses are mapped back by [DotDualPeer].
-##
-## [b]Auto screens every plain listener, loopback included.[/b] The relay is not free: every
-## WebSocket byte is copied through it in script, measured at 10 to 20 us per busy link per
-## frame (32 clients, a packet each way each frame: about 0.5 ms). Behind dot-server-deploy's
-## nginx the listener is on loopback and the proxy forwards an internet scanner's plain
-## "GET /" untouched, which the engine logs as an ERROR no log level lowers; only the screen
-## stops that, so the half millisecond is paid there too. [constant TlsHelloScreen.OFF] opts out.
-## Never applied when the WebSocket server terminates TLS itself
-## ([member DotTransportWebSocket.use_tls]): there a ClientHello is the right first byte.
+## Whether a [DotTcpScreen] holds the public TCP port with the WebSocket server behind it on
+## loopback, closing a TLS ClientHello at once; otherwise a native client waits out its 2.5 s TLS
+## timeout before trying ws://. Auto screens every plain listener (about 0.5 ms at 32 clients),
+## also behind a proxy, whose scanner traffic the screen stops. Never when the server terminates TLS.
 @export_enum("Auto", "On", "Off") var tls_hello_screen: int = TlsHelloScreen.AUTO
 
 ## Sub-transport for browsers. Created with defaults if unset.

@@ -4,33 +4,14 @@ extends "res://addons/dot_core/net/dot_http_base.gd"
 
 ## An HTTP client that works identically on desktop, mobile and in a browser.
 ##
-## [b]Why not [HTTPClient].[/b] It does not exist on web — the browser forces
-## every request through [code]fetch()[/code], and only [HTTPRequest] is wired to
-## that. So everything in dot-* that talks HTTP uses [HTTPRequest], which means
-## living with its quirks: it is a [Node], it handles one request at a time, and
-## it reports transport failures and HTTP failures through the same signal with
-## different arguments. This wraps all of that into something awaitable.
-##
+## [HTTPRequest], not [HTTPClient], which does not exist on web. Retries (jittered backoff)
+## cover transport failures, 5xx and 429 only: never 4xx, which would lock an account out.
+## On web a request that fails with no useful error is almost always CORS.
 ## [codeblock]
 ## var http := DotHttp.new()
 ## add_child(http)
-## http.base_url = "https://example.com"
-##
 ## var res := await http.get_json("/api/app/v1/me", {"Authorization": "Bearer …"})
-## if res.ok:
-##     print(res.value["data"]["username"])
 ## [/codeblock]
-##
-## [b]Retries.[/b] Automatic, with jittered exponential backoff, for transport
-## failures and 5xx/429 only. Never for 4xx: a 401 will be a 401 again, and
-## retrying a rejected credential three times is how an account gets locked out.
-## [code]Retry-After[/code] is honoured when present.
-##
-## [b]On CORS.[/b] In a browser, every response header this class can read and
-## every cross-origin request it can make is subject to the server's CORS policy.
-## A request that works on desktop and fails on web with no useful error is
-## almost always CORS; see dot-cloud's docs/store.md for the headers a content host
-## must send.
 
 const CHANNEL := "http"
 
@@ -91,12 +72,8 @@ func get_bytes(path: String, headers: Dictionary = {}, max_bytes: int = 0) -> Do
 	return DotResult.success(response["body"])
 
 
-## Performs a request with retries.
-##
-## On success the value is
-## [code]{status, headers, body, body_text, attempts}[/code]. On failure the
-## error carries the status and the first 512 bytes of the body as detail, which
-## is almost always where the server explained itself.
+## Performs a request with retries. The value is [code]{status, headers, body, body_text,
+## attempts}[/code]; a failure carries the status and the first 512 bytes of the body.
 func request(
 	method: int,
 	path: String,
@@ -241,13 +218,8 @@ func _interpret(
 	return DotResult.success(out)
 
 
-## Maps [enum HTTPRequest.Result] to a [DotError].
-##
-## The distinction that matters is retryable-or-not: a connection that dropped
-## is worth another go, a TLS handshake that failed will fail identically. On web
-## these all collapse to CANT_CONNECT because [code]fetch()[/code] deliberately
-## refuses to say why — including when the real cause is CORS — which is why the
-## detail mentions it.
+## Maps [enum HTTPRequest.Result] to a [DotError], keeping retryable apart from not. On web
+## these collapse to CANT_CONNECT because [code]fetch()[/code] will not say why (often CORS).
 func _transport_error(result: int, url: String) -> DotError:
 	var e := DotError.new()
 	e.context = {"url": _redact(url), "result": result}
@@ -291,10 +263,8 @@ func _transport_error(result: int, url: String) -> DotError:
 	return e
 
 
-## Downloads to a file rather than into memory (a 500 MB PCK in a [PackedByteArray] is a phone termination).
-## [param range_start] resumes a partial file with a [code]Range[/code] header; the caller must have verified the existing bytes belong to this resource.
-## [param max_bytes] > 0 caps this response's body: a host streaming past it fails instead of filling the disk.
-## On success the value is [code]{status, headers, size, resumed}[/code].
+## Downloads to a file, not memory. [param range_start] resumes a partial file (the caller
+## verified its bytes); [param max_bytes] > 0 caps the body. Value: [code]{status, headers, size, resumed}[/code].
 func download_to_file(
 	url_or_path: String,
 	dest_path: String,
@@ -388,11 +358,9 @@ func download_to_file(
 			if not joined.ok:
 				out = joined
 			else:
-				# No flush here, deliberately: web `user://` sync is async and overlapping
-				# calls lose files. A partial costs one re-download; DotCloudStore flushes
-				# after each COMMITTED object.
-				# A 2xx with no file on disk is a failure, not a success: HTTPRequest does
-				# not say whether its write landed.
+								# No flush: web `user://` sync is async and overlapping calls lose files; a partial
+								# costs one re-download and DotCloudStore flushes per committed object. A 2xx with
+								# no file on disk is a failure: HTTPRequest does not say whether its write landed.
 				var written := DotPaths.file_size(dest_path)
 
 				if not FileAccess.file_exists(dest_path):
@@ -474,12 +442,8 @@ func _download_in_memory(
 	})
 
 
-## Asks whether a URL supports resuming, with a HEAD request.
-##
-## Returns [code]{size, accepts_ranges, etag}[/code]. On web
-## [code]accepts_ranges[/code] is only true when the host also exposes the
-## header through CORS, so a false here means "cannot rely on it", not
-## necessarily "the server lacks it".
+## Asks with a HEAD request whether a URL supports resuming: [code]{size, accepts_ranges, etag}[/code].
+## On web false can mean the host does not expose the header through CORS.
 func probe(url_or_path: String, headers: Dictionary = {}) -> DotResult:
 	var res := await request(
 		HTTPClient.METHOD_HEAD, url_or_path, PackedByteArray(), headers

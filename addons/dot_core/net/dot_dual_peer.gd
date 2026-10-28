@@ -1,34 +1,12 @@
 class_name DotDualPeer
 extends MultiplayerPeerExtension
 
-## A server peer that is two: WebSocket for browsers and ENet for native clients,
-## presented to [SceneMultiplayer] as one.
-##
-## [b]Why one peer and not two MultiplayerAPIs.[/b] Two APIs would be two worlds:
-## every RPC, every spawner, every dot-net channel would have to be sent twice and
-## a WebSocket player could not see an ENet one. A [MultiplayerPeerExtension] that
-## polls both backends and merges their peers into one id space is invisible to
-## everything above it — dot-net, dot-server and the games keep one peer.
-##
-## [b]Peer ids.[/b] ENet clients choose their own id; WebSocket clients are given
-## one by the server. Both are random 31-bit numbers drawn independently, so they
-## can collide. A peer whose id is already taken by the other backend is
-## disconnected rather than renumbered: a renumbered client would believe its own
-## id is one the server never uses, and every "this entity is yours" message keyed
-## by peer id would silently miss. The chance is about one in thirty million per
-## connect at a full server, and the client's reconnect draws a fresh id.
-##
-## [b]ENet behind a demux.[/b] When [member demux] is set the ENet host sits on
-## loopback and sees every client as 127.0.0.1; [method get_peer_address] maps the
-## relay back to the real address, which is what bans and rate limits must see.
-##
-## [b]WebSocket behind a screen.[/b] When [member screen] is set the WebSocket server sits
-## on loopback behind a [DotTcpScreen], which closes a TLS ClientHello at once instead of
-## letting the server wait out its handshake timeout on it, and sees every client as
-## 127.0.0.1; [method get_peer_address] maps that back too.
-##
-## No ENet identifier is named in this file: the web template has none, and a
-## script mentioning one does not compile there. ENet is reached by [method Object.call].
+## A server peer that is two, WebSocket for browsers and ENet for native clients, presented
+## to [SceneMultiplayer] as one so every RPC and spawner reaches both.
+## Ids collide across backends (random 31-bit); the later peer is disconnected, not renumbered,
+## because a renumbered client would never see "this entity is yours". With [member demux] or
+## [member screen] set the backends sit on loopback and [method get_peer_address] maps back.
+## No ENet identifier is named here (the web template has none); reached by [method Object.call].
 
 const CHANNEL := "transport"
 
@@ -173,7 +151,6 @@ func describe_lines() -> PackedStringArray:
 	return lines
 
 
-# --- Peers -----------------------------------------------------------------
 
 func _on_connected(id: int, backend: int) -> void:
 	if _backend_of.has(id):
@@ -249,7 +226,6 @@ func _enet_remote(peer_id: int) -> Dictionary:
 	return remote if not remote.is_empty() else {"ip": ip, "port": port}
 
 
-# --- MultiplayerPeerExtension ------------------------------------------------
 
 func _poll() -> void:
 	if _closed:
@@ -379,14 +355,9 @@ func _sendable(backend: int, peer_id: int) -> bool:
 	return _enet_sendable(peer_id) if backend == Backend.ENET else _websocket_sendable(peer_id)
 
 
-## [b]Whether a WebSocket peer is still open.[/b] WebSocketMultiplayerPeer keeps a peer in its
-## table after its socket stops being open: one the server closed ([method _disconnect_peer]
-## without force) until the next poll, one whose send failed (a slow client's full outbound
-## buffer closes it) until the next poll, and one the poll found closed until its
-## peer_disconnected has been emitted. Every send to such a peer -- targeted, or reaching it
-## through the engine's broadcast loop, which does not ask -- logged the engine ERROR
-## "ready_state != STATE_OPEN", once per packet, at every WebSocket client's departure. A
-## peer that is not a WebSocketMultiplayerPeer's (a test's stand-in) is taken as open.
+## Whether a WebSocket peer is still open. The engine keeps a closed peer in its table until
+## the next poll or its peer_disconnected, and each send to it logs "ready_state != STATE_OPEN".
+## A peer that is not a WebSocketMultiplayerPeer's (a test's stand-in) is taken as open.
 func _websocket_sendable(peer_id: int) -> bool:
 	var server := websocket as WebSocketMultiplayerPeer
 	if server == null:
@@ -395,11 +366,9 @@ func _websocket_sendable(peer_id: int) -> bool:
 	return link != null and link.get_ready_state() == WebSocketPeer.STATE_OPEN
 
 
-## Everybody on WebSocket, or everybody but [param excluded] when it is not 0. The engine's
-## broadcast sends to every peer in its table, and while a peer is leaving that includes one
-## whose socket is closed: the peer whose peer_disconnected is running (the engine emits
-## before it erases) and any other found closed in the same poll. When one is in the table
-## this sends to each open peer itself; otherwise it is one engine broadcast.
+## Everybody on WebSocket, or all but [param excluded] when not 0. The engine broadcast also
+## hits a peer already closed mid-departure, so when one is in the table each open peer is
+## sent to individually; otherwise it is one engine broadcast.
 func _send_websocket(excluded: int, buffer: PackedByteArray) -> Error:
 	var live: Array[int] = []
 	var leaving := _websocket_departing != 0 and _websocket_departing != excluded
@@ -420,27 +389,17 @@ func _send_websocket(excluded: int, buffer: PackedByteArray) -> Error:
 	return result
 
 
-## [b]Whether ENet can still take a packet for this peer.[/b] A client's disconnect frees its
-## peer's channels inside ENet the moment the datagram is read, but the peer stays in
-## ENetMultiplayerPeer's table until its DISCONNECT event is dispatched, and ENet dispatches
-## one event per service step. Two clients leaving in the same poll -- a suite's teardown, a
-## round's end, a box's network blip -- leave the second in the table with no channels while
-## the first's peer_disconnected runs, and everything that handler sends to the second
-## ("player left", chat presence, a despawn) hit "Unable to send packet on channel N, max
-## channels: 0" from the engine, once per send. Asking the peer first is the only place the
-## state is visible: ENet's own broadcast skips such a peer, its targeted send and its
-## all-but-one loop do not.
+## Whether ENet can still take a packet for this peer. A departing client's channels are freed
+## when its datagram is read but it stays in the table until its DISCONNECT dispatches, so a
+## send hit "Unable to send packet on channel N, max channels: 0". Only the peer shows it.
 func _enet_sendable(peer_id: int) -> bool:
 	var packet_peer: Object = enet.call("get_peer", peer_id)
 	return packet_peer != null and int(packet_peer.call("get_channels")) > 0
 
 
-## Everybody on ENet but [param excluded]. ENet's own all-but-one loop sends to every peer in
-## its table, including one that is leaving ([method _enet_sendable]) and the one whose
-## peer_disconnected is running: ENet emits that before it removes the peer, whose packet
-## peer is already null ("Parameter "peer" is null"). When either is in the table this sends
-## to each live peer itself. Not always: one engine broadcast flushes the host once, a send
-## per peer flushes it per peer.
+## Everybody on ENet but [param excluded]. ENet's all-but-one loop sends to a leaving peer
+## ([method _enet_sendable]) and to one whose peer is already null; when either is present
+## this sends per live peer, otherwise one engine broadcast (one host flush).
 func _send_enet_except(excluded: int, buffer: PackedByteArray) -> Error:
 	var live: Array[int] = []
 	var leaving := _enet_departing != 0 and _enet_departing != excluded
@@ -531,15 +490,10 @@ func _disconnect_peer(peer: int, force: bool) -> void:
 		_on_disconnected(peer, backend)
 
 
-## [b]Tell every ENet client the server is going, through the demux, before closing it.[/b]
-## Behind the demux an ENet "send" reaches only that client's loopback relay, and only
-## pump_out() puts it on the public socket. Closing the ENet host and then the demux in one
-## call sent nothing: not dot-server's reliable DISCONNECT queued just before, not ENet's own
-## disconnect. A native client learned the server was gone only from its peer timeout --
-## 33.8 s in dot-server-deploy's reconnect suite once dot-core raised that to 30 s, on every
-## restart, with the shutdown reason never shown. So each ENet peer is disconnected
-## gracefully, the host is serviced so the queued reliable data and the disconnects leave,
-## and the demux forwards them, a few times over a few milliseconds. A shutdown can afford it.
+## Tell every ENet client the server is going, through the demux, before closing. Behind the
+## demux a send reaches only the loopback relay until pump_out(), so closing at once sent
+## nothing and clients learned of it from their peer timeout. Disconnect gracefully, service
+## the host and forward, a few times over a few milliseconds.
 func _say_goodbye_through_demux() -> void:
 	for id: int in _backend_of.keys():
 		if _backend_of[id] == Backend.ENET:

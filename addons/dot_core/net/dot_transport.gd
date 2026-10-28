@@ -2,40 +2,16 @@
 class_name DotTransport
 extends Resource
 
-## Base class for a swappable multiplayer transport.
-##
-## [b]Why this abstraction exists.[/b] The dot-* family must serve desktop,
-## mobile and browser clients, and the browser has no UDP — so [ENetMultiplayerPeer]
-## is not merely slow there, it is absent from the export template. Meanwhile
-## ENet is the better choice when no browser is involved. That is a deployment
-## decision, not a code decision, so it belongs in a [Resource] an operator can
-## swap without touching a script.
-##
-## [b]One socket speaks one protocol[/b], so a server for both audiences listens
-## twice: [DotTransportDual] puts WebSocket on TCP and ENet on UDP behind one
-## [MultiplayerPeer], and the match above it never knows which a peer came in on.
-##
-## [codeblock]
-## browsers and native clients ->  DotTransportDual (dot-server's default)
-## browser clients only        ->  DotTransportWebSocket
-## desktop/mobile only         ->  DotTransportENet, for the lower overhead
-## [/codeblock]
-##
-## A CLIENT always uses one: [DotTransportENet] or [DotTransportWebSocket], chosen by
-## dot-server's client link (UDP first on a native build, WebSocket as the fallback),
-## or [DotTransportAuto] for a project that has not decided.
-##
-## Subclasses implement [method _create_server] and [method _create_client] and
-## return a [MultiplayerPeer] wrapped in a [DotResult].
+## Base class for a swappable multiplayer transport. The browser has no UDP, so ENet is
+## absent there: the choice is a deployment decision in a [Resource], not a code one.
+## A server for both audiences uses [DotTransportDual]; a client uses ENet or WebSocket
+## ([DotTransportAuto] if undecided). Subclasses implement [method _create_server] and
+## [method _create_client], returning a [MultiplayerPeer] in a [DotResult].
 
 const CHANNEL := "transport"
 
-## Channel budget shared by every transport.
-##
-## Reliable game state, unreliable snapshots, chat/console, and bulk content
-## transfer each want different delivery guarantees, and mixing them on one
-## channel means a 4 MB content chunk head-of-line blocks a movement update.
-## dot-server assigns these; dot-cloud's in-band source uses [constant CHANNEL_CONTENT].
+## Channel budget shared by every transport, so a 4 MB content chunk on its own channel
+## does not head-of-line block a movement update. dot-server assigns these.
 enum Channel {
 	## Handshake, authentication, console commands. Reliable, ordered.
 	CONTROL = 0,
@@ -57,11 +33,8 @@ const CHANNEL_COUNT := 4
 
 @export_group("Limits")
 
-## Maximum simultaneous clients, enforced by the transport where it can be.
-##
-## dot-server enforces its own limit too, because a transport-level refusal
-## gives the client no reason for the rejection and admin reserve slots need to
-## admit a connection before deciding.
+## Maximum simultaneous clients, enforced where the transport can. dot-server enforces its
+## own limit too: a transport refusal gives no reason, and reserve slots decide after connect.
 @export_range(1, 4096, 1) var max_clients: int = 32
 
 ## Inbound bandwidth cap in bytes/sec. 0 is unlimited.
@@ -76,7 +49,6 @@ const CHANNEL_COUNT := 4
 @export_range(1.0, 120.0, 0.5) var connect_timeout_sec: float = 15.0
 
 
-# --- Subclass interface ----------------------------------------------------
 
 ## Creates a listening peer. Returns a [MultiplayerPeer] in the result.
 func _create_server(port: int, bind_address: String) -> DotResult:
@@ -86,11 +58,8 @@ func _create_server(port: int, bind_address: String) -> DotResult:
 	)
 
 
-## Creates a connecting peer.
-##
-## [param address] is transport-specific: a host for ENet, a full URL for
-## WebSocket. [method normalise_address] makes a user-typed string usable by
-## either, so callers can accept one field in a UI.
+## Creates a connecting peer. [param address] is transport-specific (a host for ENet, a URL
+## for WebSocket); [method normalise_address] makes a typed string usable by either.
 func _create_client(address: String, port: int) -> DotResult:
 	return DotResult.fail(
 		DotError.CODE_INTERNAL,
@@ -102,10 +71,8 @@ func _transport_name() -> String:
 	return "DotTransport"
 
 
-## Whether this transport can run on the current build.
-##
-## Checked before use so the failure is "this build cannot host over ENet"
-## at boot rather than a null peer three calls later.
+## Whether this transport can run on the current build, so the failure is "cannot host over
+## ENet" at boot and not a null peer later.
 func _is_available() -> DotResult:
 	return DotResult.success(true)
 
@@ -121,7 +88,6 @@ func scheme() -> String:
 	return ""
 
 
-# --- Public API ------------------------------------------------------------
 
 ## Creates a listening peer, after checking the platform can do it.
 func create_server(port: int, bind_address: String = "*") -> DotResult:
@@ -175,18 +141,9 @@ func create_client(address: String, port: int = 0) -> DotResult:
 	return res
 
 
-## Splits a user-typed connect string into its parts.
-##
-## Accepts everything a player might paste: [code]1.2.3.4[/code],
-## [code]1.2.3.4:27015[/code], [code]ws://host/path[/code],
-## [code]wss://host:443[/code], [code][::1]:27015[/code]. Returns
-## [code]{scheme, host, port, path}[/code] with the port defaulted to
-## [param default_port] when absent.
-##
-## Bracketed IPv6 is handled explicitly because splitting on the last colon —
-## the obvious implementation — turns [code]::1[/code] into host [code]:[/code]
-## and port [code]1[/code], and the resulting failure looks like a network
-## problem rather than a parsing bug.
+## Splits a user-typed connect string (host, host:port, ws://, wss://, [code][::1]:27015[/code])
+## into [code]{scheme, host, port, path}[/code], defaulting to [param default_port].
+## Bracketed IPv6 is explicit: splitting on the last colon turns [code]::1[/code] into a bad host.
 static func normalise_address(
 	raw: String,
 	default_port: int

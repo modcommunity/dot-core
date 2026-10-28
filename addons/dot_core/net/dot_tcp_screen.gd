@@ -1,41 +1,11 @@
 class_name DotTcpScreen
 extends RefCounted
 
-## The public TCP port of a plain WebSocket listener, answering a TLS ClientHello with a
-## close instead of silence.
-##
-## [b]Why this exists.[/b] A native client dials a bare [code]host:port[/code] as
-## [code]wss://[/code] first (dot-server's client link: a public game port is normally a TLS
-## port). Against a server with no certificate that ClientHello reached the engine's
-## WebSocket server, which reads the HTTP request header in C++ until it sees CRLFCRLF or its
-## handshake timeout passes. A ClientHello has no CRLFCRLF, so every wrong guess cost the
-## client its whole TLS timeout (2.5 s) before it tried [code]ws://[/code].
-##
-## [b]Why a relay and not a peek.[/b] The obvious fix is to look at byte 0 and hand the
-## socket on. Godot cannot: [StreamPeerTCP] has no peek, a byte read is gone, and
-## [method WebSocketPeer.accept_stream] refuses any stream but a [StreamPeerTCP] or
-## [StreamPeerTLS] (a [StreamPeerExtension] that replays the byte is ERR_INVALID_PARAMETER).
-## So, like [DotUdpDemux] for UDP, this owns the public port:
-##
-## [codeblock]
-## connection on the public port, byte 0
-##   'G' and a complete header with Upgrade: websocket -> relayed, both ways, to the
-##       unchanged WebSocketMultiplayerPeer on 127.0.0.1:<inner port>
-##   'G' without that header (a scanner's "GET /")     -> answered 426 and closed
-##   anything else (0x16: a TLS handshake record)      -> closed at once
-## [/codeblock]
-##
-## [b]The relay hides the client's address[/b]: the WebSocket server sees 127.0.0.1 and
-## the relay's own ephemeral port. [method remote_for_inner_port] maps that port back, and
-## [DotDualPeer] answers [code]get_peer_address[/code] / [code]get_peer_port[/code] with the
-## real remote, so bans, rate limits and logs keep working.
-##
-## [b]No threads.[/b] [method pump_in] and [method pump_out] run inside the peer's poll on
-## the main thread, around the WebSocket server's own poll, so a packet crosses the relay
-## in the same poll it would have crossed the socket: no frame of latency is added.
-## [b]Back-pressure is kept[/b]: neither side is read while more than [member max_buffered]
-## bytes wait for the other, so a client that stops reading still fills the WebSocket
-## server's outbound buffer and is closed by it, as it was without the relay.
+## The public TCP port of a plain WebSocket listener, answering a TLS ClientHello with a close
+## instead of silence (the engine's server would wait out its handshake timeout).
+## A relay, not a peek: [StreamPeerTCP] cannot peek and [method WebSocketPeer.accept_stream]
+## takes only a TCP or TLS stream. 'G' with a full Upgrade header is relayed to the inner port,
+## a scanner's "GET /" gets 426, anything else is closed. [DotDualPeer] maps addresses back.
 
 const CHANNEL := "transport"
 
@@ -152,11 +122,9 @@ func pump_out() -> void:
 		_close_link(link)
 
 
-## Moves what the WebSocket server has written since the last pump back to the clients, and
-## nothing else. [b]Its sends do not wait for its poll[/b]: the engine's WebSocket peer writes
-## a packet to the socket inside put_packet, so without this a server's packet reached the
-## client a frame later than unscreened. [DotDualPeer] calls it deferred, once per frame
-## that sent anything.
+## Moves what the WebSocket server has written since the last pump back to the clients. Its
+## sends do not wait for the poll (put_packet writes the socket), so without this a packet
+## arrives a frame late. [DotDualPeer] calls it deferred, once per frame that sent anything.
 func flush() -> void:
 	for link: Dictionary in _links:
 		var inner: StreamPeerTCP = link["inner"]
@@ -207,7 +175,6 @@ func describe() -> Dictionary:
 	}
 
 
-# --- Internals ---------------------------------------------------------------
 
 func _accept() -> void:
 	while _server.is_connection_available():
@@ -270,12 +237,9 @@ func _refuse(outer: StreamPeerTCP, first: int) -> void:
 	outer.disconnect_from_host()
 
 
-## Decides what a connection's bytes so far are. True when it is settled (relayed or closed),
-## false while the header is still incomplete.
-##
-## The engine's WebSocket server raises an ERROR it cannot be told to lower for any request
-## its handshake parser rejects (an internet scanner's "GET /"), so the header is read whole
-## here and only one the parser accepts is handed on.
+## Decides what a connection's bytes so far are: true when settled (relayed or closed), false
+## while the header is incomplete. The header is read whole because the engine raises an
+## unlowerable ERROR for any request its handshake parser rejects.
 func _judge(outer: StreamPeerTCP, buf: PackedByteArray) -> bool:
 	if buf[0] != HTTP_GET_FIRST:
 		_refuse(outer, buf[0])
@@ -296,11 +260,9 @@ func _judge(outer: StreamPeerTCP, buf: PackedByteArray) -> bool:
 	return true
 
 
-## Mirrors the checks of the engine's server handshake (wsl_peer.cpp, _parse_client_request):
-## "GET <path> HTTP/1.1", at least four header lines, Upgrade exactly "websocket", a
-## Connection header containing "upgrade", Sec-WebSocket-Version 13 and a Sec-WebSocket-Key.
-## Anything this passes cannot make the engine log an error for its headers; looser would
-## let a "websocket-ish" probe through to it, and stricter would refuse a real client.
+## Mirrors the engine's server handshake checks (wsl_peer.cpp): GET with HTTP/1.1, four header
+## lines, Upgrade websocket, Connection upgrade, version 13 and a key. Looser lets a probe
+## through to an engine ERROR; stricter refuses a real client.
 func _is_websocket_handshake(head: String) -> bool:
 	var lines := head.split("\r\n")
 	if lines.size() < 4:
