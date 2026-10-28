@@ -1,42 +1,12 @@
 class_name DotCollisionAudit
 extends RefCounted
 
-## Lists the visible geometry under a node that nothing collides with: the level pieces a
-## player walks straight through.
-##
-## [codeblock]
-## var res := DotCollisionAudit.audit(level_root)
-## if res.ok:
-##     for line in res.value.describe_lines():
-##         print(line)
-## [/codeblock]
-##
-## [b]Why it is static and structural.[/b] The check reads the node tree and the shapes' own
-## properties; it never needs the physics space, so it runs on a scene that is not in the
-## tree (a map instantiated and not yet added) and costs nothing at run time.
-##
-## [b]What counts as covered[/b] (each rule is here because the obvious weaker one is wrong):
-## [br]- a solid body ([StaticBody3D], [AnimatableBody3D]) that is an ancestor, a child (what
-## [code]create_trimesh_collision[/code] makes) or a sibling (an imported model's mesh and
-## body side by side) with at least one enabled shape. A body with no shape, only disabled
-## shapes, or [code]collision_layer == 0[/code] blocks nothing, so it does not cover.
-## [br]- an [Area3D] never covers: it reports overlaps and lets everything through.
-## [br]- a [CSGShape3D] is covered when the root of its CSG tree has [code]use_collision[/code]:
-## the children are merged into the root, so only the root is reported, never each child.
-## [br]- a [GridMap] is covered when a used item in its mesh library has shapes and its layer
-## is not 0.
-## [br]- a [MultiMeshInstance3D] has no collision of its own whatever it holds, so it needs a
-## body like a mesh does.
-##
-## [b]What is skipped[/b]: invisible nodes and everything under them (not drawn, nothing to
-## walk through); a mesh that only casts shadows or is on no render layer; anything under a
-## [CharacterBody3D] or [RigidBody3D] (people, props and vehicles collide as their body, and
-## their visuals are not level geometry); and anything opted out.
-##
-## [b]Opt-out[/b]: metadata [code]dot_no_collision[/code] set to true, or membership of the
-## group [code]dot_no_collision[/code], on a node or any ancestor. It is for what is meant to
-## be walked through or has no business colliding: decoration, sky, water surfaces, trigger
-## volumes' visuals, view models. Inherited so a whole decoration subtree is one tag.
+## Lists the visible geometry under a node that nothing collides with, the level pieces a player
+## walks through. Structural, so it needs no physics space and runs on a scene not in the tree.
+## Covered: a solid body that is an ancestor, child or sibling with an enabled shape and a layer;
+## a CSG root with [code]use_collision[/code]; a GridMap item with shapes. Areas never cover.
+## Skipped: invisible, shadow-only, under a character or rigid body, or [code]dot_no_collision[/code]
+## (metadata or group, inherited by a subtree).
 
 const META := &"dot_no_collision"
 const GROUP := &"dot_no_collision"
@@ -53,12 +23,9 @@ var opted_out := 0
 var _shape_bounds: Variant = null
 
 
-## Audit [param root] and everything under it. Fails with CODE_INVALID for a null or freed root.
-## [param anywhere] also accepts a solid body anywhere under [param root] whose shape bounds
-## meet the node's bounds, for a level that keeps its drawing and its collision in separate
-## subtrees (a generated map: one body of shapes, one node of meshes). It is lenient by design,
-## a merged mesh is covered by any shape it touches, so it finds geometry with nothing near
-## it, not every wall missing a shape.
+## Audit [param root] and everything under it; CODE_INVALID for a null or freed root.
+## [param anywhere] also accepts a solid body anywhere under [param root] whose shape bounds meet
+## the node's, for a level keeping drawing and collision in separate subtrees. Lenient by design.
 static func audit(root: Node, anywhere := false) -> DotResult:
 	if root == null or not is_instance_valid(root):
 		return DotResult.failure(DotError.make(DotError.CODE_INVALID, "DotCollisionAudit.audit: no root node"))
@@ -154,10 +121,8 @@ func _add(root: Node, node: Node, kind: String, why: String) -> void:
 	findings.append({"path": root.get_path_to(node), "kind": kind, "why": why})
 
 
-## A body in the tree around [param node] that really blocks: an ancestor, a child or a
-## sibling. Siblings are accepted because an imported model puts its mesh and its body side by
-## side, but only when their bounds meet: in a flat level every box is every other box's
-## sibling, and without the overlap test one body anywhere would cover the whole level.
+## A body around [param node] that really blocks: an ancestor, a child or a sibling. A sibling
+## counts only when bounds meet, or in a flat level one body would cover every other box.
 func _covered_by_body(node: Node) -> bool:
 	if _shape_bounds != null and _covered_anywhere(node):
 		return true

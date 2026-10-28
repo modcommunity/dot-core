@@ -2,33 +2,14 @@
 class_name DotTransportAuto
 extends DotTransport
 
-## Picks a transport from what the build can do and who needs to connect.
-##
-## The right default for a project that has not decided yet, and a reasonable
-## permanent choice for one whose audience varies by build. It delegates to a
-## real [DotTransportWebSocket] or [DotTransportENet] and logs which and why, so
-## the decision is visible in the server log rather than inferred.
-##
-## The rule, in order:
-##
-## 1. Running in a browser, or [member require_web_clients] set → WebSocket.
-##    A browser has no alternative and a server that wants browser clients has
-##    no alternative either.
-## 2. No UDP available → WebSocket.
-## 3. Otherwise → ENet, for the unreliable channels.
-##
-## [member require_web_clients] is the one an operator actually sets, and it
-## belongs in the server config: "will anyone play this in a browser" is not
-## something the process can work out about its own future clients.
+## Picks a transport from what the build can do and who needs to connect, and logs which and
+## why. A browser, [member require_web_clients] or no UDP gives WebSocket; otherwise ENet.
+## [member require_web_clients] belongs in server config: the process cannot know its future clients.
 
 @export_group("Selection")
 
-## Force WebSocket even where ENet is available.
-##
-## Set this on a server whose players include browser builds. Without it, a
-## desktop-only server picks ENet and every browser client silently fails to
-## connect — the single most confusing failure in this whole family, because
-## nothing is misconfigured from the server's point of view.
+## Force WebSocket even where ENet is available. Set it on a server with browser players, or
+## every browser client silently fails to connect with nothing misconfigured server-side.
 @export var require_web_clients: bool = true
 
 ## Sub-transport used when WebSocket is chosen. Created with defaults if unset.
@@ -92,10 +73,7 @@ func _enet() -> DotTransportENet:
 	return enet
 
 
-## Discards the cached choice so the next call re-decides.
-##
-## For a server that toggles [member require_web_clients] at runtime via a cvar;
-## takes effect on the next listen, not on live connections.
+## Discards the cached choice so the next call re-decides; applies to the next listen only.
 func invalidate() -> void:
 	_chosen = null
 	_reason = ""

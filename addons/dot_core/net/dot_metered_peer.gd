@@ -2,41 +2,11 @@ class_name DotMeteredPeer
 extends MultiplayerPeerExtension
 
 ## Any [MultiplayerPeer], counted: bytes and packets each way, per channel, plus what the
-## transport underneath can say about itself.
-##
-## [codeblock]
-## var created := transport.create_client(address)
-## multiplayer.multiplayer_peer = DotMeteredPeer.wrap(created.value)
-## # ...
-## var peer := multiplayer.multiplayer_peer as DotMeteredPeer
-## peer.bytes_in, peer.bytes_in_by_channel[DotTransport.Channel.STATE], peer.rtt_ms
-## [/codeblock]
-##
-## [b]Why a wrapper, and not the transport's own numbers.[/b] ENet keeps byte totals for its
-## host and WebSocket keeps none, and a browser is a WebSocket client: a graph that read the
-## transport would be empty for most of the people who would open it. Every packet passes
-## through [method _put_packet_script] and [method _poll] here whichever transport is under
-## it, so the counts are the same thing on both. What only one of them knows (ENet's loss and
-## round-trip variance, a WebSocket's unsent backlog) is in [method transport_stats], and
-## labelled as such rather than faked on the other.
-##
-## [b]Payload bytes, not wire bytes.[/b] What is counted is what [SceneMultiplayer] handed
-## down and got back: RPC headers included, the transport's own framing (ENet's, a
-## WebSocket frame, IP and UDP) not. That is the part a game can change, so it is the part
-## worth graphing; a number that also moved with the transport would hide the game's own
-## change inside it.
-##
-## [b]Totals, never rates.[/b] A rate has a window, and the right window is whoever is
-## reading's: a graph wants a bar per twentieth of a second, a scoreboard a number per
-## second. This keeps monotonic totals and the reader differences them, so two readers never
-## fight over one window — the bug [DotNetStats] had with its rolling rates.
-##
-## Incoming packets are drained into a queue on [method _poll], the way [DotDualPeer] does
-## it, because [SceneMultiplayer] asks for a packet's sender, channel and mode around the
-## call that pops it, and a pass-through would describe the packet behind it.
-##
-## No ENet identifier is named in this file: the web template has none, and a script
-## mentioning one does not compile there. ENet is reached by [method Object.call].
+## transport can say about itself ([method transport_stats]).
+## A wrapper because ENet keeps byte totals and WebSocket none, and a browser is a WebSocket
+## client. Payload bytes, not wire bytes, and totals, never rates: each reader differences them.
+## Incoming packets are queued on [method _poll] like [DotDualPeer], and no ENet identifier is
+## named here (reached by [method Object.call]).
 
 ## The peer underneath. Everything is forwarded to it.
 var inner: MultiplayerPeer = null
@@ -85,10 +55,8 @@ static func wrap(peer: MultiplayerPeer) -> MultiplayerPeer:
 		return peer
 	var m := DotMeteredPeer.new()
 	m.inner = peer
-	# Methods, not lambdas: a lambda capturing [code]m[/code] would be held by the inner
-	# peer's signal and hold [code]m[/code], which holds the inner peer — a cycle between
-	# two RefCounted objects, and neither socket would ever be freed. A Callable bound to
-	# a method holds the object by id.
+		# Methods, not lambdas: a lambda capturing m is held by the inner peer's signal and holds
+		# m, which holds the inner peer, a RefCounted cycle that would never free the socket.
 	peer.peer_connected.connect(m._on_inner_connected)
 	peer.peer_disconnected.connect(m._on_inner_disconnected)
 	return m
@@ -108,7 +76,6 @@ static func of(peer: Object) -> DotMeteredPeer:
 	return peer as DotMeteredPeer if peer is DotMeteredPeer else null
 
 
-# --- What the application tells it ---------------------------------------------
 
 ## A round trip the application measured (a heartbeat echoed back).
 func note_rtt(ms: float) -> void:
@@ -127,7 +94,6 @@ func note_remote(info: Dictionary) -> void:
 	remote_at_ms = Time.get_ticks_msec()
 
 
-# --- Reading -------------------------------------------------------------------
 
 ## "enet", "websocket", or the inner peer's class.
 func transport_name() -> String:
@@ -150,14 +116,9 @@ func rtt() -> float:
 	return rtt_ms
 
 
-## What the transport underneath knows about the link to the server, and only what it
-## really knows:
-## - ENet: [code]rtt_ms[/code], [code]rtt_var_ms[/code], [code]loss[/code] (0..1, ENet's own
-##   running mean), [code]throttle[/code] (0..1, how far ENet has backed its unreliable
-##   sends off).
-## - WebSocket: [code]queued[/code], bytes accepted and not yet sent — the backlog that,
-##   on a reliable stream, is what loss turns into.
-## Empty for anything else, and for a server (which has a link per client, not one).
+## What the transport underneath really knows about the link. ENet: rtt_ms, rtt_var_ms, loss
+## and throttle (0..1). WebSocket: [code]queued[/code], bytes accepted and not yet sent.
+## Empty for anything else and for a server (a link per client).
 func transport_stats() -> Dictionary:
 	if inner == null or not inner.has_method(&"get_peer"):
 		return {}
@@ -246,7 +207,6 @@ static func _grow(a: PackedInt64Array, i: int) -> PackedInt64Array:
 	return a
 
 
-# --- MultiplayerPeerExtension ----------------------------------------------------
 
 func _poll() -> void:
 	if _closed or inner == null:

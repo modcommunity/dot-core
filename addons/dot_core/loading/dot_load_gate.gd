@@ -1,47 +1,12 @@
 class_name DotLoadGate
 extends "res://addons/dot_core/loading/dot_load_gate_state.gd"
 
-## "The game is not ready to be seen yet": one node a game holds closed while its level,
-## camera and players arrive, and that lifts a cover off the screen once they have.
-##
-## [codeblock]
-## # In the client's root, _ready():
-## gate = DotLoadGate.new()
-## add_child(gate)                                   # child of the game's root
-## gate.hold(&"map", "Loading the map")              # released when the level is built
-## gate.require(&"player", func() -> bool: return player != null, "Joining")
-## gate.freeze(player)                               # never simulates on a half-built world
-## # Released: the frozen player settles onto the floor for a few physics frames, still
-## # covered and with its input off, and only then is the game shown.
-## # ...later, when the level is in:
-## gate.release(&"map")
-## # A map change: hold again; the cover comes back and the frozen nodes stop again.
-## [/codeblock]
-##
-## [b]Why it exists.[/b] A delivered game is put on screen the moment its scene is added, and
-## its map, its camera and its players arrive over the next second or more: without a cover
-## the player watches a half-built world, a body falling through floor that is not there
-## yet, and every material compiling at first sight. The shell had a cover for the one game
-## that knew its duck-typed contract; this makes the same thing one line for every game, in
-## the shell and outside it ([code]./game.sh play[/code], a standalone run).
-##
-## [b]Who covers.[/b] A host (the client shell) claims the job by putting
-## [constant HOST_META] on an ancestor of the gate: the gate then calls the host's
-## [code]adopt_load_gate(gate)[/code] when it enters the tree, shows nothing itself, and
-## waits in [constant State.WARMING] for the host's [method host_finished] after
-## [signal ready_to_show]. With no host the gate shows its own [DotLoadingCover] (or
-## [member cover], [member cover_scene], [method _make_cover]) and runs [DotRenderWarmup]
-## under it before lifting it.
-##
-## [b]Finding it.[/b] The gate puts [constant META] on its parent, so [method of] finds it
-## from any node under the game; it also registers as [constant SERVICE] (scoped by
-## [member service_scope]), last-wins like every registry service. Nothing is global: two
-## clients in one process each have their own.
-##
-## [b]Older shells.[/b] A shell that predates the gate looks for a
-## [code]ready_to_show[/code] signal on the game's root. The gate adds that signal to its
-## parent as a user signal (unless the root declares its own) and emits it when it opens,
-## so an older shell still covers until then.
+## One node a game holds closed while its level, camera and players arrive, lifting a cover
+## once they have: without it the player sees a half-built world and a body falling through
+## floor that is not there yet. Hold, require or freeze, then release; a map change holds again.
+## A host claims the cover via [constant HOST_META] (see [method host_finished]); with no host
+## the gate shows its own [DotLoadingCover] and warms under it. [method of] finds it by
+## [constant META]; it also registers as [constant SERVICE]. Nothing is global.
 
 const CHANNEL := "dot.load_gate"
 
@@ -122,7 +87,6 @@ func _find_host() -> Object:
 	return null
 
 
-# --- What a game calls ------------------------------------------------------------------
 
 ## Keeps the gate closed until [method release] with the same [param reason]. Holding
 ## while open closes it again: the cover returns and frozen nodes stop.
@@ -267,7 +231,6 @@ func unfreeze(node: Node) -> void:
 		_release_input_of(id)
 
 
-# --- What a host calls ------------------------------------------------------------------
 
 ## [param host] covers the screen from now on: the gate's own cover goes, and a warm-up is
 ## the host's (see [method host_finished]).
@@ -288,7 +251,6 @@ func host_finished() -> void:
 		_open()
 
 
-# --- The machine ------------------------------------------------------------------------
 
 func _touch(reason: StringName) -> void:
 	_order.erase(reason)
@@ -435,10 +397,9 @@ func _bodies_at_rest() -> bool:
 	return true
 
 
-## Turns input off on [param node] and everything under it: event callbacks
-## (set_process_input and the rest) and an [code]input_enabled[/code] property, which is
-## how a dot-player-controller controller keeps simulating (falling, sliding to a stop)
-## with every input released. Remembers each so the gate opening puts it back.
+## Turns input off on [param node] and everything under it: event callbacks and an
+## [code]input_enabled[/code] property, so a controller keeps simulating (falling) with every
+## input released. Remembers each so the gate opening restores it.
 func _hold_input(node: Node) -> void:
 	node.set_meta(SETTLING_META, true)
 	var stack: Array[Node] = [node]
@@ -615,7 +576,6 @@ func _emit_progress() -> void:
 	progress_changed.emit(_fraction, text)
 
 
-# --- The gate's own cover ---------------------------------------------------------------
 
 ## The cover the gate shows when no host does. Override to build your own; the default is
 ## [member cover] if assigned, else an instance of [member cover_scene], else a

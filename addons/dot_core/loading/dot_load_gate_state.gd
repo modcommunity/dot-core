@@ -52,23 +52,15 @@ signal progress_changed(fraction: float, text: String)
 ## been built before the cover lifts.
 @export var settle_physics_frames: int = 3
 
-## The most physics frames the frozen nodes run for, still covered, before the gate warms
-## and opens: a body frozen in the air drops onto the floor here and not in front of the
-## player. Their input is off meanwhile (see [method is_settling]). 30 because a 1 m drop
-## takes 27 frames at 60 Hz; [member settle_until_rest] ends it after two for a body already
-## standing. 0 skips settling: frozen nodes then start the moment the gate opens.
+## The most physics frames the frozen nodes run, still covered, before the gate warms and
+## opens, so a body frozen in the air lands out of sight. 30 because a 1 m drop takes 27
+## frames at 60 Hz. 0 skips settling.
 @export var settle_frames: int = 30
 
-## End settling early once every frozen body is at rest. A body is at rest when the engine
-## says so (it has [code]is_on_floor()[/code], is on the floor, and is slower than
-## [member settle_rest_speed] by its [code]velocity[/code] or [code]linear_velocity[/code]:
-## two frames) OR when its [code]global_position[/code] has moved less than
-## [constant REST_EPSILON] for [constant REST_FRAMES] physics frames in a row. The position
-## test is the one that cannot be fooled: a body without [code]is_on_floor()[/code] or
-## [code]velocity[/code] used to count as at rest at once, lifting the cover on a body still
-## falling, and a [code]CharacterBody3D[/code] the game moves by script never reports a
-## floor or a velocity that matches its motion, so it always ran the whole cap. A node with
-## no position (a plain [Node]) is at rest. Asked by name, so any body type answers.
+## End settling early once every frozen body is at rest: the engine says so (on floor and
+## slower than [member settle_rest_speed]), or its position moved less than
+## [constant REST_EPSILON] for [constant REST_FRAMES] frames. The position test cannot be
+## fooled by a body lacking [code]is_on_floor()[/code] or velocity. No position counts as rest.
 @export var settle_until_rest: bool = true
 
 ## Metres per second under which a settling body counts as at rest.

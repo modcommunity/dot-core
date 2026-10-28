@@ -1,17 +1,8 @@
 class_name DotHashJob
 extends DotJob
 
-## Hashes a file in chunks, so a multi-gigabyte verify does not drop frames.
-##
-## Submit to a [DotScheduler]; on desktop it runs on a worker thread, on
-## single-threaded web builds it is sliced against the frame budget. Either way
-## the result is the file's SHA-256 as a lowercase hex string.
-##
-## [codeblock]
-## var job := DotHashJob.new("user://dot_cloud/objects/ab/abcd…", expected_hex)
-## var res := await scheduler.run(job)
-## if not res.ok: ...          # unreadable file, or hash mismatch
-## [/codeblock]
+## Hashes a file in chunks so a multi-gigabyte verify does not drop frames: on a worker thread,
+## or sliced against the frame budget on single-threaded web. Result: lowercase hex SHA-256.
 
 ## Chunks read per [method _step]. One 256 KiB read per step keeps a slice at
 ## roughly a third of a millisecond on desktop.
@@ -26,10 +17,8 @@ var _total: int = 0
 var _read: int = 0
 
 
-## [param p_expected] is optional. When given, a mismatch is reported as a
-## [constant DotError.CODE_INTEGRITY] failure rather than returning the wrong
-## hash for the caller to compare — which means no call site can forget to
-## compare.
+## [param p_expected] is optional; when given a mismatch is a [constant DotError.CODE_INTEGRITY]
+## failure, so no call site can forget to compare.
 func _init(p_path: String, p_expected: String = "") -> void:
 	path = p_path
 	expected = p_expected.to_lower()
@@ -71,11 +60,8 @@ func _step() -> bool:
 		return false
 
 	for _i in range(CHUNKS_PER_STEP):
-		# [b]Never `eof_reached()`.[/b] It is the one [FileAccess] call the engine does
-		# not null-check: on a closed file it dereferences null and the process dies
-		# with signal 11, where every other call logs and returns. An empty read is the
-		# end of the file just as well. [member DotJob._lock] keeps other threads from
-		# closing the file under a step; this keeps a closed file from being a crash.
+				# Never `eof_reached()`: the one FileAccess call the engine does not null-check, so on a
+				# closed file the process dies with signal 11. An empty read is the end just as well.
 		if not _file.is_open():
 			_finish(DotResult.fail(
 				DotError.CODE_IO,

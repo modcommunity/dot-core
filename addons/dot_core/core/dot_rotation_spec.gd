@@ -1,25 +1,11 @@
 class_name DotRotationSpec
 extends RefCounted
 
-## What an operator's rotation file says, and the one matcher that turns its entries into ids.
-##
-## [b]Shared by maps.yml (dot-map) and games.yml (dot-server-deploy), and that is the point.[/b]
-## Both files name a list of things to play, with named rotations, a mode and a cooldown, and
-## both accept the same entry shapes. A second copy of the matching is a second place where
-## `mg-*` means something different, so the thing being listed is abstract here: a
-## [i]candidate[/i] is a Dictionary `{"id": "surf_mesa", "ref": "owner/surf_mesa"}` (`ref` is
-## optional) and the caller supplies the installed ones.
-##
-## An entry is a string, or a mapping that carries per-entry settings: `{surf_*: {waves: hard}}`
-## or `{map: surf_*, waves: hard}` (pattern under `entry`, `map`, `id`, `name` or `game`, every other
-## key a setting). The pattern joins `entries` as if it were written as a string; the settings
-## are in `settings` (`pattern: {key: value}`) and [method settings_for] answers for one id.
-##
-## A section (one level of the file) normalises to
-## `{"rotation": String, "mode": String, "cooldown": int (-1 unset), "rotations": {name: {"mode": String, "cooldown": int, "entries": PackedStringArray, "settings": {pattern: Dictionary}}}}`.
-## A plain list under [param list_key] at the section's level is shorthand for a rotation
-## named `main`; if the section also defines `rotations: main`, that wins and a warning is
-## returned.
+## What an operator's rotation file says, and the one matcher turning its entries into ids,
+## shared by maps.yml and games.yml so `mg-*` means the same in both. A candidate is
+## `{"id", "ref"}` (ref optional). An entry is a string or a mapping with per-entry settings,
+## see [method settings_for]. A plain list under [param list_key] is shorthand for rotation
+## `main`; if `rotations: main` also exists, that wins with a warning.
 
 const MAIN := "main"
 const MODES := ["random", "cycle"]
@@ -133,15 +119,10 @@ static func cooldown_of(spec: Dictionary, name: String, fallback: int) -> int:
 	return c if c >= 0 else fallback
 
 
-## Expands [param entries] against [param candidates] (`{"id", "ref"}`), in written order,
-## each glob's matches sorted by id, no repeats.
-##
-## Entry shapes: `owner/map` (the candidate's ref), a bare name or a glob (`surf_*`, `*`,
-## matched against the id), `owner/*` (every candidate of that owner) and
-## `owner/collection/*` (every member of [param collections]`[owner/collection]`, an array of
-## `owner/map` refs the caller read from wherever collections are published). Comparison is
-## case-insensitive. Entries that matched nothing are appended to [param unmatched] so the
-## caller can WARN with its own words.
+## Expands [param entries] against [param candidates] in written order, each glob's matches
+## sorted by id, no repeats. Shapes: `owner/map`, a name or glob, `owner/*`, and
+## `owner/collection/*` (members of [param collections]). Case-insensitive; entries matching
+## nothing are appended to [param unmatched] so the caller can WARN.
 static func expand(entries: PackedStringArray, candidates: Array, collections: Dictionary,
 		unmatched: PackedStringArray) -> PackedStringArray:
 	var out := PackedStringArray()
@@ -268,12 +249,9 @@ static func _at(where: String) -> String:
 	return where + ": " if where != "" else ""
 
 
-## A `commands:` block: `prefix:` (a string, "" allowed, absent means the code's own) and
-## `names:` (role to a name or a list of names, the first being the one help and hints show and
-## the rest aliases). Normalised to `{"prefix": String (only if written), "names": {role: PackedStringArray}}`.
-## One leading "!" or "/" is removed (it is the chat prefix, set by `prefix:`). A name that is
-## then not lowercase letters, digits and underscores is dropped with a warning,
-## because it could never be typed after a chat prefix.
+## A `commands:` block: `prefix:` ("" allowed, absent means the code's own) and `names:` (role to
+## a name or list, the first shown in help, the rest aliases). One leading "!" or "/" is removed;
+## a name that is not lowercase letters, digits and underscores is dropped with a warning.
 static func _commands(value: Variant, warnings: PackedStringArray, where: String) -> Dictionary:
 	var out := {"names": {}}
 	if not value is Dictionary:
