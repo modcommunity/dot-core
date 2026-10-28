@@ -33,12 +33,8 @@ addons/dot_core/core/dot_registry.gd::long_block	8
 addons/dot_core/core/dot_registry_bus.gd::long_block	1
 addons/dot_core/core/dot_result.gd::long_block	4
 addons/dot_core/core/dot_rotation_spec.gd::long_block	3
-addons/dot_core/core/dot_scheduler.gd::banner	4
-addons/dot_core/core/dot_scheduler.gd::long_block	9
 addons/dot_core/core/dot_semver.gd::long_block	2
 addons/dot_core/core/dot_value.gd::long_block	4
-addons/dot_core/core/dot_yaml.gd::banner	5
-addons/dot_core/core/dot_yaml.gd::long_block	9
 addons/dot_core/dot_core_api.gd::history	2
 addons/dot_core/dot_core_api.gd::long_block	2
 addons/dot_core/dot_core_plugin.gd::long_block	2
@@ -50,7 +46,6 @@ addons/dot_core/loading/dot_loading_cover.gd::long_block	1
 addons/dot_core/net/dot_dual_peer.gd::banner	2
 addons/dot_core/net/dot_dual_peer.gd::long_block	6
 addons/dot_core/net/dot_http.gd::long_block	6
-addons/dot_core/net/dot_http_base.gd::long_block	9
 addons/dot_core/net/dot_http_server.gd::long_block	1
 addons/dot_core/net/dot_metered_peer.gd::banner	3
 addons/dot_core/net/dot_metered_peer.gd::long_block	3
@@ -60,15 +55,11 @@ addons/dot_core/net/dot_transport.gd::banner	2
 addons/dot_core/net/dot_transport.gd::long_block	6
 addons/dot_core/net/dot_transport_auto.gd::long_block	3
 addons/dot_core/net/dot_transport_dual.gd::long_block	4
-addons/dot_core/net/dot_transport_enet.gd::long_block	10
-addons/dot_core/net/dot_transport_websocket.gd::long_block	11
 addons/dot_core/net/dot_udp_demux.gd::long_block	1
 addons/dot_core/profile/dot_hitch_log.gd::long_block	1
 addons/dot_core/random/dot_random_config.gd::long_block	5
 addons/dot_core/random/dot_random_manager.gd::banner	3
 addons/dot_core/random/dot_random_manager.gd::long_block	6
-addons/dot_core/random/dot_random_schedule.gd::long_block	8
-addons/dot_core/random/dot_random_table.gd::long_block	11
 addons/dot_core/tools/dot_parse_all.gd::long_block	1
 addons/dot_core/tools/dot_requires.gd::long_block	1
 examples/addon_api_selftest.gd::long_block	1

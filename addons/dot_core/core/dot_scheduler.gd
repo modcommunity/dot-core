@@ -3,23 +3,8 @@ class_name DotScheduler
 extends Node
 
 ## Drives [DotJob]s inside a per-frame time budget, with optional worker threads.
-##
-## Place one anywhere in the tree (or let a [DotNodeRef] create it) and submit
-## jobs. On desktop, thread-safe jobs go to a small worker pool; on
-## single-threaded web builds — and for jobs that touch the scene tree —
-## everything is sliced on the main thread inside [member frame_budget_ms].
-##
-## [b]The budget is the whole point.[/b] Verifying a 2 GB content cache is
-## roughly 20 seconds of hashing. Doing it in one call drops the frame and
-## Chrome offers to kill the tab; doing it in 2 ms slices spreads it over 20
-## seconds of animated progress bar. The work takes the same time either way —
-## only one of them looks like a working program.
-##
-## [codeblock]
-## var job := DotHashJob.new("user://big.pck")
-## scheduler.submit(job)
-## var res: DotResult = await job.finished
-## [/codeblock]
+## Thread-safe jobs go to a worker pool on desktop; on web, and for scene-tree jobs, everything is sliced on the main thread inside [member frame_budget_ms].
+## The budget is the point: 20 s of hashing in one call drops the frame; in 2 ms slices it is an animated progress bar.
 
 const CHANNEL := "sched"
 
@@ -36,23 +21,15 @@ const PROGRESS_STEPS_ON_THREAD := 8
 @export_group("Budget")
 
 ## Milliseconds per frame spent stepping main-thread jobs.
-##
-## 2 ms of a 16 ms frame is invisible; 8 ms is not, but finishes four times
-## sooner. Loading screens raise this — see [method set_boost].
+## 2 ms of a 16 ms frame is invisible; 8 ms finishes four times sooner. Loading screens raise it ([method set_boost]).
 @export_range(0.1, 100.0, 0.1) var frame_budget_ms: float = 2.0
 
 ## Budget used while [method set_boost] is active.
-##
-## During a loading screen there is no gameplay to protect, so the only thing
-## the budget still buys is a responsive progress bar and a browser that does
-## not think the tab has hung.
+## A loading screen has no gameplay to protect; it still buys a responsive bar and a tab the browser does not think hung.
 @export_range(1.0, 500.0, 1.0) var boost_budget_ms: float = 12.0
 
 ## Steps between budget checks.
-##
-## Reading the clock per step measurably dominates cheap steps. Checking every
-## 32 lets a pathological step overshoot by at most 31 more of itself, which for
-## bounded steps is well inside the slack of a frame.
+## Reading the clock per step dominates cheap steps; every 32 lets an overshoot reach at most 31 extra steps.
 @export_range(1, 4096, 1) var steps_per_budget_check: int = 32
 
 @export_group("Threading")
@@ -63,9 +40,7 @@ const PROGRESS_STEPS_ON_THREAD := 8
 @export var use_threads: bool = true
 
 ## Worker count. 0 means [code]min(4, processors - 1)[/code].
-##
-## Capped low on purpose: this pool exists for IO-bound hashing and file
-## scanning, and saturating every core makes the frame worse, not better.
+## Capped low: the pool is for IO-bound work, and saturating every core worsens the frame.
 @export_range(0, 16, 1) var thread_count: int = 0
 
 var _main_queue: Array[DotJob] = []
@@ -113,7 +88,6 @@ func _resolved_thread_count() -> int:
 	return maxi(1, mini(4, OS.get_processor_count() - 1))
 
 
-# --- Submission ------------------------------------------------------------
 
 ## Queues a job. Returns it, so calls can be chained with [code]await[/code].
 func submit(job: DotJob) -> DotJob:
@@ -152,9 +126,7 @@ func run(job: DotJob) -> DotResult:
 
 
 ## Queues several jobs and waits for all of them.
-##
-## Returns results in submission order regardless of completion order, because
-## a caller zipping results back against its inputs must not have to sort them.
+## Results come in submission order so a caller can zip them against its inputs.
 func run_all(jobs: Array[DotJob]) -> Array[DotResult]:
 	for j in jobs:
 		submit(j)
@@ -168,11 +140,8 @@ func run_all(jobs: Array[DotJob]) -> Array[DotResult]:
 	return out
 
 
-## Raises the frame budget for [param seconds].
-##
-## Call on entering a loading screen. Self-expiring rather than paired with a
-## reset, because every early-return path out of a loading screen would
-## otherwise be a place to leave the budget high forever.
+## Raises the frame budget for [param seconds]. Call on entering a loading screen.
+## Self-expiring, not paired with a reset: every early return would be a place to leave it high.
 func set_boost(seconds: float = 30.0) -> void:
 	_boost_until_ms = maxi(
 		_boost_until_ms, Time.get_ticks_msec() + int(seconds * 1000.0)
@@ -210,7 +179,6 @@ func cancel_all() -> void:
 		j.cancel()
 
 
-# --- Main-thread stepping --------------------------------------------------
 
 func _process(_delta: float) -> void:
 	_drain_completed()
@@ -270,7 +238,6 @@ func _finish_job(job: DotJob) -> void:
 	job_finished.emit(job)
 
 
-# --- Worker threads -------------------------------------------------------
 
 func _start_threads() -> void:
 	var n := _resolved_thread_count()
@@ -312,10 +279,7 @@ func _worker_loop() -> void:
 		if job == null:
 			continue
 
-		# Threads get no frame budget: there is no frame to protect, and the
-		# whole reason to be here is to run flat out. Progress is still reported
-		# periodically, otherwise a threaded job would show a frozen bar for its
-		# whole duration — the opposite of why it was moved off the main thread.
+		# Threads get no frame budget (nothing to protect), but progress is still reported periodically so the bar does not freeze.
 		var steps := 0
 		while job.step():
 			steps += 1
@@ -343,10 +307,7 @@ func _worker_loop() -> void:
 
 
 ## Emits worker-job completions on the main thread.
-##
-## Signals must not cross threads — a listener that touches the scene tree from
-## a worker is a crash that reproduces once a week. Workers park settled jobs and
-## this hands them over.
+## Signals must not cross threads: workers park settled jobs and this hands them over.
 func _drain_completed() -> void:
 	_mutex.lock()
 	# Most frames have nothing parked; copying an empty array every frame is waste.
@@ -361,7 +322,6 @@ func _drain_completed() -> void:
 		_finish_job(job)
 
 
-# --- Reporting ------------------------------------------------------------
 
 func describe() -> Dictionary:
 	_mutex.lock()

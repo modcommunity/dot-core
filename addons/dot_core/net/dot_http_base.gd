@@ -5,31 +5,20 @@ extends Node
 
 
 ## Concurrent [HTTPRequest] children kept alive.
-##
-## Each in-flight request needs its own node. The ceiling stops a caller that
-## loops over a 900-file manifest from creating 900 nodes and 900 sockets;
-## dot-cloud's downloader has its own slot limit on top of this.
+## Each in-flight request needs its own node; the ceiling stops a 900-file manifest creating 900 sockets.
 const MAX_POOL := 16
 
 @export_group("Endpoint")
 
 ## Prepended to any path not starting with a scheme.
-##
-## Lets callers pass [code]"/api/app/v1/me"[/code] and be repointed at a staging
-## backbone by changing one field.
+## Repoints callers at a staging backbone by changing one field.
 @export var base_url: String = ""
 
 ## Sent with every request unless overridden per call.
 @export var default_headers: Dictionary = {}
 
-## Value for the [code]User-Agent[/code] header.
-##
-## Servers legitimately rate-limit or block unidentified clients, and the
-## backbone's audit log is more useful when it can tell a game server from a
-## browser.
-##
-## [b]Ignored on the web[/b], where the browser sends its own and setting one
-## only costs a CORS preflight -- see [method _build_headers].
+## Value for the [code]User-Agent[/code] header, so the backbone's audit log can tell a game server from a browser.
+## Ignored on web, where setting one only costs a CORS preflight ([method _build_headers]).
 @export var user_agent: String = "dot-core/0.1 (Godot)"
 
 @export_group("Timeouts")
@@ -49,9 +38,7 @@ const MAX_POOL := 16
 @export_range(0.5, 300.0, 0.5) var retry_max_sec: float = 15.0
 
 ## Random fraction added to each delay, to spread a thundering herd.
-##
-## Matters when a server restarts and 40 clients retry in lockstep: without
-## jitter they collide on every attempt and the backoff never helps.
+## Without jitter, 40 clients retrying after a restart collide on every attempt.
 @export_range(0.0, 1.0, 0.01) var retry_jitter: float = 0.3
 
 @export_group("Transfer")
@@ -60,9 +47,7 @@ const MAX_POOL := 16
 @export var accept_gzip: bool = true
 
 ## Bytes per read. 0 uses the engine default.
-##
-## HTTPRequest reads one chunk per frame without threads, so this is the per-frame
-## ceiling: 64 KiB left a rendered client at ~190 KiB/s. Default from [method default_chunk_size].
+## HTTPRequest reads one chunk per frame without threads, so this is the per-frame ceiling (64 KiB gave ~190 KiB/s). Default from [method default_chunk_size].
 @export var download_chunk_size: int = default_chunk_size()
 
 ## Read downloads on a worker thread. Off by default, ignored without [method DotPlatform.has_threads].
@@ -99,18 +84,14 @@ static func _setting(arg: String, env: String, project: String, fallback: Varian
 @export_range(0, 20, 1) var max_redirects: int = 8
 
 ## Refuse responses larger than this. 0 is unlimited.
-##
-## A guard against a hostile or broken content host streaming until the process
-## runs out of memory — which on a phone is a kill, not an error.
+## Guards against a content host streaming until a phone kills the process.
 @export var max_response_bytes: int = 0
 
 var _pool: Array[HTTPRequest] = []
 var _in_flight: int = 0
 
 ## Nodes handed out by [method _acquire] and not yet released.
-##
-## Busy-ness cannot be read off the node: one given request_raw() this frame still reads
-## DISCONNECTED, so two same-frame callers took the same node and parallel downloads failed.
+## Busy-ness cannot be read off the node (one given request_raw() this frame still reads DISCONNECTED).
 var _busy: Array[HTTPRequest] = []
 var _rng := RandomNumberGenerator.new()
 
@@ -152,9 +133,7 @@ func _build_headers(extra: Dictionary) -> PackedStringArray:
 
 
 ## Lowercases header names so lookups do not depend on a server's casing.
-##
-## HTTP header names are case-insensitive and real servers disagree
-## (`ETag`, `etag`, `Etag`), so a case-sensitive lookup works until it does not.
+## Header names are case-insensitive and real servers disagree (`ETag`, `etag`).
 func _parse_headers(raw: PackedStringArray) -> Dictionary:
 	var out := {}
 	for line in raw:
@@ -198,9 +177,7 @@ func _backoff_delay(attempt: int, err: DotError) -> float:
 
 
 ## Strips query strings from URLs before they reach a log.
-##
-## Tokens and signed URLs live in query parameters, and a log line is the most
-## commonly pasted artefact there is.
+## Tokens and signed URLs live in query parameters.
 func _redact(url: String) -> String:
 	var idx := url.find("?")
 	return url if idx < 0 else url.substr(0, idx) + "?…"

@@ -2,44 +2,9 @@
 class_name DotRandomTable
 extends Resource
 
-## A weighted table of ids, with the three draw policies every shipped game ends up with.
-##
-## [b]It draws ids and knows nothing about what they are.[/b] Same rule as dot-loadout's
-## "sells ids and grants nothing" and dot-economy's shop: a table of loot validates and
-## draws on a server that does not have the content, and the id is resolved by whoever
-## asked.
-##
-## The three policies exist because flat weighted sampling is wrong for most of what
-## people actually use a loot table for:
-##
-## [b]WITH_REPLACEMENT[/b] is the honest one. Every draw is independent. It is also the
-## one that makes a player who has opened forty crates and seen no rare drop conclude the
-## game is broken — which is not superstition, it is what a 2% chance feels like.
-##
-## [b]WITHOUT_REPLACEMENT[/b] is a deck: shuffled once, dealt, reshuffled when empty. The
-## variance is gone, which is what a rotation, a map vote's nominations and a card game
-## want. It is [i]not[/i] what a loot table wants, because a player can count the deck.
-##
-## [b]PITY[/b] is what almost every game with a rare drop actually ships and almost
-## nobody documents: the weight of an entry climbs every time it is missed and resets when
-## it lands, so the forty-crate story stops happening.
-##
-## [b]Set [member pity_after] or the base weight stops meaning anything.[/b] Measured
-## here: a 2% entry with a ramp starting on the first miss comes out at 14.5%, because
-## most droughts are short and the ramp was already inflating all of them. Starting the
-## ramp past the stated mean interval leaves the ordinary case untouched and cuts only the
-## tail — and even then the realised rate sits a little above the base, because removing
-## the long tail of a distribution and changing nothing else must raise its mean.
-## [method measure_rate] is the only honest way to know by how much.
-##
-## [codeblock]
-## var t := DotRandomTable.new()
-## t.policy = DotRandomTable.Policy.PITY
-## t.pity_after = 60             # ~2% means ~50 draws; leave the usual case alone
-## t.add(&"common", 98.0)
-## t.add(&"rare", 2.0, 4.0)      # +4 weight per miss, once past the ramp
-## t.draw(stream)
-## [/codeblock]
+## A weighted table of ids with three draw policies: WITH_REPLACEMENT (independent), WITHOUT_REPLACEMENT (a deck), PITY (weight climbs per miss).
+## It draws ids and knows nothing about what they are, so it validates and draws on a server without the content. Set [member pity_after] or the base weight stops meaning anything;
+## [method measure_rate] gives the realised rate.
 
 enum Policy {
 	## Independent draws. The default, and the only one with no memory.
@@ -51,13 +16,7 @@ enum Policy {
 }
 
 ## An entry's id, weight and pity step, flattened into parallel arrays.
-##
-## Flattened rather than an [code]Array[Resource][/code] because a table is content: it
-## round-trips through JSON in a catalogue, it is compared for equality between a server
-## and a client, and a nested resource is the shape that quietly becomes a shared
-## reference. [method to_dictionary] duplicates on the way out for the same reason —
-## [code]DotLeaderboardDef.scoped()[/code] handed out its own dictionary and every board
-## on the server ended up sharing one.
+## Flat because a table is content: it round-trips through JSON and compares across server and client; [method to_dictionary] duplicates so no nested reference is shared.
 @export var ids: Array[StringName] = []
 
 ## Base weights, aligned with [member ids]. Non-positive means "never".
@@ -73,27 +32,12 @@ enum Policy {
 @export var policy: Policy = Policy.WITH_REPLACEMENT
 
 ## Under [constant Policy.PITY], the ceiling a climbing weight stops at.
-##
-## Uncapped pity turns into a guarantee, and a guarantee is a different design: players
-## learn the exact count and open crates in batches up to it.
+## Uncapped pity becomes a guarantee, and players learn the count and batch up to it.
 @export_range(0.0, 100000.0, 0.1, "or_greater") var pity_cap: float = 1000.0
 
-## How many consecutive misses an entry takes before its weight starts climbing.
-##
-## [b]This is the setting that keeps the number on the tin true, and leaving it at zero
-## is a measured 2% entry coming out at 14.5%.[/b] Pity that starts immediately is
-## climbing on the very first draw, so the base weight stops describing anything: the
-## early draws — which are most draws, because most droughts are short — are already
-## inflated.
-##
-## Set past the stated mean interval (1/p) and the ordinary case is untouched: a player
-## who gets their drop in the usual twenty draws never reaches the ramp at all, and only
-## the unlucky tail is cut.
-##
-## [b]It cannot be free.[/b] Removing the long tail of a distribution and leaving
-## everything else alone necessarily raises the mean rate — that is arithmetic, not a bug
-## — so the realised rate is always a little above the base weight.
-## [method measure_rate] is how you find out by how much, and the number to tune against.
+## Consecutive misses an entry takes before its weight starts climbing.
+## Zero makes a measured 2% entry come out at 14.5%; set it past the mean interval (1/p) so only the unlucky tail is cut.
+## The realised rate stays a little above base (the tail is removed); [method measure_rate] says by how much.
 @export_range(0, 100000, 1) var pity_after: int = 0
 
 ## Mutable state for the two policies that have any.
@@ -127,10 +71,7 @@ func index_of(id: StringName) -> int:
 
 
 ## Checks the table is usable before anything draws from it.
-##
-## Called at boot rather than at the first draw on purpose: a malformed loot table should
-## fail a server's start-up, not produce an empty drop at the moment a player kills
-## something.
+## Called at boot so a malformed table fails start-up, not a drop at the moment a player kills something.
 func validate() -> DotResult:
 	var n := ids.size()
 	if n == 0:
@@ -191,10 +132,7 @@ func draw_many(stream: DotRandomStream, count: int) -> Array[StringName]:
 
 
 ## Draws from the entries carrying [param tag] only.
-##
-## Filtering here rather than by building a second table matters for pity: two tables
-## over the same entries have two pity counters, and a player who draws from both sees
-## the rare entry at twice the stated rate.
+## Filtering here, not a second table, keeps one pity counter per entry.
 func draw_tagged(stream: DotRandomStream, tag: StringName) -> StringName:
 	var w := _effective_weights()
 	for i in range(ids.size()):
@@ -251,12 +189,7 @@ func _ensure_pity() -> void:
 
 
 ## A deck, dealt in order and reshuffled when it runs out.
-##
-## Weights are honoured by putting an entry into the deck more than once, rounded to the
-## nearest whole card with a floor of one — so a weight of 0.4 against a weight of 2.0 is
-## one card against two, rather than being silently dropped. A table whose weights are
-## all fractions is a table somebody meant as probabilities, and dealing it as an empty
-## deck would be the most confusing possible answer.
+## Weights become card counts, rounded with a floor of one, so fractional weights are never silently dropped to an empty deck.
 func _draw_deck(stream: DotRandomStream) -> StringName:
 	if _deck_pos >= _deck.size():
 		_build_deck(stream)
@@ -307,17 +240,9 @@ func misses_of(id: StringName) -> int:
 	return _misses[i] if i >= 0 else 0
 
 
-## The rate [param id] actually comes out at, and the longest drought seen, over
-## [param samples] draws.
-##
-## [b]A pity table's base weight is not its rate, and this is the only honest way to know
-## what it is.[/b] The two numbers are the design: the rate is what a player is told and
-## the drought is what they feel. Tuning one without measuring the other is how a table
-## ends up at seven times its advertised rate with nobody noticing, because every draw
-## looked plausible.
-##
-## Returns [code]{"rate": float, "longest_drought": int, "hits": int}[/code]. It runs on
-## a copy, so a live table's counters are not disturbed by being measured.
+## The rate [param id] actually comes out at, and the longest drought seen, over [param samples] draws.
+## A pity table's base weight is not its rate; this is the only honest way to know. Runs on a copy, so live counters are untouched.
+## Returns [code]{"rate": float, "longest_drought": int, "hits": int}[/code].
 func measure_rate(stream: DotRandomStream, id: StringName, samples: int = 20000) -> Dictionary:
 	var probe := DotRandomTable.from_dictionary(to_dictionary())
 	var work := stream.duplicate_stream()
@@ -340,15 +265,7 @@ func measure_rate(stream: DotRandomStream, id: StringName, samples: int = 20000)
 
 
 ## Forgets the deck and every pity counter. The entries are untouched.
-##
-## [b]Not [code]reset_state[/code], which is the name it was written with and is the name
-## of a method [Resource] already has.[/b] GDScript accepts the definition without a
-## warning, the file parses clean, and every call binds to the ENGINE's method -- so this
-## ran on every call and did nothing at all, with the deck and every pity counter intact
-## afterwards. A table reset between rounds kept the previous round's drought, and the
-## only symptom is a rare drop arriving sooner than it should. Nothing in this family had
-## shadowed a native method before; the detector is a grep for the ones [Object] and
-## [Resource] already define.
+## Not named [code]reset_state[/code]: [Resource] already has that, GDScript parses it clean, and every call bound to the engine's method and did nothing.
 func forget_state() -> void:
 	_pity = PackedFloat32Array()
 	_pity.resize(ids.size())
@@ -377,11 +294,7 @@ func adopt(s: Dictionary) -> void:
 
 
 ## The whole table as plain data.
-##
-## Duplicated on the way out. A [Dictionary] and a packed array are both references in
-## GDScript, and this family has shipped that aliasing four times — a scoped leaderboard
-## sharing its template's dictionary, a zone payload, three of a record's dictionaries
-## and a map's metadata.
+## Duplicated on the way out: Dictionaries and packed arrays are references, and this aliasing has shipped four times.
 func to_dictionary() -> Dictionary:
 	var out_ids := []
 	for id in ids:
@@ -420,10 +333,7 @@ static func from_dictionary(d: Dictionary) -> DotRandomTable:
 
 
 ## The two ends of this round trip are tested together, in one check.
-##
-## They are written beside each other for the reason this family keeps relearning: a
-## stored voice mute came back as a warning because [code]to_dictionary[/code] wrote the
-## player-facing name and the reader had no case for it, and nothing errored.
+## Written beside each other because a reader with no case for a written key fails silently.
 static func policy_from_name(s: String) -> Policy:
 	match s.to_lower():
 		"without_replacement", "deck":

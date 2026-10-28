@@ -3,34 +3,8 @@ class_name DotRandomSchedule
 extends Resource
 
 ## Random events in ticks, decided by a pure function of the tick.
-##
-## [b]The interesting property is that it has no state.[/b] [method fires_at] asks
-## whether an event happens on tick N and answers without having simulated ticks 0..N-1,
-## so a client can know what the server will do, a replay can be scrubbed backwards, and
-## a server restarting mid-round lands on the same schedule it was already running.
-##
-## A stateful scheduler — the obvious one, a countdown reset on each fire — cannot do any
-## of those, and its failure mode is the one this family has hit twice: a clock that
-## latches. dot-vote's director dropped a [code]vote_due[/code] that arrived while a
-## cooldown was running and never offered another vote for the rest of the map.
-##
-## The model is a Bernoulli trial per tick at a rate derived from
-## [member mean_interval_ticks], plus two rules that make it feel designed rather than
-## random:
-##
-## - [member min_gap_ticks] — a hard floor between events, because two of anything in the
-##   same second reads as a bug however correct the distribution is.
-## - [member ramp_ticks] — the probability climbs from zero over this many ticks after
-##   the last event, so the very short intervals the exponential distribution is full of
-##   simply do not occur.
-##
-## [codeblock]
-## var s := DotRandomSchedule.new()
-## s.mean_interval_ticks = 64 * 30          # about every thirty seconds at 64 Hz
-## s.min_gap_ticks = 64 * 8
-## if s.fires_at(stream, tick, last_fired_tick):
-##     ...
-## [/codeblock]
+## Stateless: [method fires_at] answers for tick N without simulating 0..N-1, so a client can predict, a replay can scrub back and a restart lands on the same schedule (a countdown latches).
+## A Bernoulli trial per tick from [member mean_interval_ticks], with a hard floor [member min_gap_ticks] and a probability ramp [member ramp_ticks] so short gaps do not occur.
 
 ## The average gap between events. Zero means the schedule never fires.
 @export_range(0, 1000000, 1) var mean_interval_ticks: int = 600
@@ -39,28 +13,19 @@ extends Resource
 @export_range(0, 1000000, 1) var min_gap_ticks: int = 120
 
 ## Ticks over which the probability ramps up from zero after the last event.
-##
-## Measured from the end of [member min_gap_ticks]. Zero is a flat Poisson process, which
-## is statistically pure and feels arbitrary.
+## Measured from the end of [member min_gap_ticks]. Zero is a flat Poisson process: pure and arbitrary-feeling.
 @export_range(0, 1000000, 1) var ramp_ticks: int = 0
 
 ## A hard ceiling on the gap. Zero is no ceiling.
-##
-## What a director uses to guarantee that [i]something[/i] happens: past this many ticks
-## the schedule fires regardless of the roll. Pity, one layer up — and for the same
-## reason, because "nothing has happened for four minutes" is indistinguishable from a
-## broken game.
+## Past this many ticks the schedule fires regardless of the roll: pity, one layer up.
 @export_range(0, 1000000, 1) var max_gap_ticks: int = 0
 
 ## A multiplier a game can move at runtime — difficulty, a director's intensity, a cvar.
 @export_range(0.0, 100.0, 0.01, "or_greater") var rate_scale: float = 1.0
 
 
-## Whether an event fires on [param tick], given that the last one was at
-## [param last_tick].
-##
-## [param last_tick] of a negative value means "nothing has fired yet", and the gap is
-## then measured from tick zero.
+## Whether an event fires on [param tick], given the last one at [param last_tick].
+## A negative [param last_tick] means nothing has fired yet; the gap is measured from tick zero.
 func fires_at(stream: DotRandomStream, tick: int, last_tick: int) -> bool:
 	if stream == null or mean_interval_ticks <= 0 or rate_scale <= 0.0:
 		return false
@@ -81,19 +46,13 @@ func fires_at(stream: DotRandomStream, tick: int, last_tick: int) -> bool:
 
 
 ## The per-tick probability [param since] ticks after the last event.
-##
-## Exposed because a director wants to draw it, and because a number a designer can read
-## is a number a designer can tune. It is also what the self-test asserts against, rather
-## than asserting one particular roll.
+## Exposed so a director can draw it and the self-test can assert it rather than one roll.
 func probability_at(since: int) -> float:
 	if mean_interval_ticks <= 0:
 		return 0.0
 
 	var effective_mean := float(mean_interval_ticks) / maxf(rate_scale, 0.0001)
-	# The floor and the ramp both remove time from the distribution, so the raw rate has
-	# to be higher than 1/mean for the *mean* to come out at mean. Without this the
-	# measured interval is mean + min_gap + ramp/2, which is a schedule that is quietly
-	# slower than the number a designer typed.
+	# The floor and ramp remove time, so the raw rate must exceed 1/mean for the mean to come out right; else the interval is mean + min_gap + ramp/2.
 	var removed := float(min_gap_ticks) + float(ramp_ticks) * 0.5
 	var target := maxf(effective_mean - removed, 1.0)
 	var p := 1.0 / target
@@ -105,11 +64,8 @@ func probability_at(since: int) -> float:
 	return clampf(p, 0.0, 1.0)
 
 
-## The next tick at or after [param from] on which this schedule fires.
-##
-## Bounded rather than open-ended: a schedule configured never to fire would otherwise
-## loop for ever, and "look ahead at most a minute" is what every caller actually wants.
-## Returns -1 when nothing fires inside the horizon.
+## The next tick at or after [param from] on which this schedule fires, or -1 inside the horizon.
+## Bounded: a schedule configured never to fire would loop for ever.
 func next_fire(stream: DotRandomStream, from: int, last_tick: int, horizon: int = 100000) -> int:
 	for t in range(from, from + maxi(1, horizon)):
 		if fires_at(stream, t, last_tick):
@@ -118,9 +74,7 @@ func next_fire(stream: DotRandomStream, from: int, last_tick: int, horizon: int 
 
 
 ## The measured mean interval over [param samples] events, for tuning and for tests.
-##
-## A schedule is a distribution, and the only honest assertion about a distribution is
-## about its shape. Asserting that tick 4,192 fires is asserting the mixer.
+## Assert the shape of a distribution, not that tick 4,192 fires (that asserts the mixer).
 func measure_mean_interval(stream: DotRandomStream, samples: int = 200) -> float:
 	if samples <= 0:
 		return 0.0

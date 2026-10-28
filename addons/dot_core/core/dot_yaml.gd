@@ -1,59 +1,20 @@
 class_name DotYaml
 extends RefCounted
 
-## A YAML reader for configuration files, and nothing more.
-##
-## [b]A deliberately small subset, and it refuses everything else rather than guessing.[/b]
-## Godot ships no YAML parser and a complete one is a large program with a long history of
-## parser bugs — anchors, aliases, merge keys, tags, flow collections, multi-document
-## streams, five kinds of scalar quoting and a boolean type famous for turning the country
-## code `NO` into `false`. None of that belongs in a file that decides what port a server
-## listens on.
-##
-## What is supported is exactly what an operator writes in a `.yml` a human maintains:
-##
-## [codeblock]
-## # comments, to end of line
-## sv_name: "TMC Test Server"     # strings, quoted or bare
-## sv_maxplayers: 64              # integers and floats
-## sv_cheats: false               # true/false/yes/no/on/off
-## sv_password:                   # empty -> ""
-## backend:                       # nested maps, by indentation
-##   type: rest
-##   retries: 3
-## tags:                          # sequences of scalars
-##   - pvp
-##   - modded
-## groups:                        # sequences of maps, and maps of maps
-##   admin:
-##     permissions: [kick, ban]   # a flow sequence of scalars, one line
-## [/codeblock]
-##
-## What it refuses, with a line number: tabs for indentation, an inconsistent indent, a
-## key with no colon, a duplicate key in one map, an anchor, an alias, a tag, a document
-## marker, a block scalar, and a flow *mapping*. Every one of those is either a mistake or
-## a feature this format does not have, and both are better as an error at boot than as a
-## value nobody intended.
-##
-## [b]It belongs in dot-core eventually and is here for now.[/b] The family's rule is that
-## shared plumbing lives in dot-core and is copied by consumers, or is duplicated
-## deliberately — and today this has exactly one consumer. Moving it before a second one
-## exists would put a parser in fourteen repositories to serve one.
+## A YAML reader for configuration files, and nothing more: a deliberately small subset that refuses everything else.
+## Supported: comments, quoted or bare scalars, ints, floats, bools, nested maps, sequences, one-line flow sequences.
+## Refused with a line number: tabs, bad indent, duplicate keys, anchors, aliases, tags, block scalars, flow mappings.
 
 # No log channel: a parser that returns a DotResult naming the line it refused. Every
 # caller (TmcConfig, TmcContent, install_games) wraps that with the file's path and
 # returns it, and the host says why it did not start; a line here would say it twice.
 
 ## Longest line accepted, in characters.
-##
-## Bounded because a config file is sometimes fetched, sometimes mounted from a volume,
-## and always read before anything has decided whether to trust it.
+## Bounded because a config is read before anything has decided to trust it.
 const MAX_LINE := 4096
 
 ## Deepest nesting accepted.
-##
-## Four is more than any file in `cfg/` needs. The bound exists because the parser is
-## recursive and a hostile file should produce an error rather than a stack overflow.
+## The parser is recursive; a hostile file should error, not overflow the stack.
 const MAX_DEPTH := 8
 
 
@@ -82,10 +43,7 @@ static func parse(text: String, source: String = "<string>") -> DotResult:
 
 
 ## Parses a file. A missing file is a failure, not an empty map.
-##
-## "The file is not there" and "the file is there and empty" are different problems with
-## different fixes, and a reader that collapses them makes a typo in a path look like a
-## config that simply sets nothing.
+## Collapsing the two would make a path typo look like a config that sets nothing.
 static func parse_file(path: String) -> DotResult:
 	if not FileAccess.file_exists(path):
 		return DotResult.fail(
@@ -106,13 +64,9 @@ static func parse_file(path: String) -> DotResult:
 	return parse(text, path)
 
 
-# --- Lexing ----------------------------------------------------------------
 
 ## Strips comments and blank lines, and measures each remaining line's indent.
-##
-## Returns an [Array] of rows, or a [DotResult] failure. Refuses a tab in the indent: YAML
-## forbids it, editors disagree about how wide one is, and a file that mixes them nests
-## differently for two people looking at the same bytes.
+## Returns rows or a [DotResult] failure. A tab in the indent is refused: editors disagree on its width.
 static func _prepare(text: String, source: String) -> Variant:
 	var rows: Array = []
 	var number := 0
@@ -155,13 +109,8 @@ static func _prepare(text: String, source: String) -> Variant:
 	return rows
 
 
-## Removes a trailing comment, respecting quotes.
-##
-## A `#` inside a quoted string is data. Without this, `sv_name: "Bob's #1 server"` becomes
-## `"Bob's` and the server is named something nobody typed.
-## Whether a quote character at [param index] starts a quoted scalar. Only at the start of a
-## value: after a space, `[`, `{`, `,`, `:` or at the start. The apostrophe in `Bob's map # c`
-## follows a letter, so it is text, and the comment after it is still a comment.
+## Removes a trailing comment, respecting quotes: a `#` inside a quoted string is data.
+## Whether a quote at [param index] starts a quoted scalar: only at a value start, so the apostrophe in `Bob's map # c` is text.
 static func _opens_quote(text: String, index: int) -> bool:
 	return index == 0 or " \t[{,:".contains(text[index - 1])
 
@@ -189,12 +138,9 @@ static func _strip_comment(text: String) -> String:
 	return text.strip_edges()
 
 
-# --- Parsing ---------------------------------------------------------------
 
 ## Parses one indented block: a map, or a sequence.
-##
-## [param cursor] is a one-element [Array] used as a mutable index — GDScript lambdas and
-## calls copy an [int] and this has to be shared across the recursion.
+## [param cursor] is a one-element [Array] used as a shared mutable index across the recursion.
 static func _parse_block(
 	rows: Array,
 	cursor: Array,
@@ -401,13 +347,9 @@ static func _line_at(rows: Array, cursor: Array) -> int:
 	return int((rows[cursor[0]] as Dictionary)["line"])
 
 
-# --- Scalars ---------------------------------------------------------------
 
 ## Turns a scalar into a typed value, or returns a [DotResult] failure.
-##
-## Types are inferred, which is what makes a config file readable — and the inference is
-## deliberately narrow. A quoted value is always a string, so `sv_maxplayers: "64"` and
-## `country: "NO"` mean what they say.
+## Inference is deliberately narrow: a quoted value is always a string (`country: "NO"`).
 static func _parse_scalar(text: String, source: String, line: int) -> Variant:
 	if text == "":
 		return ""
@@ -517,12 +459,9 @@ static func _fail(source: String, line: int, why: String) -> DotResult:
 	)
 
 
-# --- Reading a parsed tree -------------------------------------------------
 
 ## Fetches a nested value by a dotted path. Missing returns [param fallback].
-##
-## `DotYaml.at(cfg, "backend.verify.type", "jwt")`. Exists so a caller reads a setting in
-## one line without a chain of `has()` checks — every one of which is a place to forget one.
+## One line instead of a chain of `has()` checks.
 static func at(tree: Dictionary, path: String, fallback: Variant = null) -> Variant:
 	var node: Variant = tree
 
@@ -535,7 +474,6 @@ static func at(tree: Dictionary, path: String, fallback: Variant = null) -> Vari
 	return node
 
 
-# --- Writing a tree --------------------------------------------------------
 
 ## yml text for [param tree] (nested mappings, scalars, flat lists of scalars), or null when a value
 ## is anything else. Strings are always double-quoted so the reader gives back the same type.

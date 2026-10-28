@@ -2,22 +2,9 @@
 class_name DotTransportENet
 extends DotTransport
 
-## ENet (UDP) transport — lower overhead, no browser clients.
-##
-## Prefer this when every client is desktop or mobile. Unreliable channels mean a
-## dropped position update is skipped rather than retransmitted, which is exactly
-## right for state that a newer packet supersedes and which TCP cannot express.
-##
-## [b]Browsers cannot connect to this, at all.[/b] Not "slowly" or "with a
-## shim" — the web export template has no UDP sockets and no [ENetMultiplayerPeer]
-## class. A server that needs both audiences must use [DotTransportWebSocket].
-##
-## [b]Note on how this file talks to ENet.[/b] Every call goes through
-## [method ClassDB.instantiate] and [method Object.call] rather than naming
-## [code]ENetMultiplayerPeer[/code]. That is not style: a web build has no such
-## identifier, and a script mentioning one fails to compile there — which would
-## make this file impossible to ship inside an addon that also supports web. The
-## indirection costs a dictionary lookup at connect time and keeps one codebase.
+## ENet (UDP) transport: lower overhead, unreliable channels, no browser clients (the web template has no UDP or [ENetMultiplayerPeer]).
+## Use [DotTransportWebSocket] when browsers must connect.
+## Every ENet call goes through [method ClassDB.instantiate] and [method Object.call]: naming [code]ENetMultiplayerPeer[/code] fails to compile on web.
 
 ## ENet's own limit. Exceeding it is a configuration error, not a resource one.
 const ENET_MAX_PEERS := 4095
@@ -30,33 +17,18 @@ const ENET_DEFAULT_THROTTLE_DECELERATION := 2
 @export_group("ENet")
 
 ## Channels to allocate. See [enum DotTransport.Channel].
-##
-## Must match on client and server: ENet negotiates the minimum of the two, so a
-## mismatch silently collapses the content channel onto a gameplay one.
+## Must match on both ends: ENet takes the minimum, so a mismatch collapses the content channel onto a gameplay one.
 @export_range(1, 32, 1) var channel_count: int = DotTransport.CHANNEL_COUNT
 
 ## Client-side local port to bind. 0 lets the OS choose.
-##
-## Set it only when a firewall rule needs a fixed source port; a fixed port also
-## means two clients cannot run on one machine.
+## Set only for a firewall rule needing a fixed source port; two clients then cannot share a machine.
 @export var client_local_port: int = 0
 
 @export_group("Timeouts")
 
-## When ENet gives up on a peer that is not acknowledging reliable traffic, applied to every
-## peer on both ends as it connects ([code]ENetPacketPeer.set_timeout[/code]).
-##
-## [b]ENet's own defaults drop a player on a bad patch, not on a dead link.[/b] They are a
-## limit of 32 and a minimum of 5 s: once one reliable command has been resent with its
-## timeout doubled five times, and five seconds have passed, the peer is disconnected
-## (thirdparty/enet/protocol.c, the `timeoutLimit` test). A resend fails if the data OR its
-## acknowledgement is lost, so at 20% loss each way that is a 36% chance per try and six
-## in a row is about one reliable command in five hundred: game-arena's headless_lossy saw
-## the server drop a player who was still sending every tick about one run in four. A
-## server here already decides for itself when a silent client is gone
-## (dot-server's client_timeout_sec, 60 s), so the transport's job is only to notice a
-## link that is really dead. The limit is set high enough that only
-## [member peer_timeout_max_ms] decides: a reliable command unacknowledged that long.
+## When ENet gives up on a peer not acknowledging reliable traffic, applied to every peer as it connects ([code]ENetPacketPeer.set_timeout[/code]).
+## ENet's defaults (limit 32, min 5 s) drop a player on a bad patch, not a dead link; at 20% loss that was about one run in four.
+## The limit is set high so only [member peer_timeout_max_ms] decides; dot-server's client_timeout_sec handles silent clients.
 @export_range(1, 65536, 1) var peer_timeout_limit: int = 1024
 
 ## See [member peer_timeout_limit]. Only matters when the limit is reached first.
@@ -67,28 +39,9 @@ const ENET_DEFAULT_THROTTLE_DECELERATION := 2
 
 @export_group("Packet throttle")
 
-## How far ENet's packet throttle falls on each late acknowledgement, out of 32; 0, the
-## default here, means it never falls. Applied to every peer as it connects, with
-## [member packet_throttle_interval_ms] and [member packet_throttle_acceleration], and ENet
-## sends the setting to the far end, so a client and a server each fix both directions.
-##
-## [b]ENet's throttle drops unreliable packets at the SENDER, and it reads a slow frame as
-## congestion.[/b] Every acknowledgement of a reliable command is a round-trip sample, timed
-## when the sender next services the host. One longer than the last interval's lowest round
-## trip plus twice its variance takes 2 off the throttle; one at or under that lowest adds 2;
-## and an unreliable packet goes out only when a rotating counter is under the throttle
-## (thirdparty/enet/peer.c `enet_peer_throttle`, protocol.c's `packetThrottleCounter`). On a
-## path whose round trip barely varies (a steady 60 ms each way) the variance is a few
-## milliseconds, so a burst of reliable data -- a joiner's level, a new house -- acknowledged
-## across one long frame at either end (a level being built, a module loading) takes the
-## throttle to 0 in a second, and it climbs back 2 per lucky sample: mg-look-at-me's client
-## delivered 2-10% of its commands and received 2-10% of its snapshots through dot-net's relay
-## at 0% loss, while game-arena, sending no burst, passed. Loopback never shows it: there the
-## round trip is under its own variance, which pins the throttle at full. Nothing in the
-## family wants it: state sent unreliably is superseded by the next tick's, dot-net budgets
-## its own bytes per client, and a command dropped by the sender is a tick the server plays
-## on the previous one. [constant ENET_DEFAULT_THROTTLE_DECELERATION] puts ENet's back, which
-## is what mg-look-at-me's `headless_lossy -- --stock-throttle` does as the control.
+## How far ENet's packet throttle falls on each late acknowledgement, out of 32; 0 (default here) means it never falls.
+## ENet's throttle drops unreliable packets at the SENDER and reads one slow frame as congestion: on a steady path a reliable burst took it to 0 and a client got 2-10% of snapshots at 0% loss.
+## Nothing here wants it (state is superseded, dot-net budgets bytes); [constant ENET_DEFAULT_THROTTLE_DECELERATION] restores ENet's.
 @export_range(0, 32, 1) var packet_throttle_deceleration: int = 0
 
 ## See [member packet_throttle_deceleration]. ENet's defaults.
@@ -97,12 +50,8 @@ const ENET_DEFAULT_THROTTLE_DECELERATION := 2
 
 @export_group("Compression")
 
-## ENet's built-in compression mode.
-##
-## [constant ENetConnection.COMPRESS_RANGE_CODER] is the usual choice and is
-## Godot's default. Compression must match on both ends — a mismatch presents as
-## a connection that establishes and then delivers garbage, which is a
-## memorably bad afternoon.
+## ENet's built-in compression mode ([constant ENetConnection.COMPRESS_RANGE_CODER] is the usual choice).
+## Must match on both ends: a mismatch connects and then delivers garbage.
 @export_enum(
 	"None:0",
 	"RangeCoder:1",
@@ -160,17 +109,8 @@ func _create_server(port: int, bind_address: String) -> DotResult:
 	if bind_address != "" and bind_address != "*":
 		peer.call("set_bind_ip", bind_address)
 
-	# [b]0 channels, on purpose, and it is not a channel count.[/b] The engine's
-	# `create_server` hands its channel argument to ENet as the host's INCOMING
-	# BANDWIDTH and passes 0 as the channel limit (`create_host_bound(bind_ip, port,
-	# max_clients, 0, max_channels + SYSCH_MAX, out_bandwidth)`), and `in_bandwidth`
-	# is never used. With our four channels a server told every client it could take
-	# six bytes a second, and the client's ENet believed it: its throttle limit fell to
-	# 1/32 within the first second of traffic and most unreliable packets -- every
-	# client's commands -- were dropped until the server's own correction and then the
-	# throttle's slow climb, up to twenty seconds. Passing 0 changes only that slot: the
-	# channel limit is ENet's maximum either way, and a client still asks for
-	# `channel_count`. `dual_transport_selftest` measures it on a real pair.
+	# 0 channels on purpose: the engine's `create_server` passes this argument to ENet as INCOMING BANDWIDTH, not a channel count.
+	# With four channels each client was told it could take six bytes a second and throttled itself to 1/32; `dual_transport_selftest` measures it.
 	var err: int = peer.call(
 		"create_server",
 		port,
@@ -238,10 +178,7 @@ func _new_peer() -> Object:
 
 
 ## Applies compression to the peer's underlying [ENetConnection].
-##
-## Reached dynamically for the same reason as everything else here. A failure is
-## logged rather than fatal: an uncompressed connection works, it just costs more
-## bandwidth, and taking a server down over it would be the wrong trade.
+## A failure is logged, not fatal: an uncompressed connection only costs bandwidth.
 func _apply_compression(peer: Object) -> void:
 	if not peer.has_method("get_host"):
 		return
@@ -256,18 +193,14 @@ func _apply_compression(peer: Object) -> void:
 	)
 
 
-## Gives every peer [member peer_timeout_limit] and friends, and the packet throttle's
-## settings ([member packet_throttle_deceleration]), as it connects. On a server that
-## is each client; on a client, the server (id 1). Connected rather than applied once,
-## because a peer's [code]ENetPacketPeer[/code] exists only from its connection on.
+## Gives every peer [member peer_timeout_limit] and the packet throttle settings as it connects (each client on a server; the server on a client).
+## Connected, not applied once: a peer's [code]ENetPacketPeer[/code] exists only from its connection on.
 func _apply_timeouts_on_connect(peer: Object) -> void:
 	if not peer.has_signal("peer_connected") or not peer.has_method("get_peer"):
 		return
 
-	# A weak reference and a static function, not a lambda: a lambda capturing the peer and
-	# connected to the peer's own signal is a reference cycle, and every server and client
-	# made here leaked at exit. Static because the transport is often a temporary
-	# (`DotTransportENet.new().create_client(...)`) that is gone before anybody connects.
+	# A weak reference and a static function, not a lambda: a capturing lambda on the peer's own signal is a reference cycle that leaked at exit.
+	# Static because the transport is often a temporary gone before anybody connects.
 	peer.connect("peer_connected", _set_peer_timeout.bind(weakref(peer),
 		peer_timeout_limit, peer_timeout_min_ms, peer_timeout_max_ms,
 		[packet_throttle_interval_ms, packet_throttle_acceleration, packet_throttle_deceleration]))
