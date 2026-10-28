@@ -50,7 +50,7 @@ const AUTO_MAX := 8
 const _SAMPLES_KEPT := 256
 
 ## Test switch: run every task twice, inline in reverse index order and then as configured,
-## and [method @GlobalScope.push_error] on any slot that differs. Catches a task that reads
+## and [method DotLog.error] on any slot that differs. Catches a task that reads
 ## another task's slot, a result that depends on order, and a task that is not pure after all
 ## (its second run differs because its first one wrote something it then read).
 ##
@@ -152,8 +152,8 @@ static func run(
 			var difference: String = compare.call(reference[i], slots[i])
 			if difference != "":
 				verify_failures += 1
-				push_error("DotParallel verify: %s task %d of %d differs between a reverse inline run and a %s run: %s"
-					% [label, i, count, "pooled" if n > 0 else "forward inline", difference])
+				DotLog.error(CHANNEL, "verify: task differs between a reverse inline run and a %s run" % ("pooled" if n > 0 else "forward inline"),
+					{"label": String(label), "task": i, "count": count, "difference": difference})
 
 	_note(label, count, n > 0, usec)
 	return slots

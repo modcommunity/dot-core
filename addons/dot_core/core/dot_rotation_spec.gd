@@ -21,7 +21,6 @@ extends RefCounted
 ## named `main`; if the section also defines `rotations: main`, that wins and a warning is
 ## returned.
 
-const CHANNEL := "core.rotation"
 const MAIN := "main"
 const MODES := ["random", "cycle"]
 const PATTERN_KEYS := ["entry", "map", "id", "name", "game"]
