@@ -1,43 +1,11 @@
 class_name DotParallel
 extends RefCounted
 
-## A fork/join that returns inside the tick: [code]count[/code] pure tasks, each writing only
-## its own result slot, on the engine's worker pool or inline on the calling thread.
-##
-## [codeblock]
-## var slots := DotParallel.run(func(i: int) -> Variant: return build(i),
-##         chunks, &"net.snapshot", config.snapshot_workers, compare)
-## for result in slots:          # index order, on the calling thread
-##     apply(result)
-## [/codeblock]
-##
-## [b]Not [DotScheduler].[/b] A [DotJob] is long background work with a lock per job and a
-## [code]finished[/code] signal deferred to the main thread, so its answer lands a frame later.
-## A server tick needs the answer before the tick ends: this is
-## [method WorkerThreadPool.add_group_task] and [method WorkerThreadPool.wait_for_group_task_completion],
-## with the calling thread blocked in between, so nothing else on that thread can move the
-## world under a task.
-##
-## [b]What a task may do.[/b] Read data frozen before the fork, and write only the value it
-## returns (or containers it created itself). No node API (a worker's read of
-## [code]global_position[/code] returns zero with an error in a debug build and a racing value in
-## a release one), no physics query, no [DotLog] (sinks run on the caller's thread), no
-## signal, no write into a container another task can see, no draw from a shared random
-## stream. Changes to long-lived state come back in the result and the caller applies them in
-## index order, which is what makes the answer the same with any worker count.
-##
-## [b]No typed array of nodes built on a worker.[/b] Appending a node to an
-## [code]Array[SomeNode][/code] checks it through [method Node.get_script], which is
-## thread-guarded: for a node in the tree the append fails with an error and the element is
-## simply missing. Keep untyped [Array]s on the worker and [method Array.assign] them on the
-## caller's thread. Typed locals and typed loop variables are fine.
-##
-## [b]Static, no autoload, no node[/b], and no process-wide worker count: [param workers] comes
-## from the caller's own config, so a listen server and a client (or two servers) in one process
-## never change each other's threading. Only [member verify] is process-wide, and only suites
-## set it.
-##
-## See game-dev/docs: server-threading.md (the design), and docs/engine-traps.md here.
+## A fork/join that returns inside the tick: [code]count[/code] pure tasks, each writing only its
+## own result slot, on the worker pool or inline. Not [DotScheduler]: the answer lands this tick.
+## A task reads frozen data and writes only its return value: no node API, physics, [DotLog],
+## signal, shared container or shared random stream, and no typed node array. Static, so
+## [param workers] comes from the caller. See docs/engine-traps.md and server-threading.md.
 
 const CHANNEL := "parallel"
 
@@ -49,15 +17,9 @@ const AUTO_MAX := 8
 ## Fork/join times kept per label, for [method describe]'s p99.
 const _SAMPLES_KEPT := 256
 
-## Test switch: run every task twice, inline in reverse index order and then as configured,
-## and [method DotLog.error] on any slot that differs. Catches a task that reads
-## another task's slot, a result that depends on order, and a task that is not pure after all
-## (its second run differs because its first one wrote something it then read).
-##
-## Only for a task given a [code]compare[/code]: one that applies changes (not pure on purpose)
-## is never run twice. Off by default; [code]DOT_PARALLEL_VERIFY=1[/code] in the environment
-## turns it on at the first [method run], so a suite runner can switch it on for a game whose
-## scripts it does not edit.
+## Test switch: run every task twice (reverse order, then as configured) and [method DotLog.error]
+## on any slot that differs, catching order dependence or impure tasks. Only for a task given a
+## [code]compare[/code]. [code]DOT_PARALLEL_VERIFY=1[/code] turns it on at the first [method run].
 static var verify: bool = false
 
 ## Slots [member verify] found different, since the process started. What a suite asserts on,
@@ -71,12 +33,8 @@ static var _env_read: bool = false
 static var _stats: Dictionary = {}
 
 
-## Whether a [method run] can use the worker pool at all.
-##
-## [b]Off on the web, threads or not.[/b] A threaded web build has threads, and a browser can
-## host a peer-to-peer game that builds snapshots, but
-## [method WorkerThreadPool.wait_for_group_task_completion] would block the page's main thread,
-## which the browser does not allow to wait. A one-core machine gains nothing from a pool.
+## Whether a [method run] can use the worker pool. Off on web even with threads: waiting for
+## a group task would block the page's main thread, which the browser forbids.
 static func available() -> bool:
 	return DotPlatform.has_threads() and not DotPlatform.is_web() \
 		and OS.get_processor_count() > 1
@@ -93,21 +51,10 @@ static func resolve_workers(workers: int) -> int:
 	return workers
 
 
-## Calls [code]task.call(i)[/code] for [code]i[/code] in [code]0..count-1[/code] and returns
-## the [param count] results, slot [code]i[/code] holding task [code]i[/code]'s, once every task
-## has finished.
-##
-## On the worker pool when [method resolve_workers] of [param workers] is not 0 (with at most
-## that many tasks running at once), else a plain loop in index order on the calling thread:
-## the same tasks either way, so the inline path is the one every suite runs as its "off" half.
-##
-## [param label] groups the figures in [method describe]. [param compare] is
-## [code]func(a, b) -> String[/code], empty when two results of the same task are the same and
-## a description of the first difference otherwise; given one, [member verify] runs the tasks
-## twice and compares. Without one the tasks are taken not to be pure and are never re-run.
-##
-## Call it from one thread at a time per set of data the tasks share; the pool itself is
-## process-wide and safe to share.
+## Calls [code]task.call(i)[/code] for each [code]i[/code] in [code]0..count-1[/code] and returns
+## the results by slot. On the pool when [method resolve_workers] of [param workers] is not 0,
+## else a plain loop in index order, which is every suite's "off" half. [param compare]
+## (func(a, b) -> String, empty when equal) lets [member verify] re-run; without it never re-run.
 static func run(
 	task: Callable, count: int, label: StringName, workers: int,
 	compare: Callable = Callable()

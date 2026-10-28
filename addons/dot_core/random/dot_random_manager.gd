@@ -2,25 +2,9 @@ class_name DotRandomManager
 extends Node
 
 ## The one node a game holds, and the only thing that knows the session's seed.
-##
-## [codeblock]
-## var rng := DotRandomManager.new()
-## rng.config = my_random_config
-## rng.setup()
-## add_child(rng)
-##
-## var loot := rng.stream(&"loot")
-## var world := rng.stream(&"world")
-## [/codeblock]
-##
-## [b]No autoload, for this addon's own reason as well as the family's.[/b] A server and a
-## client in one process must be able to disagree about the seed — a client mirroring a
-## server has the server's, a client predicting its own cosmetic effects has its own —
-## and a global would make those the same object.
-##
-## Other addons find it through [DotRegistry] under [constant SERVICE] and use it without
-## naming this class, which is what lets dot-procedural-generation and dot-fx take a real
-## stream when one exists and fall back to their own when it does not.
+## No autoload: a server and a client in one process may disagree about the seed. Other addons
+## find it through [DotRegistry] under [constant SERVICE] without naming this class.
+## [code]var loot := rng.stream(&"loot")[/code] after [code]setup()[/code] and add_child.
 
 ## Registry name. Anything with [code]stream(name)[/code] can stand in.
 const SERVICE := &"dot_random_source"
@@ -32,11 +16,8 @@ signal reseeded(new_seed: int)
 
 @export var config: DotRandomConfig = null
 
-## Whether to publish under [constant SERVICE] on [method setup].
-##
-## A second manager in the same process — a client's cosmetic stream beside the server's
-## authoritative one — sets this false, because the last one to register would otherwise
-## silently become everybody's source of world generation.
+## Whether to publish under [constant SERVICE] on [method setup]. A second manager in the
+## process (a client's cosmetic stream) sets this false, or the last to register wins.
 @export var register_as_service: bool = true
 
 var _root: DotRandomStream = null
@@ -74,17 +55,13 @@ func _exit_tree() -> void:
 		DotRegistry.unregister_instance(SERVICE, self)
 
 
-# --- Seeds ------------------------------------------------------------------
 
 func current_seed() -> int:
 	return _seed
 
 
-## Replaces the seed and invalidates every cached stream.
-##
-## [b]Every stream handed out before this call keeps the old key.[/b] That is deliberate
-## — a caller holding a stream is holding a value, not a subscription — and it is why
-## [signal reseeded] exists: a system that cached a stream re-asks for it.
+## Replaces the seed and invalidates every cached stream. A stream handed out earlier keeps
+## the old key (a value, not a subscription), so cachers re-ask on [signal reseeded].
 func reseed(new_seed: int) -> void:
 	_apply_seed(new_seed)
 	reseeded.emit(_seed)
@@ -100,13 +77,9 @@ func _apply_seed(s: int) -> void:
 		DotLog.info(CHANNEL, "seed", {"seed": s, "scope": String(scope)})
 
 
-# --- Streams ----------------------------------------------------------------
 
-## The named stream. The same name gives the same stream for the life of a seed.
-##
-## Cached, so a caller asking every frame does not allocate every frame — and so two
-## callers that ask for [code]&"loot"[/code] genuinely share one counter rather than each
-## getting a private copy that silently returns the same numbers.
+## The named stream: the same name gives the same stream for the life of a seed. Cached, so
+## two callers asking for [code]&"loot"[/code] share one counter.
 func stream(name: StringName) -> DotRandomStream:
 	if _root == null:
 		_apply_seed(_seed)
@@ -118,10 +91,8 @@ func stream(name: StringName) -> DotRandomStream:
 	return s
 
 
-## A fresh, uncached stream. Nobody else can advance it.
-##
-## What a prediction wants: a client replaying its own inputs must not consume numbers a
-## later replay of the same inputs needs.
+## A fresh, uncached stream nobody else can advance, for a prediction that must not consume
+## numbers a later replay needs.
 func private_stream(name: StringName) -> DotRandomStream:
 	if _root == null:
 		_apply_seed(_seed)
@@ -135,11 +106,8 @@ func stream_for(name: StringName, subject: int) -> DotRandomStream:
 	return _root.stream_for(name, subject)
 
 
-## A derived seed a subsystem can take away and use on its own.
-##
-## For the addons that must not hard-depend on this one: they take an [int] and build
-## whatever generator they already have, and still land on a number derived from the
-## session's seed rather than on one of their own.
+## A derived seed a subsystem can take away and use on its own, for addons that must not
+## hard-depend on this one.
 func seed_for(name: StringName) -> int:
 	return stream(name).at(0)
 
@@ -153,7 +121,6 @@ func stream_names() -> PackedStringArray:
 	return out
 
 
-# --- Reporting --------------------------------------------------------------
 
 func describe() -> Dictionary:
 	return {

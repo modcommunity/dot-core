@@ -1,22 +1,9 @@
 class_name DotResult
 extends RefCounted
 
-## The return type of every fallible operation in the dot-* family.
-##
-## GDScript has no tagged unions and no exceptions, so the alternatives are
-## returning [code]null[/code] on failure (which loses the reason) or an
-## [code]Array[/code] pair (which loses type checking at every call site). This
-## costs one allocation and buys a failure that cannot be silently ignored:
-## reading [member value] on a failed result pushes an error rather than
-## handing back a plausible-looking default.
-##
-## [codeblock]
-## var res := await store.read("objects/ab/abcd")
-## if not res.ok:
-##     DotLog.warn("store", "read failed: %s" % res.error)
-##     return
-## var bytes: PackedByteArray = res.value
-## [/codeblock]
+## The return type of every fallible operation in the dot-* family. Not null (loses the
+## reason) or an Array pair (loses types); reading [member value] on a failure pushes an error.
+## [code]if not res.ok: DotLog.warn("store", res.error); return[/code]
 
 var ok: bool = false
 var error: DotError = null
@@ -47,12 +34,8 @@ static func fail(
 	return DotResult.failure(DotError.make(code, message, detail))
 
 
-## The success payload.
-##
-## Reading this on a failed result is a programming error: it means a caller
-## skipped the [member ok] check, and returning a bare [code]null[/code] would
-## let that mistake travel. We complain loudly and still return null so the
-## crash, if any, happens at the real call site.
+## The success payload. Reading it on a failed result is a programming error (the [member ok]
+## check was skipped): it complains and returns null so any crash is at the real call site.
 var value: Variant:
 	get:
 		if not ok:
@@ -66,9 +49,6 @@ var value: Variant:
 
 
 ## The payload, or [param default] when this result failed.
-##
-## Use when a failure genuinely has a sensible fallback — a cached value, an
-## empty list — and you do not want the branch.
 func value_or(default: Variant) -> Variant:
 	return _value if ok else default
 
@@ -82,10 +62,7 @@ func is_retryable() -> bool:
 	return (not ok) and error != null and error.is_retryable()
 
 
-## Re-wraps a failure with a new message while keeping the original as detail.
-##
-## Lets a layer add context ("could not mount game 'dm_arena'") without
-## discarding the cause ("integrity: chunk 4 hash mismatch").
+## Re-wraps a failure with a new message, keeping the original as detail.
 func wrap(message: String) -> DotResult:
 	if ok:
 		return self

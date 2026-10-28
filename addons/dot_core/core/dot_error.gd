@@ -2,37 +2,25 @@ class_name DotError
 extends RefCounted
 
 ## A failure with a stable machine-readable code and a human-readable message.
-##
-## Every fallible operation in the dot-* family returns a [DotResult] carrying
-## one of these rather than an [enum Error] int, because the interesting part of
-## a failure here is almost never "which of Godot's 50 error constants" — it is
-## whether the caller should retry, re-authenticate, or give up.
-##
-## [member code] is the contract. Callers branch on it and it must not change
-## meaning between versions. [member message] is for humans and may be reworded
-## freely; [member detail] carries the parts that belong in a log but not in a
-## player-facing string (URLs, peer addresses, response bodies).
+## [member code] is the contract callers branch on and must not change meaning; [member message]
+## may be reworded; [member detail] holds log-only parts (URLs, addresses, bodies).
 
-# --- Transport / IO ---------------------------------------------------------
 const CODE_NETWORK := "network"              ## Connection failed or dropped.
 const CODE_TIMEOUT := "timeout"              ## Deadline exceeded.
 const CODE_HTTP := "http"                    ## Non-2xx response.
 const CODE_IO := "io"                        ## Local filesystem failure.
 const CODE_QUOTA := "quota"                  ## Out of storage (or browser quota).
 
-# --- Data ------------------------------------------------------------------
 const CODE_PARSE := "parse"                  ## Malformed payload.
 const CODE_INVALID := "invalid"              ## Well-formed but semantically wrong.
 const CODE_INTEGRITY := "integrity"          ## Hash or signature mismatch.
 const CODE_VERSION := "version"              ## Incompatible protocol/content version.
 const CODE_CONFLICT := "conflict"            ## Two different things claim one identity.
 
-# --- Authorization ---------------------------------------------------------
 const CODE_AUTH := "auth"                    ## Not authenticated.
 const CODE_FORBIDDEN := "forbidden"          ## Authenticated but not permitted.
 const CODE_RATE_LIMITED := "rate_limited"    ## Slow down.
 
-# --- Lifecycle -------------------------------------------------------------
 const CODE_CANCELLED := "cancelled"          ## Caller aborted the operation.
 const CODE_UNSUPPORTED := "unsupported"      ## Not possible on this platform.
 const CODE_STATE := "state"                  ## Called in the wrong state.
