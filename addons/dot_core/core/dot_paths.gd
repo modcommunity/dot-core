@@ -2,20 +2,8 @@ class_name DotPaths
 extends RefCounted
 
 ## Filesystem helpers with the cross-platform sharp edges handled.
-##
-## Three things go wrong when writing user data in a project that ships to five
-## platforms and downloads content at runtime:
-##
-## 1. [b]Web needs an explicit flush.[/b] See [method DotWeb.sync_filesystem].
-##    Every write helper here syncs, so no caller has to remember.
-## 2. [b]Server-supplied paths are attacker-controlled.[/b] A content manifest
-##    naming [code]../../../.ssh/id_rsa[/code] must not escape the cache
-##    directory. [method safe_relative] is the chokepoint and it is not
-##    optional.
-## 3. [b]`user://` is not one place.[/b] Desktop gives a real directory, mobile
-##    an app sandbox, web an IndexedDB mirror. Code that treats it as a disk
-##    path (passing it to an OS call, printing it in a support message) is wrong
-##    on two of the three.
+## Web needs an explicit flush (every write helper syncs); server-supplied paths are attacker-controlled ([method safe_relative]);
+## and [code]user://[/code] is not a disk path on mobile or web, so never hand it to an OS call.
 
 # No log channel: static filesystem helpers returning a DotResult. The caller knows what
 # the file was for and whether its absence matters -- a missing bindings file is normal,
@@ -34,20 +22,10 @@ const WINDOWS_RESERVED: Array[String] = [
 const ILLEGAL_CHARS := "\\:*?\"<>|"
 
 
-# --- Sanitisation ----------------------------------------------------------
 
 ## Validates a relative path from an untrusted source and returns it normalised.
-##
-## Returns a failed [DotResult] rather than a sanitised guess. Silently
-## rewriting [code]../../etc/passwd[/code] into [code]etc/passwd[/code] would
-## write an attacker's file somewhere valid and report success; a manifest with
-## a traversal in it is malformed and the right answer is to refuse the whole
-## manifest.
-##
-## Enforced: relative only, no [code]..[/code] segment anywhere, no leading
-## slash, no drive letter, no NUL or control characters, no Windows reserved
-## device names, no trailing dots or spaces (Windows silently strips them, so
-## two entries could collide), and a length ceiling.
+## Fails rather than guess: rewriting [code]../../etc/passwd[/code] would write an attacker's file somewhere valid.
+## Refused: absolute, [code]..[/code], drive letters, control chars, reserved device names, trailing dots or spaces, over-length.
 static func safe_relative(path: String, max_length: int = 1024) -> DotResult:
 	if path.is_empty():
 		return DotResult.fail(DotError.CODE_INVALID, "Empty path.")
@@ -127,12 +105,8 @@ static func _check_segment(seg: String, path: String) -> DotResult:
 	return DotResult.success(seg)
 
 
-## Rewrites a string so it is safe to use as a single filename component.
-##
-## Unlike [method safe_relative] this DOES mangle its input, because the input
-## is a label (a game id, a server name) rather than a path — losing information
-## is the point. Never use it to sanitise a path: it would flatten
-## [code]a/../b[/code] into a legal-looking name.
+## Rewrites a string so it is safe as a single filename component.
+## Unlike [method safe_relative] this mangles its input (a label, not a path); never use it on a path.
 static func slugify(s: String, max_length: int = 64) -> String:
 	var out := ""
 	for i in range(s.length()):
@@ -155,7 +129,6 @@ static func slugify(s: String, max_length: int = 64) -> String:
 	return out
 
 
-# --- Directories -----------------------------------------------------------
 
 ## Creates a directory and every missing parent.
 static func ensure_dir(path: String) -> DotResult:
@@ -176,11 +149,8 @@ static func ensure_parent_dir(file_path: String) -> DotResult:
 	return ensure_dir(file_path.get_base_dir())
 
 
-## Removes a directory and everything under it.
-##
-## Walks depth-first because [method DirAccess.remove_absolute] refuses a
-## non-empty directory. Reports the first failure but keeps going, so a single
-## locked file does not leave most of a cache behind.
+## Removes a directory and everything under it, depth-first.
+## Reports the first failure but keeps going, so one locked file does not leave a cache behind.
 static func remove_tree(path: String) -> DotResult:
 	if not DirAccess.dir_exists_absolute(path):
 		return DotResult.success(0)
@@ -253,7 +223,6 @@ static func list_files_recursive(
 	return out
 
 
-# --- Reading and writing ---------------------------------------------------
 
 static func read_bytes(path: String) -> DotResult:
 	if not FileAccess.file_exists(path):
@@ -300,16 +269,8 @@ static func read_json(path: String) -> DotResult:
 	return DotResult.success(json.data)
 
 
-## Appends bytes to a file, creating it if it is not there.
-##
-## [b]Not [method write_bytes] with the old contents prepended[/b] — this exists for a
-## resumed download, where the caller holds only the tail and the head is already on
-## disk. `FileAccess.WRITE` would truncate the head, which is the exact mistake this
-## is here to make impossible.
-##
-## No [param atomic] option: a partial file has no consistent state to preserve. It is
-## verified by hash before anything reads it, so a torn append is discarded the same
-## way a corrupt download is.
+## Appends bytes to a file, creating it if absent.
+## For a resumed download: WRITE would truncate the head already on disk. No [param atomic]: the file is hash-verified before use.
 static func append_bytes(path: String, bytes: PackedByteArray) -> DotResult:
 	var parent := ensure_parent_dir(path)
 	if not parent.ok:
@@ -335,11 +296,7 @@ static func append_bytes(path: String, bytes: PackedByteArray) -> DotResult:
 
 
 ## Writes bytes, creating parents and flushing the web filesystem.
-##
-## [param atomic] writes to a sibling [code].tmp[/code] and renames, so a crash
-## or a closed tab leaves either the old file or the new one and never a
-## half-written one. On by default: every caller in dot-* writes cache entries
-## whose truncation would be indistinguishable from corruption.
+## [param atomic] writes a sibling [code].tmp[/code] and renames, so a crash leaves the old file or the new one, never half.
 static func write_bytes(
 	path: String,
 	bytes: PackedByteArray,
@@ -402,12 +359,8 @@ static func write_json(
 	return write_text(path, text, atomic)
 
 
-## Writes bytes encrypted with a passphrase.
-##
-## Used by dot-auth's token store. On web the key travels with the ciphertext in
-## the same origin, so this is tamper-evidence and obfuscation rather than
-## confidentiality against someone with devtools open — dot-auth documents that
-## where it matters.
+## Writes bytes encrypted with a passphrase (dot-auth's token store).
+## On web the key sits in the same origin: tamper-evidence, not confidentiality.
 static func write_encrypted(
 	path: String,
 	bytes: PackedByteArray,
@@ -436,11 +389,7 @@ static func write_encrypted(
 
 
 ## Reads a file written by [method write_encrypted].
-##
-## A wrong passphrase and a corrupt file are indistinguishable here — both fail
-## to open. Callers treat that as "no stored credential" and re-authenticate
-## rather than surfacing it, because the most common cause is a key derived from
-## machine identity on a machine that changed.
+## A wrong passphrase and a corrupt file both fail to open; callers treat that as "no stored credential" and re-authenticate.
 static func read_encrypted(path: String, passphrase: String) -> DotResult:
 	if not FileAccess.file_exists(path):
 		return DotResult.fail(DotError.CODE_IO, "File not found.", path)
@@ -461,16 +410,8 @@ static func read_encrypted(path: String, passphrase: String) -> DotResult:
 
 
 ## Appends one file onto another without reading either into memory.
-##
-## Exists for resumed downloads. [HTTPRequest] has no append mode — it truncates
-## whatever [member HTTPRequest.download_file] points at — so a ranged response
-## has to land in a sibling file and be joined on here. Streaming matters for the
-## same reason the file-based download exists at all: concatenating a 500 MB pack
-## through a [PackedByteArray] costs the memory that download was avoiding.
-##
-## [param at_offset] truncates [param dest_path] to that length before writing, so
-## a partial longer than the range that was actually requested cannot leave stale
-## bytes past the join. A negative offset appends at the current end.
+## For resumed downloads: [HTTPRequest] has no append mode, so a ranged response lands in a sibling and is joined here.
+## [param at_offset] truncates [param dest_path] first so stale bytes cannot survive; negative appends at the end.
 static func append_file(
 	dest_path: String,
 	src_path: String,
@@ -542,9 +483,7 @@ static func append_file(
 
 
 ## Replaces [param dest_path] with [param src_path], removing the source.
-##
-## A rename rather than a copy, so swapping in a downloaded file that is already
-## complete costs nothing regardless of its size.
+## A rename, not a copy, so a large finished download costs nothing.
 static func replace_file(dest_path: String, src_path: String) -> DotResult:
 	var dir := DirAccess.open(src_path.get_base_dir())
 	if dir == null:
@@ -575,7 +514,6 @@ static func file_size(path: String) -> int:
 	return n
 
 
-# --- Reporting -------------------------------------------------------------
 
 ## A human-readable byte count for progress UI and log lines.
 static func format_bytes(n: int) -> String:
@@ -595,9 +533,7 @@ static func format_bytes(n: int) -> String:
 
 
 ## Where user data actually lives, for support messages.
-##
-## On web this is a virtual path with no disk behind it, which is why it is
-## labelled rather than printed bare.
+## On web it is a virtual path with no disk, hence labelled.
 static func describe_user_dir() -> String:
 	var base := OS.get_user_data_dir()
 	if DotPlatform.is_web():

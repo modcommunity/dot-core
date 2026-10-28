@@ -3,49 +3,8 @@ class_name DotAddonApi
 extends RefCounted
 
 ## Which addon API a build has, and whether a pack that needs one can run on it.
-##
-## [b]A pack's scripts compile against the HOST's addons.[/b] A game delivered through
-## dot-cloud ships its own files and none of the dot-* addons -- those are in the client
-## shell and in the server that mount it. So a pack written against a newer dot-net than
-## the host has does not fail with anything a person can read: it fails to PARSE, in the
-## middle of a load, with an identifier that "is not declared in the current scope". That
-## reads as a broken pack, and it is a host that is one release behind.
-##
-## This turns it into a sentence, asked before a single script in the pack is loaded:
-##
-## [codeblock]
-## This game needs dot-net API level 3 or newer; this server has level 2.
-## [/codeblock]
-##
-## [b]A pack says what it needs in [constant REQUIREMENTS_FILE] at its root[/b] --
-## [code]{"addons": {"dot_net": 3, "dot_server": 1}}[/code]. dot-ci writes it when it
-## builds a pack (see [method derive]), so no game keeps that list by hand; a game that
-## commits one keeps control of it, and the release then checks it is complete.
-##
-## [b]Why an API LEVEL and not the addon's version.[/b] Two numbers were on offer and
-## neither is honest in both places a build is made:
-##
-## - [b]The release tag's semver[/b], which dot-ci stamps into [code]plugin.cfg[/code]. In
-##   a developer checkout every addon is a symlink to a working tree whose plugin.cfg says
-##   0.1.0, so a dev host would refuse every pack built by CI and a dev-built pack would
-##   claim nothing. And a tag moves for a bug fix that changes no API at all, so "needs
-##   dot-net 0.4.1" would refuse a 0.4.0 host that runs the pack perfectly. plugin.cfg is
-##   also not a resource, so an exported build does not even carry it.
-## - [b]An explicit level, committed in the addon's source[/b], bumped only when the API
-##   changes. The same number in a symlinked checkout, a tagged release and an exported
-##   build, because it is code. That is the one used here.
-##
-## [b]The rule for an addon author:[/b] an addon's level lives in
-## [code]addons/<addon>/<addon>_api.gd[/code] as [code]const LEVEL[/code] and
-## [code]const OLDEST[/code]. Bump LEVEL when you ADD something a game could call -- a
-## method, a class, a signal, a field it reads. Raise OLDEST to the new LEVEL when you
-## REMOVE or CHANGE something a game could have called, because every pack built before
-## that no longer compiles here. An addon with no api file is at [constant BASELINE]: the
-## level every addon was at when this scheme began (2026-09-26), so nothing had to be
-## touched to adopt it.
-##
-## The version is still shown when it can be read, in the detail, for the person
-## deciding what to upgrade.
+## A pack compiles against the HOST's addons, so a newer-than-host pack fails to parse mid-load; this asks first and says "needs dot-net API level 3; this server has 2".
+## Levels live in each addon's [code]<addon>_api.gd[/code] (LEVEL bumped on add, OLDEST raised on remove); a checkout's plugin.cfg version is no honest number.
 
 # No log channel: every answer here is a DotResult its caller logs with the context this
 # class does not have -- which content, which peer, which side.
@@ -67,13 +26,7 @@ const BASELINE := 1
 const FORMAT := 1
 
 ## addon folder -> level, standing in for what this build has.
-##
-## [b]For a test pretending to be an older build, or a host that knows better.[/b] A
-## client and a server in one process share one set of addon files, so "an older client"
-## cannot be anything but a claim -- this is where it is made. Empty asks the build.
-##
-## A value is a level, or `{"level": n, "oldest": m}` to stand in for a build that has
-## dropped support for older packs as well.
+## For a test pretending to be an older build; empty asks the build. A value is a level or [code]{"level": n, "oldest": m}[/code].
 var overrides: Dictionary = {}
 
 ## Script path -> {LEVEL, OLDEST}, so a check that runs on every mount does not load the
@@ -81,12 +34,9 @@ var overrides: Dictionary = {}
 static var _levels_cache: Dictionary = {}
 
 
-# --- What this build has ---------------------------------------------------
 
-## Whether an addon is in this build at all.
-##
-## By its folder, which is in an exported build's pack as well as in a checkout. A pack
-## asking for an addon a deployment left out is the one requirement no level can meet.
+## Whether an addon is in this build at all, by folder (present in exports too).
+## A pack asking for an addon a deployment left out is the one requirement no level can meet.
 static func installed(addon: String) -> bool:
 	if not _is_addon_name(addon):
 		return false
@@ -111,10 +61,8 @@ func level_of(addon: String) -> int:
 	return build_level(addon)
 
 
-## The oldest level whose packs this build still runs, or 0 when it is not installed.
-##
-## Overriding a level overrides this too, clamped under it: an override exists to be a
-## different build, and a build whose oldest supported level is above its own is nonsense.
+## The oldest level whose packs this build still runs, or 0 when not installed.
+## An override clamps it under the overridden level: an oldest above the level is nonsense.
 func oldest_of(addon: String) -> int:
 	var level := level_of(addon)
 	if level <= 0:
@@ -160,10 +108,7 @@ static func _declared(addon: String) -> Dictionary:
 
 
 ## The addon's release version, when this build carries its plugin.cfg. For a person.
-##
-## [b]Often absent, and that is fine.[/b] plugin.cfg is not a resource, so an exported
-## build leaves it out, and a developer checkout says 0.1.0 whatever it holds. It goes in
-## the detail of a refusal, never in the decision.
+## Often absent (exports omit plugin.cfg); it goes in a refusal's detail, never the decision.
 static func version_of(addon: String) -> String:
 	var cfg := ConfigFile.new()
 	if cfg.load("%s/%s/plugin.cfg" % [ADDONS_ROOT, addon]) != OK:
@@ -171,16 +116,9 @@ static func version_of(addon: String) -> String:
 	return str(cfg.get_value("plugin", "version", ""))
 
 
-# --- What a pack needs -----------------------------------------------------
 
 ## Reads a requirements document. Returns `{addon: level}`.
-##
-## [param file_name] is only what the messages call it: a [constant FLOOR_FILE] has the
-## same shape.
-##
-## Strict about shape and lenient about nothing else: this is read off a pack a server
-## handed to a client, so a level that is not a positive integer is a malformed file, not
-## a zero.
+## [param file_name] is only what messages call it. Strict on shape: a level that is not a positive integer is malformed, not zero.
 static func parse(text: String, file_name: String = REQUIREMENTS_FILE) -> DotResult:
 	var json := JSON.new()
 	if json.parse(text) != OK:
@@ -251,10 +189,7 @@ static func encode(requirements: Dictionary) -> String:
 
 
 ## Whether this build can run something that needs [param requirements].
-##
-## [param who] is the noun a player reads: [code]"server"[/code], [code]"client"[/code],
-## [code]"build"[/code]. Every unmet requirement is in the detail; the message is the first
-## of them, because a player reads one sentence.
+## [param who] is the noun a player reads. Every unmet requirement is in the detail; the message is the first.
 func check(requirements: Dictionary, who: String = "build") -> DotResult:
 	var problems: Array[DotError] = []
 
@@ -340,24 +275,10 @@ static func _is_addon_name(addon: String) -> bool:
 	return true
 
 
-# --- What a game uses ------------------------------------------------------
 
-## Every addon a project's own files use, at the level this build has.
-##
-## [b]Derived from the files, not kept beside them.[/b] A hand-kept list of dependencies
-## is a second list, and a second list here is a list that goes stale. This reads every
-## script, scene and resource under [param root] -- skipping the addons themselves and
-## whatever [param skip_dirs] names -- and finds two things: a global class declared
-## under [code]res://addons/<addon>/[/code], by name; and a literal
-## [code]res://addons/<addon>/[/code] path. Both are how a pack reaches an addon, and
-## both fail to resolve on a host that does not have what they name.
-##
-## The level recorded is the level THIS build has: "built against". A pack built today
-## asks for today's levels, which is conservative -- it may run on an older host that has
-## everything it actually calls. A game that guards an addon's newer API names it in
-## [constant FLOOR_FILE] ([method apply_floors]); one that knows better about everything
-## commits its own requires.json.
-## Needs the project imported, so the global class list is populated.
+## Every addon a project's own files use, at the level this build has. Needs the project imported.
+## Derived from files, not a hand-kept list that goes stale: a global class or literal [code]res://addons/<addon>/[/code] path under [param root].
+## The level is "built against", which is conservative; [constant FLOOR_FILE] lowers it for guarded addons.
 static func derive(
 	root: String = "res://",
 	skip_dirs: PackedStringArray = PackedStringArray(["addons", "examples", "tools", ".godot", ".github", "screenshots"])
@@ -378,22 +299,9 @@ static func derive(
 	return out
 
 
-## Addons a project's files reach only behind a presence check, so a host without them
-## runs the game anyway. Same files as [method derive]; an addon in [method derive] is
-## never in here.
-##
-## [b]Why they stay out of requires.json.[/b] A pack asking for an addon the shell does
-## not have is refused before the game starts, so a lightning effect from an add-on a
-## player may not have would take the whole game down on the web. An addon is optional
-## when every file naming it is a script that (a) reaches it ONLY by a literal
-## [code]res://addons/<addon>/[/code] path handed to [code]load()[/code] -- never a
-## global class name and never [code]preload()[/code], both of which are compile-time and
-## fail to parse without it -- and (b) asks whether anything is there first:
-## [code]ResourceLoader.exists[/code], [code]FileAccess.file_exists[/code],
-## [code]DirAccess.dir_exists_absolute[/code], [code]DotAddonApi.installed[/code] or
-## [code]DotAddonApi.build_level[/code]. The check is per file, not per path: a script
-## that tests one path and loads another is the author's promise, as a floor is.
-## Comments are not code, so a doc comment naming a class does not make it required.
+## Addons a project reaches only behind a presence check, so a host without them still runs the game.
+## Optional when every file naming it uses only a literal path in [code]load()[/code] (no class name, no preload) after an existence or level check, per file.
+## They stay out of requires.json, or a missing add-on would refuse the whole game before it starts.
 static func derive_optional(
 	root: String = "res://",
 	skip_dirs: PackedStringArray = PackedStringArray(["addons", "examples", "tools", ".godot", ".github", "screenshots"])
@@ -467,10 +375,7 @@ static func _strip_comments(text: String) -> String:
 
 
 ## Which addons [param requirements] leaves out or overstates, against [method derive].
-##
-## For a game that commits its own file: a missing addon is a pack that will fail to
-## parse on a host without it, and a level above what this build has is a promise the
-## build that made the pack cannot keep. Empty is complete.
+## For a game committing its own file; empty is complete.
 static func audit(requirements: Dictionary, derived: Dictionary) -> PackedStringArray:
 	var out := PackedStringArray()
 	var names: Array = derived.keys()
@@ -484,21 +389,10 @@ static func audit(requirements: Dictionary, derived: Dictionary) -> PackedString
 	return out
 
 
-# --- Floors: what a game guards -------------------------------------------
 
 ## [param derived] with each addon [param floors] names lowered to its floor.
-##
-## [b]Why a game asks for less than it was built against.[/b] [method derive] records the
-## BUILD's level of every addon a game uses, which is right for a call the game makes
-## unconditionally: on an older host it would not compile. But a game can also ask the
-## host first -- `DotAddonApi.build_level("dot_ui") >= 2` -- and keep an older path for an
-## older host. Its pack still asks for level 2, so that older host refuses it before the
-## check ever runs, and the older path is dead code. A game names those addons in
-## [constant FLOOR_FILE] at the lowest level its older path runs on, and only those are
-## lowered: every other addon stays derived, so the list still keeps itself.
-##
-## A floor at or above the derived level changes nothing; an addon the game does not use
-## is not added. [method floor_audit] is what refuses a floor that cannot be honoured.
+## A game that guards a newer call behind [code]build_level[/code] would otherwise be refused by an older host before the guard runs.
+## A floor at or above the derived level changes nothing; an unused addon is not added.
 static func apply_floors(derived: Dictionary, floors: Dictionary) -> Dictionary:
 	var out := derived.duplicate()
 	for key in floors.keys():
@@ -508,16 +402,8 @@ static func apply_floors(derived: Dictionary, floors: Dictionary) -> Dictionary:
 	return out
 
 
-## Which of a game's floors cannot be honoured, against [method derive] and [method guarded].
-## Empty is sound.
-##
-## - An addon the game does not use: a floor left behind by code that was removed.
-## - A floor above what this build has: a promise about a level nobody built against.
-## - A floor below the OLDEST this build supports: the pack was compiled against an API
-##   that dropped that level, and a host at this build's own level would refuse it.
-## - An addon no file asks the level of: nothing runs an older path, so on an older host
-##   the newer call fails to parse -- exactly what requires.json exists to prevent.
-##
+## Which of a game's floors cannot be honoured, against [method derive] and [method guarded]; empty is sound.
+## Unsound: an addon the game does not use; a floor above this build; below its OLDEST; or an addon no file asks the level of.
 ## [param oldest] stands in for [method build_oldest] per addon, for a test.
 static func floor_audit(
 	floors: Dictionary, derived: Dictionary, guards: Dictionary, oldest: Dictionary = {}

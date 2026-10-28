@@ -2,30 +2,8 @@ class_name DotJob
 extends RefCounted
 
 ## A unit of long-running work that can be advanced in slices.
-##
-## [b]Why not just use a [Thread].[/b] Single-threaded web builds have no
-## threads at all, and the two most expensive things dot-cloud does — hashing a
-## few hundred megabytes and scanning a cache directory — must not freeze the
-## frame on any platform. A job that exposes [method step] can be driven by a
-## [DotScheduler] inside a per-frame time budget on web and handed to a worker
-## thread on desktop, from one implementation.
-##
-## Subclasses override [method _step] and report progress. The contract:
-## [method _step] does a bounded amount of work and returns [code]true[/code]
-## when there is more to do.
-##
-## [codeblock]
-## class CountJob extends DotJob:
-##     var _i := 0
-##     func _step() -> bool:
-##         _i += 1
-##         if _i >= 1000:
-##             _finish(DotResult.success(_i))
-##             return false
-##         return true
-##     func _progress() -> float:
-##         return float(_i) / 1000.0
-## [/codeblock]
+## Web has no threads and hashing or scanning must not freeze a frame: a [DotScheduler] drives [method step] in a budget, or a worker on desktop.
+## Subclasses override [method _step] (bounded work, true while more) and [method _progress].
 
 enum State {
 	PENDING,   ## Queued, not started.
@@ -56,15 +34,8 @@ var cancel_requested: bool = false
 
 var _last_reported_progress: float = -1.0
 
-## Held for the whole of a [method step] and of a settle, so no two threads are ever
-## inside one job at once.
-##
-## [b]Without it a second thread tears a job down under the first.[/b] A [DotHashJob]
-## run by two threads at once (or settled from the main thread while a worker stepped
-## it) had its [FileAccess] closed between the worker's `open` and its next call: the
-## worker logged `File must be opened before use` from `get_length` and then died in
-## `eof_reached`, which the engine does not null-check, taking a dedicated server down
-## mid map change. [Mutex] is recursive, so a settle from inside a step re-enters it.
+## Held for the whole of a [method step] and of a settle, so no two threads are inside one job at once.
+## Without it a second thread closed a [DotHashJob]'s FileAccess under the worker and killed the server. Recursive, so a settle inside a step re-enters.
 var _lock := Mutex.new()
 
 ## How deep the holder of [member _lock] is in it. Only touched while holding it.
@@ -79,13 +50,9 @@ var _unsent: DotResult = null
 var _submitted := false
 
 
-# --- Subclass hooks --------------------------------------------------------
 
 ## Does a bounded slice of work. Returns true if more remains.
-##
-## Must be cheap enough that one call cannot blow the frame budget on its own —
-## the scheduler can stop calling it, but it cannot interrupt it. Hash a chunk,
-## not a file.
+## Cheap enough that one call cannot blow the frame budget: the scheduler cannot interrupt it. Hash a chunk, not a file.
 func _step() -> bool:
 	_finish(DotResult.fail(
 		DotError.CODE_INTERNAL, "DotJob._step() was not overridden."
@@ -94,10 +61,7 @@ func _step() -> bool:
 
 
 ## Completion in the range 0..1, or -1 when genuinely unknown.
-##
-## Return -1 rather than a fake value for work with no knowable extent (a
-## directory walk of unknown size); progress UI shows an indeterminate bar for
-## -1, which is honest, instead of a bar that jumps backwards.
+## Return -1 for work with no knowable extent, so progress UI shows an indeterminate bar instead of one that jumps back.
 func _progress() -> float:
 	return -1.0
 
@@ -108,33 +72,21 @@ func _setup() -> void:
 
 
 ## Called once after the job settles, on whichever thread settled it.
-##
-## For releasing resources the job owns — closing a [FileAccess], dropping a
-## context. Thread-safe engine APIs only: anything touching the scene tree
-## belongs in a [signal finished] handler, which is always delivered on the main
-## thread.
+## Release owned resources here, thread-safe APIs only; scene-tree work belongs in a [signal finished] handler (main thread).
 func _teardown() -> void:
 	pass
 
 
 ## Whether this job may run on a worker thread.
-##
-## Override to false for work touching the scene tree or any non-thread-safe
-## engine API. Godot's [FileAccess] and [HashingContext] are safe off-thread;
-## anything that adds nodes or loads scenes is not.
+## Override to false for scene-tree or non-thread-safe engine work; FileAccess and HashingContext are fine.
 func is_thread_safe() -> bool:
 	return true
 
 
-# --- Driving ---------------------------------------------------------------
 
 ## Advances the job. Returns true while more work remains.
-##
-## Called by [DotScheduler]. Safe to call directly for a synchronous run, but
-## prefer [method run_to_completion] which handles setup and cancellation.
-##
-## Thread-safe: a second thread stepping the same job waits for the first one's step
-## to end, and a job that settled meanwhile answers false without being touched.
+## Called by [DotScheduler]; prefer [method run_to_completion] for a synchronous run.
+## Thread-safe: a second thread waits for the step to end; a job that settled meanwhile answers false.
 func step() -> bool:
 	_enter()
 
@@ -158,9 +110,7 @@ func step() -> bool:
 
 
 ## Runs the whole job on the calling thread, ignoring frame budget.
-##
-## For headless tools and tests. Never call it on the main thread of an
-## interactive build: that is exactly the freeze the job design exists to avoid.
+## For headless tools and tests; on an interactive main thread it is the freeze jobs exist to avoid.
 func run_to_completion(max_steps: int = 100_000_000) -> DotResult:
 	var steps := 0
 	while step():
@@ -177,11 +127,8 @@ func run_to_completion(max_steps: int = 100_000_000) -> DotResult:
 	return result
 
 
-##
-## Safe from any thread, and never waits. A step running on another thread holds the
-## lock: the flag is set and that thread settles the job at its next step boundary.
-## Settling it from here instead was the race: a worker that had just taken a PENDING
-## job opened its file, and this thread's teardown closed it under the worker.
+## Requests cancellation. Safe from any thread, never waits.
+## The flag is set and the thread holding the lock settles the job at its next step boundary.
 func cancel() -> void:
 	if is_settled():
 		return
@@ -211,9 +158,7 @@ func progress() -> float:
 
 
 ## Emits [signal progressed] if the value moved meaningfully.
-##
-## Called by the scheduler. The 0.001 threshold keeps a job with a million steps
-## from emitting a million near-identical signals into UI that redraws on each.
+## The 0.001 threshold stops a million-step job emitting a million signals into redrawing UI.
 func report_progress() -> void:
 	var p := _progress()
 	if p < 0.0:
@@ -270,17 +215,8 @@ static func on_main_thread() -> bool:
 
 
 ## Emits a signal on the main thread, deferring if we are on a worker.
-##
-## [b]Not a precaution — a correctness requirement.[/b] GDScript resumes an
-## awaiting coroutine synchronously inside [method Signal.emit], on whatever
-## thread called it. A job finishing on a [DotScheduler] worker would therefore
-## resume [code]await job.finished[/code] on that worker, and the very next line
-## of ordinary-looking caller code — appending to a label, adding a node,
-## mounting a pack — would touch the scene tree off-thread. Godot catches some of
-## those with an error and races on the rest.
-##
-## Deferring costs at most one frame of latency on the completion signal, and
-## makes [code]await[/code] mean the same thing regardless of where the work ran.
+## A requirement: GDScript resumes an awaiting coroutine inside [method Signal.emit] on the emitting thread, so the caller's next line would touch the scene tree off-thread.
+## Costs at most one frame and makes [code]await[/code] mean the same wherever the work ran.
 func _emit_on_main_thread(sig: Signal, arg: Variant) -> void:
 	if on_main_thread():
 		sig.emit(arg)

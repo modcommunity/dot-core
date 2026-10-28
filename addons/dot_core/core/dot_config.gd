@@ -3,47 +3,18 @@ class_name DotConfig
 extends Resource
 
 ## Base class for every dot-* configuration object, with layered overrides.
-##
-## A dedicated server is configured from four places at once and the layering
-## has to be predictable, because the whole point of a config file is that you
-## can override it on the command line for one run without editing it:
-##
-## [codeblock]
-## exported defaults  <  .tres / .json file  <  environment  <  command line
-## [/codeblock]
-##
-## Later layers win. Every layer is optional, and applying one reports exactly
-## which keys it changed — so a typo'd environment variable shows up as
-## "ignored unknown key DOT_SERVER_PROT" at boot rather than as a server
-## mysteriously listening on the default port.
-##
-## Subclasses just declare [code]@export[/code] properties; discovery is
-## reflective, so adding a setting needs no registration anywhere.
-##
-## [codeblock]
-## class_name MyConfig extends DotConfig
-## @export var port: int = 27015
-## @export var hostname: String = "A dot server"
-##
-## func env_prefix() -> String: return "MYGAME_"
-## [/codeblock]
+## Layers, later wins: exported defaults < file < environment < command line.
+## Subclasses declare [code]@export[/code] vars; discovery is reflective, no registration.
 
 const CHANNEL := "config"
 
-## Keys that were seen but do not correspond to any exported property.
-##
-## Kept rather than discarded so boot can report them all at once. A config file
-## with three typos should produce three warnings, not one abort.
+## Keys seen that match no exported property; kept so boot reports every typo at once.
 var unknown_keys: PackedStringArray = PackedStringArray()
 
 
-# --- Subclass hooks --------------------------------------------------------
 
 ## Prefix for [method apply_env], e.g. [code]"DOT_SERVER_"[/code].
-##
-## Return [code]""[/code] to disable environment overrides entirely — correct
-## for configs describing content rather than deployment, where an ambient
-## variable changing behaviour would be a surprise.
+## Return [code]""[/code] to disable environment overrides (content configs, not deployment).
 func env_prefix() -> String:
 	return ""
 
@@ -54,28 +25,20 @@ func cli_prefix() -> String:
 
 
 ## Properties that must never be settable from the environment or command line.
-##
-## Override for anything whose value is a secret that belongs in a file with
-## restricted permissions — a process's environment and argv are readable by
-## other processes on most systems, and `ps` output ends up in bug reports.
+## Override for secrets: environment and argv are readable by other processes.
 func sensitive_keys() -> PackedStringArray:
 	return PackedStringArray()
 
 
 ## Checks internal consistency after every layer has been applied.
-##
-## Override to catch the errors reflection cannot: a port outside 1–65535, a
-## tickrate of zero, a URL with no scheme. Called by [method load_layered].
+## Override for what reflection cannot catch (port range, zero tickrate, URL scheme).
 func validate() -> DotResult:
 	return DotResult.success(null)
 
 
-# --- Reflection ------------------------------------------------------------
 
 ## The names of every configurable property on this resource.
-##
-## Uses [method Object.get_property_list] filtered to script variables, so the
-## engine's own [code]resource_name[/code] and friends stay out of config files.
+## Filtered to script variables so the engine's own properties stay out of config files.
 func config_keys() -> PackedStringArray:
 	var out := PackedStringArray()
 	for prop in get_property_list():
@@ -111,19 +74,9 @@ func has_key(key: String) -> bool:
 	return config_keys().has(key)
 
 
-# --- Dictionary layer ------------------------------------------------------
 
-## Applies a dictionary of overrides.
-##
-## Keys are matched to properties after normalisation, so a config file may use
-## [code]max_players[/code], [code]maxPlayers[/code] or [code]max-players[/code]
-## interchangeably — the same setting written three ways by three people should
-## not be three different bugs.
-##
-## Returns the keys that were actually applied. Unknown keys are collected into
-## [member unknown_keys] and reported, not fatal: refusing to boot a server
-## because its config mentions a setting from a newer version is worse than
-## ignoring it.
+## Applies a dictionary of overrides; keys match after normalisation (max_players, maxPlayers, max-players).
+## Returns the keys applied. Unknown keys go to [member unknown_keys], not fatal: a newer file must still boot.
 func apply_dictionary(
 	d: Dictionary,
 	layer_name: String = "dict",
@@ -206,11 +159,7 @@ static func _normalise_key(s: String) -> String:
 
 
 ## Converts a config-file or environment value to a property's declared type.
-##
-## Environment variables and command-line arguments are always strings, so
-## without this every integer setting would silently become a String and fail
-## at its first arithmetic use. Being strict here means a bad value is reported
-## at boot with the key name attached.
+## Environment and argv values are strings; strictness here reports a bad value with its key at boot.
 func _coerce(value: Variant, want: int) -> DotResult:
 	if want == TYPE_NIL:
 		return DotResult.success(value)
@@ -301,9 +250,7 @@ func _coerce_int(value: Variant, have: int) -> DotResult:
 
 
 ## Reads a list from an Array, a JSON array string, or a comma-separated string.
-##
-## The last form is what makes environment variables usable for lists:
-## [code]DOT_SERVER_ADMINS=alice,bob[/code].
+## The last form makes environment lists work: [code]DOT_SERVER_ADMINS=alice,bob[/code].
 static func _to_string_list(value: Variant) -> Variant:
 	var have := typeof(value)
 
@@ -336,13 +283,9 @@ static func _to_string_list(value: Variant) -> Variant:
 	return null
 
 
-# --- File layer ------------------------------------------------------------
 
-## Applies a JSON config file. A missing file is not an error.
-##
-## Deliberately permissive about absence, because "run with defaults if there is
-## no config" is the behaviour that makes a first launch work. A file that
-## exists but is malformed IS an error: the admin wrote it and means it.
+## Applies a JSON config file. A missing file is not an error (first launch runs on defaults).
+## A file that exists but is malformed IS an error: the admin wrote it and means it.
 func apply_json_file(path: String) -> DotResult:
 	if not FileAccess.file_exists(path):
 		DotLog.debug(CHANNEL, "no config file", {"path": path})
@@ -372,14 +315,9 @@ func save_json_file(path: String) -> DotResult:
 	return DotPaths.write_json(path, to_dictionary())
 
 
-# --- Environment layer -----------------------------------------------------
 
 ## Applies environment variables matching [method env_prefix].
-##
-## [code]DOT_SERVER_MAX_PLAYERS=32[/code] sets [code]max_players[/code]. Sensitive
-## keys are refused here — see [method sensitive_keys].
-##
-## No-op on web, where there is no environment.
+## Sensitive keys are refused ([method sensitive_keys]). No-op on web, which has no environment.
 func apply_env(prefix_override: String = "") -> PackedStringArray:
 	var prefix := prefix_override if prefix_override != "" else env_prefix()
 	if prefix == "":
@@ -401,27 +339,15 @@ func apply_env(prefix_override: String = "") -> PackedStringArray:
 	return applied
 
 
-# --- Command-line layer ----------------------------------------------------
 
-## Applies command-line arguments matching [method cli_prefix].
-##
-## Accepts [code]--sv-max-players=32[/code] and [code]--sv-max-players 32[/code],
-## plus bare [code]--sv-lan[/code] for booleans.
-##
-## Reads [method OS.get_cmdline_user_args] (everything after [code]--[/code])
-## in addition to [method OS.get_cmdline_args], because the engine consumes
-## unrecognised arguments before the game sees them in some launch
-## configurations, and telling users "put your flags after a double dash" is the
-## only reliable instruction.
+## Applies command-line arguments matching [method cli_prefix]: [code]--k=v[/code], [code]--k v[/code], bare [code]--flag[/code].
+## Also reads [method OS.get_cmdline_user_args] (after [code]--[/code]): the engine eats unknown args in some launches.
 func apply_cli(prefix_override: String = "") -> PackedStringArray:
 	var prefix := prefix_override if prefix_override != "" else cli_prefix()
 	if prefix == "":
 		return PackedStringArray()
 
-	# Every argument begins with "--", so a prefix without it matches nothing and every
-	# flag is dropped without even an unknown-key warning. Thirteen configs in eleven
-	# addons shipped like that (`"economy-"`), each with a README documenting a flag
-	# that did nothing.
+	# A prefix without the leading "--" matches nothing and drops every flag silently.
 	if not prefix.begins_with("--"):
 		var script: Script = get_script()
 		var who := String(script.get_global_name())
@@ -486,12 +412,9 @@ func apply_cli(prefix_override: String = "") -> PackedStringArray:
 	return applied
 
 
-# --- Whole-stack load ------------------------------------------------------
 
-## Runs every layer in order and validates the result.
-##
-## The one call a host needs at boot. [param file_path] may be empty to skip the
-## file layer.
+## Runs every layer in order and validates the result; the one call a host needs at boot.
+## [param file_path] may be empty to skip the file layer.
 func load_layered(file_path: String = "") -> DotResult:
 	unknown_keys = PackedStringArray()
 
@@ -510,14 +433,9 @@ func load_layered(file_path: String = "") -> DotResult:
 	return DotResult.success(self)
 
 
-# --- Serialisation ---------------------------------------------------------
 
 ## Every configurable property as a plain dictionary.
-##
-## [param redact_sensitive] replaces secrets with [code]"***"[/code], which is
-## what you want for the `status` command and for logs — a config dump that
-## leaks the RCON password into a pasted bug report has happened to every game
-## server project that did not do this.
+## [param redact_sensitive] replaces secrets with [code]"***"[/code], for the status command and logs.
 func to_dictionary(redact_sensitive: bool = false) -> Dictionary:
 	var out := {}
 	var blocked := sensitive_keys()
