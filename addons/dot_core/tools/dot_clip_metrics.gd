@@ -7,7 +7,7 @@ extends RefCounted
 
 const DEFAULTS := {
 	"plant_height_m": 0.06, "slide_mps": 0.25, "sink_m": 0.05, "float_m": 0.10, "hover_share": 0.25,
-	"frame_margin": 0.02, "pop_deg": 90.0, "clip_frames_max": 0,
+	"frame_margin": 0.02, "pop_deg": 90.0, "pop_window_s": 1.0 / 15.0, "settle_mps": 0.5, "slide_window_s": 0.2, "clip_frames_max": 0,
 }
 
 var _frames: Array[Dictionary] = []
@@ -110,48 +110,43 @@ func _cruise_from() -> int:
 
 
 func _slide(lim: Dictionary) -> Dictionary:
-	# A foot on the floor over a stretch of the clip where the body is up to speed should stay
-	# put in the world: its world speed over the stretch is the skate. The foot's speed relative
-	# to the root is what a planted foot adds to the root's, so it is reported beside it.
+	# A foot planted (low, and not landing or lifting) over a stretch where the body is up to speed
+	# should stay put in the world: its world speed from the frame it settled is the skate.
 	var worst := 0.0
 	var worst_rel := 0.0
-	var seen := false
-	var run_start: Array[Vector3] = []
-	var run_root: Array[Vector3] = []
-	var run_t: Array[float] = []
+	var windows := 0
+	var start: Dictionary = {}
 	var from := _cruise_from()
-	for n in range(from, _frames.size()):
+	for n in range(maxi(from, 1), _frames.size()):
 		var frame := _frames[n]
 		var feet: Array = frame.get("feet", [])
-		if feet.is_empty() or not frame.get("grounded", false):
-			run_start.clear()
+		var before: Array = _frames[n - 1].get("feet", [])
+		if feet.is_empty() or before.size() != feet.size() or not frame.get("grounded", false):
+			start.clear()
 			continue
-		seen = true
+		var t := float(frame["t"])
+		var step := t - float(_frames[n - 1]["t"])
 		var root: Vector3 = frame.get("root", Vector3.ZERO)
-		if run_start.size() != feet.size():
-			run_start.assign(feet)
-			run_root.assign(feet.map(func(_f: Vector3) -> Vector3: return root))
-			run_t.assign(feet.map(func(_f: Vector3) -> float: return float(frame["t"])))
-			continue
 		for i in feet.size():
 			var foot: Vector3 = feet[i]
-			if foot.y - float(frame["ground_y"]) > float(lim["plant_height_m"]):
-				run_start[i] = foot
-				run_root[i] = root
-				run_t[i] = float(frame["t"])
+			var rising := absf(foot.y - (before[i] as Vector3).y) / step if step > 0.0 else INF
+			if foot.y - float(frame["ground_y"]) > float(lim["plant_height_m"]) or rising > float(lim["settle_mps"]):
+				start.erase(i)
 				continue
-			var dt: float = float(frame["t"]) - run_t[i]
-			if dt < 0.2:
+			if not start.has(i):
+				start[i] = [foot, root, t]
 				continue
-			var flat := Vector2(foot.x - run_start[i].x, foot.z - run_start[i].z).length()
-			var moved := Vector2(root.x - run_root[i].x, root.z - run_root[i].z)
-			var rel := (Vector2(foot.x - run_start[i].x, foot.z - run_start[i].z) - moved).length()
-			worst = maxf(worst, flat / dt)
-			worst_rel = maxf(worst_rel, rel / dt)
-	if not seen:
+			var dt: float = t - float(start[i][2])
+			if dt < float(lim["slide_window_s"]) - 0.001:
+				continue
+			windows += 1
+			var moved := Vector2(foot.x - start[i][0].x, foot.z - start[i][0].z)
+			worst = maxf(worst, moved.length() / dt)
+			worst_rel = maxf(worst_rel, (moved - Vector2(root.x - start[i][1].x, root.z - start[i][1].z)).length() / dt)
+	if windows == 0:
 		return _skip("foot_slide")
 	return _row("foot_slide", worst <= float(lim["slide_mps"]), worst, float(lim["slide_mps"]),
-		"m/s world speed of a foot on the floor >=0.2 s, once up to speed (frame %d on); relative to root %.2f m/s" % [from, worst_rel])
+		"m/s world speed of a planted foot >=%.2f s from when it settled, once up to speed (frame %d on, %d stretches); relative to root %.2f m/s" % [float(lim["slide_window_s"]), from, windows, worst_rel])
 
 
 func _floor(lim: Dictionary) -> Dictionary:
@@ -205,11 +200,16 @@ func _framing(lim: Dictionary) -> Dictionary:
 
 
 func _pop(lim: Dictionary) -> Dictionary:
+	# Each frame against the last one at least pop_window_s before it, so a faster capture judges
+	# the same span as a 15 fps one (at every phase) instead of a quarter of it.
 	var worst := 0.0
 	var where := 0.0
 	var seen := false
+	var j := 0
 	for i in range(1, _frames.size()):
-		var before: Array = _frames[i - 1].get("rotations", [])
+		while j + 1 < i and float(_frames[i]["t"]) - float(_frames[j + 1]["t"]) >= float(lim["pop_window_s"]) * 0.9:
+			j += 1
+		var before: Array = _frames[j].get("rotations", [])
 		var now: Array = _frames[i].get("rotations", [])
 		if before.size() != now.size() or now.is_empty():
 			continue
@@ -221,4 +221,4 @@ func _pop(lim: Dictionary) -> Dictionary:
 				where = float(_frames[i]["t"])
 	if not seen:
 		return _skip("bone_pop")
-	return _row("bone_pop", worst <= float(lim["pop_deg"]), worst, float(lim["pop_deg"]), "deg between frames, at %.2f s" % where)
+	return _row("bone_pop", worst <= float(lim["pop_deg"]), worst, float(lim["pop_deg"]), "deg over %.3f s, at %.2f s" % [float(lim["pop_window_s"]), where])
