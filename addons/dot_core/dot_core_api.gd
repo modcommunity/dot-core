@@ -48,5 +48,6 @@ extends RefCounted
 # 23: DotCollisionSweep (drawn floor and walls against the physics world, and collision nothing is drawn at).
 # 24: DotAddonApi.USES_FILE and declared_uses: derive() counts addons a project names in requires.uses.json
 #     (use through config only), so a floor on them is not refused as "does not use".
-const LEVEL := 24
+# 25: camera/: DotViewLens (the first-person model lens maths: vertical_from_horizontal_4_3, lens_scale, apply).
+const LEVEL := 25
 const OLDEST := 1

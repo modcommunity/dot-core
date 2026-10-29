@@ -43,3 +43,7 @@ A renderer compiles a material's shader the first time something using it is dra
 - **It never waits for ever**: headless or in a hidden window nothing is drawn, so `timeout_sec` (5 s) finishes it anyway; a loading screen held on `finished` always lifts.
 
 The client shell (dot-server-deploy) runs it under its loading screen; `examples/camera_selftest` covers collection, placement and the timeout.
+
+## Drawing a held model at its own lens: DotViewLens
+
+A first-person model is drawn at its own vertical field of view (`hands_fov`) under whatever lens the camera has: `DotViewLens.apply(model, camera, hands_fov)` scales X and Y by the ratio of the two lenses and pulls the model toward the eye, never more than `MAX_PULL_IN`, so its apparent size at the reference lens is kept. `vertical_from_horizontal_4_3` turns a game's field-of-view setting (horizontal on a 4:3 frame) into the vertical one. zee-dot-weapons' `ZeeViewModel` and dot-props' `DotToolView` both call it.

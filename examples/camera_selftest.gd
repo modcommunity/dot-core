@@ -12,8 +12,8 @@ extends Node3D
 ## godot --headless --path . res://examples/camera_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 9
-const CHECKS := 38
+const SECTIONS := 10
+const CHECKS := 43
 
 const WORLD := 1
 const PEOPLE := 2
@@ -46,6 +46,7 @@ func _run() -> void:
 	_test_clip_view()
 	_test_check_helper()
 	await _test_render_warmup()
+	_test_view_lens()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -477,6 +478,23 @@ func _section(title: String) -> void:
 	_section_count += 1
 	_line("")
 	_line("-- %s" % title)
+
+
+func _test_view_lens() -> void:
+	_section("DotViewLens draws a held model at its own lens")
+
+	_check(absf(DotViewLens.vertical_from_horizontal_4_3(100.0) - 83.6) < 0.1, "100 degrees across 4:3 is about 83.6 vertical")
+	_check(is_equal_approx(DotViewLens.lens_scale(70.0, 70.0), 1.0), "the same lens is a scale of 1")
+	_check(DotViewLens.lens_scale(80.0, 0.0) == 1.0, "an unusable lens is a scale of 1")
+	var cam := Camera3D.new()
+	cam.fov = 90.0
+	var model := Node3D.new()
+	DotViewLens.apply(model, cam, 60.0, 1.0, 0.05)
+	var k := DotViewLens.lens_scale(90.0, 60.0)
+	_check(is_equal_approx(model.scale.x, k) and model.scale.z == 1.0, "apply scales X and Y by the lens")
+	_check(is_equal_approx(model.position.z, -(k - 1.0) * DotViewLens.REFERENCE_DEPTH + 0.05), "and pulls it in, then adds the extra")
+	cam.free()
+	model.free()
 
 
 func _check(condition: bool, what: String) -> void:
