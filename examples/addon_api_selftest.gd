@@ -11,7 +11,7 @@ extends Node
 ## the refusal is CODE_VERSION and nothing else would pass for a refusal nobody can read.
 
 const SECTIONS := 8
-const CHECKS := 61
+const CHECKS := 65
 
 const SCRATCH := "user://addon_api_selftest"
 
@@ -306,6 +306,20 @@ func _test_floors() -> void:
 	DirAccess.remove_absolute(dir + "/examples")
 	DirAccess.remove_absolute(dir)
 	DirAccess.remove_absolute(SCRATCH)
+
+	var udir := SCRATCH + "/uses"
+	DirAccess.make_dir_recursive_absolute(udir)
+	_check(not DotAddonApi.derive(udir).has("dot_core"), "a project with no uses file and no code does not use dot_core")
+	var uf := FileAccess.open(udir + "/" + DotAddonApi.USES_FILE, FileAccess.WRITE)
+	uf.store_string('{"format": 1, "uses": ["dot_core", "not an addon", 5]}')
+	uf.close()
+	var uses := DotAddonApi.declared_uses(udir)
+	_check(uses == PackedStringArray(["dot_core"]), "declared_uses reads valid names only", str(uses))
+	var by_file := DotAddonApi.derive(udir)
+	_check(by_file.has("dot_core"), "derive() counts an addon named in requires.uses.json (%s)" % str(by_file))
+	_check(DotAddonApi.floor_audit({"dot_core": by_file.get("dot_core", 1)}, by_file, {}, {}).is_empty(), "so a floor on it is not refused as unused")
+	DirAccess.remove_absolute(udir + "/" + DotAddonApi.USES_FILE)
+	DirAccess.remove_absolute(udir)
 
 	var named := DotAddonApi.parse("[]", DotAddonApi.FLOOR_FILE)
 	_check(not named.ok and named.error.message.contains(DotAddonApi.FLOOR_FILE), "a floor file that is not a table is named as itself", str(named.error) if not named.ok else "")

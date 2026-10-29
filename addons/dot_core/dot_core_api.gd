@@ -46,5 +46,7 @@ extends RefCounted
 #     New here for it: DotYaml.emit, DotAddonConfig.set_nested, is_finite_value and check_field (the schema check
 #     save_user uses). DotAddonConfig.set_user_tier no longer touches DotProfileSet; that set reads the same flag.
 # 23: DotCollisionSweep (drawn floor and walls against the physics world, and collision nothing is drawn at).
-const LEVEL := 23
+# 24: DotAddonApi.USES_FILE and declared_uses: derive() counts addons a project names in requires.uses.json
+#     (use through config only), so a floor on them is not refused as "does not use".
+const LEVEL := 24
 const OLDEST := 1

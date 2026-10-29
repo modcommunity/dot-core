@@ -16,6 +16,10 @@ const REQUIREMENTS_FILE := "requires.json"
 ## asks the host for the newer API before using it. See [method apply_floors].
 const FLOOR_FILE := "requires.floor.json"
 
+## The file a project commits to name addons it uses where no script or scene names a class
+## or path (config only). [method derive] counts them as used. Shape: {"format": 1, "uses": ["x"]}.
+const USES_FILE := "requires.uses.json"
+
 ## Where addons live, in a build and in a checkout alike.
 const ADDONS_ROOT := "res://addons"
 
@@ -291,11 +295,30 @@ static func derive(
 			classes[str(entry.get("class", ""))] = addon
 
 	var scan := _scan(root, skip_dirs, classes)
+	for addon in declared_uses(root):
+		scan.hard[addon] = true
 	var out := {}
 	for addon in scan.hard.keys():
 		var level := build_level(str(addon))
 		if level > 0:
 			out[str(addon)] = level
+	return out
+
+
+## The addons [param root]'s [constant USES_FILE] names; empty when absent or unreadable.
+static func declared_uses(root: String = "res://") -> PackedStringArray:
+	var out := PackedStringArray()
+	var path := _join(root, USES_FILE)
+	if not FileAccess.file_exists(path):
+		return out
+	var json := JSON.new()
+	if json.parse(FileAccess.get_file_as_string(path)) != OK or not (json.data is Dictionary):
+		return out
+	var raw: Variant = (json.data as Dictionary).get("uses", [])
+	if raw is Array:
+		for item in raw:
+			if item is String and _is_addon_name(item):
+				out.append(item)
 	return out
 
 
