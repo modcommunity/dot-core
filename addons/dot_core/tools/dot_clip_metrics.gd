@@ -6,7 +6,7 @@ extends RefCounted
 ## a missing key takes the default below, and a check with no samples reports as skipped.
 
 const DEFAULTS := {
-	"plant_height_m": 0.06, "slide_mps": 0.25, "sink_m": 0.05, "float_m": 0.10,
+	"plant_height_m": 0.06, "slide_mps": 0.25, "sink_m": 0.05, "float_m": 0.10, "hover_share": 0.25,
 	"frame_margin": 0.02, "pop_deg": 90.0, "clip_frames_max": 0,
 }
 
@@ -44,41 +44,80 @@ func _skip(check: String) -> Dictionary:
 	return {"check": check, "pass": true, "skip": true, "value": "-", "limit": "-", "note": "no samples"}
 
 
+## The frame index from which the body is up to speed: root speed first reaches 90% of its peak,
+## so the instant start of a clip is not judged as a foot dragging. 0 when the root never moves.
+func _cruise_from() -> int:
+	var peak := 0.0
+	var speeds: Array[float] = [0.0]
+	for i in range(1, _frames.size()):
+		var a: Vector3 = _frames[i - 1].get("root", Vector3.ZERO)
+		var b: Vector3 = _frames[i].get("root", Vector3.ZERO)
+		var dt := float(_frames[i]["t"]) - float(_frames[i - 1]["t"])
+		var speed := Vector2(b.x - a.x, b.z - a.z).length() / dt if dt > 0.0 else 0.0
+		speeds.append(speed)
+		peak = maxf(peak, speed)
+	if peak < 0.5:
+		return 0
+	for i in speeds.size():
+		if speeds[i] >= peak * 0.9:
+			return i
+	return 0
+
+
 func _slide(lim: Dictionary) -> Dictionary:
-	# A planted foot (near the floor in both frames) should not travel across it.
+	# A foot on the floor over a stretch of the clip where the body is up to speed should stay
+	# put in the world: its world speed over the stretch is the skate. The foot's speed relative
+	# to the root is what a planted foot adds to the root's, so it is reported beside it.
 	var worst := 0.0
+	var worst_rel := 0.0
 	var seen := false
 	var run_start: Array[Vector3] = []
+	var run_root: Array[Vector3] = []
 	var run_t: Array[float] = []
-	for frame in _frames:
+	var from := _cruise_from()
+	for n in range(from, _frames.size()):
+		var frame := _frames[n]
 		var feet: Array = frame.get("feet", [])
 		if feet.is_empty() or not frame.get("grounded", false):
 			run_start.clear()
 			continue
 		seen = true
+		var root: Vector3 = frame.get("root", Vector3.ZERO)
 		if run_start.size() != feet.size():
 			run_start.assign(feet)
+			run_root.assign(feet.map(func(_f: Vector3) -> Vector3: return root))
 			run_t.assign(feet.map(func(_f: Vector3) -> float: return float(frame["t"])))
 			continue
 		for i in feet.size():
 			var foot: Vector3 = feet[i]
 			if foot.y - float(frame["ground_y"]) > float(lim["plant_height_m"]):
 				run_start[i] = foot
+				run_root[i] = root
 				run_t[i] = float(frame["t"])
 				continue
 			var dt: float = float(frame["t"]) - run_t[i]
+			if dt < 0.2:
+				continue
 			var flat := Vector2(foot.x - run_start[i].x, foot.z - run_start[i].z).length()
-			if dt >= 0.2:
-				worst = maxf(worst, flat / dt)
+			var moved := Vector2(root.x - run_root[i].x, root.z - run_root[i].z)
+			var rel := (Vector2(foot.x - run_start[i].x, foot.z - run_start[i].z) - moved).length()
+			worst = maxf(worst, flat / dt)
+			worst_rel = maxf(worst_rel, rel / dt)
 	if not seen:
 		return _skip("foot_slide")
-	return _row("foot_slide", worst <= float(lim["slide_mps"]), worst, float(lim["slide_mps"]), "m/s, planted foot over >=0.2 s")
+	return _row("foot_slide", worst <= float(lim["slide_mps"]), worst, float(lim["slide_mps"]),
+		"m/s world speed of a foot on the floor >=0.2 s, once up to speed (frame %d on); relative to root %.2f m/s" % [from, worst_rel])
 
 
 func _floor(lim: Dictionary) -> Dictionary:
+	# Sinking is the lowest foot under the ground; hovering is the share of time both feet are
+	# off the floor by more than float_m, which a run's flight phase is not (a short, regular one).
 	var low := INF
 	var high := -INF
-	for frame in _frames:
+	var counted := 0
+	var airborne := 0
+	for n in range(_cruise_from(), _frames.size()):
+		var frame := _frames[n]
 		var feet: Array = frame.get("feet", [])
 		if feet.is_empty() or not frame.get("grounded", false):
 			continue
@@ -88,10 +127,15 @@ func _floor(lim: Dictionary) -> Dictionary:
 		var gap := lowest - float(frame["ground_y"])
 		low = minf(low, gap)
 		high = maxf(high, gap)
-	if low == INF:
+		counted += 1
+		if gap > float(lim["float_m"]):
+			airborne += 1
+	if counted == 0:
 		return _skip("floor_contact")
-	var ok := low >= -float(lim["sink_m"]) and high <= float(lim["float_m"])
-	return _row("floor_contact", ok, high if absf(high) > absf(low) else low, float(lim["float_m"]), "lowest foot above floor: %.3f..%.3f m" % [low, high])
+	var share := float(airborne) / float(counted)
+	var ok := low >= -float(lim["sink_m"]) and share <= float(lim["hover_share"])
+	return _row("floor_contact", ok, share, float(lim["hover_share"]),
+		"share of grounded frames with both feet >%.2f m up; lowest foot %.3f..%.3f m" % [float(lim["float_m"]), low, high])
 
 
 func _framing(lim: Dictionary) -> Dictionary:
