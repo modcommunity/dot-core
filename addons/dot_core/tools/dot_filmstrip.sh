@@ -30,7 +30,7 @@ for ((i = 0; i < n; i++)); do
   graph+="fps=$frames/$dur:round=down,tile=${cols}x${rows}[v$i];"
 done
 for ((i = 0; i < n; i++)); do graph+="[v$i]"; done
-graph+="hstack=inputs=$n"
+if ((n > 1)); then graph+="hstack=inputs=$n"; else graph+="copy"; fi
 ffmpeg -v error -y -i "$movie" -filter_complex "$graph" -frames:v 1 "${prefix}_sheet.png"
 ffmpeg -v error -y -i "$movie" -c:v libx264 -pix_fmt yuv420p -crf 20 "${prefix}.mp4"
 echo "wrote ${prefix}_sheet.png ${prefix}.mp4 ($frames frames per view, ${dur}s)"

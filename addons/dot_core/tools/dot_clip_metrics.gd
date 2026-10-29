@@ -20,6 +20,51 @@ func add(sample: Dictionary) -> void:
 	_frames.append(sample)
 
 
+## The limits for [param clip] from a thresholds file: its "defaults" merged with "clips"[clip].
+static func limits_for(path: String, clip: String) -> Dictionary:
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not parsed is Dictionary:
+		return {}
+	var limits: Dictionary = (parsed as Dictionary).get("defaults", {}).duplicate()
+	limits.merge((parsed as Dictionary).get("clips", {}).get(clip, {}), true)
+	return limits
+
+
+## Writes [param text] and [param extra] lines to [param path], making its folder.
+static func write_report(path: String, text: String, extra: Array[String] = []) -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path).get_base_dir())
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file != null:
+		file.store_string(text + "\n" + "\n".join(extra) + "\n")
+
+
+var _feet_bones: Array[int] = []
+var _sole := NAN
+
+
+## A sample (without `points`, `blocked`) from [param skeleton]'s pose at [param t]: foot bones
+## found by name, soles taken from the first frame so a foot's height is above the ground.
+func pose_sample(t: float, skeleton: Skeleton3D, root: Vector3, grounded: bool) -> Dictionary:
+	var sample := {"t": t, "root": root, "ground_y": root.y, "grounded": grounded}
+	if skeleton == null:
+		return sample
+	if _feet_bones.is_empty():
+		for i in skeleton.get_bone_count():
+			var bone := skeleton.get_bone_name(i).to_lower()
+			if bone.contains("foot") and not bone.contains("toe"):
+				_feet_bones.append(i)
+	var ankles: Array = _feet_bones.map(func(i: int) -> Vector3: return skeleton.global_transform * skeleton.get_bone_global_pose(i).origin)
+	if not ankles.is_empty():
+		if is_nan(_sole):
+			_sole = ankles.map(func(a: Vector3) -> float: return a.y - root.y).min()
+		sample["feet"] = ankles.map(func(a: Vector3) -> Vector3: return a - Vector3(0.0, _sole, 0.0))
+	var rotations: Array = []
+	for i in skeleton.get_bone_count():
+		rotations.append(skeleton.get_bone_pose_rotation(i))
+	sample["rotations"] = rotations
+	return sample
+
+
 ## Returns rows {check, pass, value, limit, note}.
 func evaluate(limits: Dictionary) -> Array[Dictionary]:
 	var lim := DEFAULTS.duplicate()
