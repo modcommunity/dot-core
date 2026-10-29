@@ -39,7 +39,31 @@ static func write_report(path: String, text: String, extra: Array[String] = []) 
 
 
 var _feet_bones: Array[int] = []
+## Per foot, the leg bone that deforms it and the foot's rest position in that bone's frame, or null.
+var _feet_legs: Array = []
 var _sole := NAN
+
+
+## A foot bone parented straight under the skeleton root is an IK control the mesh does not follow:
+## returns [leg bone, foot rest position in its frame] for the nearest lower-leg bone, else null.
+static func _leg_anchor(skeleton: Skeleton3D, foot: int) -> Variant:
+	var parent := skeleton.get_bone_parent(foot)
+	if parent >= 0 and skeleton.get_bone_parent(parent) >= 0:
+		return null
+	var rest := skeleton.get_bone_global_rest(foot).origin
+	var best := -1
+	var gap := INF
+	for i in skeleton.get_bone_count():
+		var bone := skeleton.get_bone_name(i).to_lower()
+		if not (bone.contains("lowerleg") or bone.contains("calf") or bone.contains("shin")):
+			continue
+		var d := Vector2(skeleton.get_bone_global_rest(i).origin.x - rest.x, skeleton.get_bone_global_rest(i).origin.z - rest.z).length()
+		if d < gap:
+			gap = d
+			best = i
+	if best < 0:
+		return null
+	return [best, skeleton.get_bone_global_rest(best).affine_inverse() * rest]
 
 
 ## A sample (without `points`, `blocked`) from [param skeleton]'s pose at [param t]: foot bones
@@ -53,7 +77,16 @@ func pose_sample(t: float, skeleton: Skeleton3D, root: Vector3, grounded: bool) 
 			var bone := skeleton.get_bone_name(i).to_lower()
 			if bone.contains("foot") and not bone.contains("toe"):
 				_feet_bones.append(i)
-	var ankles: Array = _feet_bones.map(func(i: int) -> Vector3: return skeleton.global_transform * skeleton.get_bone_global_pose(i).origin)
+		for i in _feet_bones:
+			_feet_legs.append(_leg_anchor(skeleton, i))
+	var ankles: Array = []
+	for n in _feet_bones.size():
+		var anchor: Variant = _feet_legs[n]
+		var at := skeleton.get_bone_global_pose(_feet_bones[n])
+		if anchor != null:
+			var leg: int = anchor[0]
+			at = Transform3D(Basis(), skeleton.get_bone_global_pose(leg) * (anchor[1] as Vector3))
+		ankles.append(skeleton.global_transform * at.origin)
 	if not ankles.is_empty():
 		if is_nan(_sole):
 			_sole = ankles.map(func(a: Vector3) -> float: return a.y - root.y).min()
