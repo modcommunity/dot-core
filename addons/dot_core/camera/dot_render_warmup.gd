@@ -42,8 +42,13 @@ signal finished(count: int)
 ## shadow or depth variant a frame later gets its second chance.
 @export var frames: int = 2
 
-## Seconds after which [signal finished] fires anyway: a headless run or a hidden window
-## never draws, and a cover waiting on this must not wait for ever.
+## Items put up per round (each round stays [member frames] frames). One round of thousands is a
+## single frame of seconds that no cover can animate through and a desktop calls "not responding".
+## 0 draws everything at once.
+@export var batch_size: int = 1000
+
+## Seconds without a drawn frame after which [signal finished] fires anyway: a headless run or a
+## hidden window never draws, and a cover waiting on this must not wait for ever.
 @export var timeout_sec: float = 5.0
 
 ## Side of each instance, in metres. Small enough to be invisible at the near plane.
@@ -52,6 +57,8 @@ const SIZE := 0.0005
 var _items: Array = []
 var _seen := {}
 var _drawn := 0
+var _next := 0
+var _placed := 0
 var _started := false
 var _done := false
 var _start_msec := 0
@@ -120,9 +127,25 @@ func start() -> void:
 	position = Vector3(0.0, 0.0, -(near + 0.01))
 	_quad = QuadMesh.new()
 	_quad.size = Vector2(SIZE, SIZE)
+	var _c := RenderingServer.frame_post_draw.connect(_on_drawn)
+	_place_batch()
+	DotLog.debug(CHANNEL, "warming %d materials and meshes" % _items.size(), {"items": _items.size(), "batch": batch_size})
+
+
+## Rounds the items are drawn in.
+func batch_count() -> int:
+	if batch_size <= 0 or _items.is_empty():
+		return 1
+	return ceili(float(_items.size()) / float(batch_size))
+
+
+## Puts the next [member batch_size] items up and returns how many were placed.
+func _place_batch() -> int:
+	var end := _items.size() if batch_size <= 0 else mini(_next + batch_size, _items.size())
 	var i := 0
-	for item: Variant in _items:
-		var node := _instance_for(item)
+	while _next < end:
+		var node := _instance_for(_items[_next])
+		_next += 1
 		if node == null:
 			continue
 		# Spread a little so no two share a depth (a renderer may skip one fully hidden
@@ -130,8 +153,8 @@ func start() -> void:
 		node.position = Vector3(float(i & 7) * SIZE, float((i >> 3) & 7) * SIZE, -float(i >> 6) * SIZE)
 		add_child(node)
 		i += 1
-	var _c := RenderingServer.frame_post_draw.connect(_on_drawn)
-	DotLog.debug(CHANNEL, "warming %d materials and meshes" % i, {"items": i})
+	_placed += i
+	return i
 
 
 func _instance_for(item: Variant) -> Node3D:
@@ -171,9 +194,17 @@ func _process(_delta: float) -> void:
 
 
 func _on_drawn() -> void:
+	_start_msec = Time.get_ticks_msec()
 	_drawn += 1
-	if _drawn >= frames:
+	if _drawn < frames:
+		return
+	if _next >= _items.size():
 		_finish()
+		return
+	_drawn = 0
+	for child in get_children():
+		child.queue_free()
+	_place_batch()
 
 
 func _finish() -> void:
@@ -182,8 +213,7 @@ func _finish() -> void:
 	_done = true
 	if RenderingServer.frame_post_draw.is_connected(_on_drawn):
 		RenderingServer.frame_post_draw.disconnect(_on_drawn)
-	var n := get_child_count()
-	finished.emit(n)
+	finished.emit(_placed)
 	queue_free()
 
 

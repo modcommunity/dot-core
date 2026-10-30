@@ -40,7 +40,8 @@ A renderer compiles a material's shader the first time something using it is dra
 - **Why it is invisible and still works**: culling is by bounds on the CPU, not by covered pixels, so a sub-pixel quad inside the frustum is submitted and its program built exactly as a full-screen one would be.
 - **Why a mesh is drawn as itself** rather than its materials on a quad: the vertex format is part of the shader variant.
 - **What it misses**: variants that depend on what draws the surface. A skinned mesh warms its unskinned variant, and a light that appears later (a muzzle flash) adds variants nobody drew. It removes most first-use stalls, not all.
-- **It never waits for ever**: headless or in a hidden window nothing is drawn, so `timeout_sec` (5 s) finishes it anyway; a loading screen held on `finished` always lifts.
+- **It never waits for ever**: headless or in a hidden window nothing is drawn, so `timeout_sec` (5 s without a drawn frame) finishes it anyway; a loading screen held on `finished` always lifts.
+- **It draws in rounds**: `batch_size` (1000) items per round, each up `frames` frames. One round of a big map's 18,000 draws was a single 2.4 s frame on a fast GPU, long enough on a slow one for the OS to call the window not responding; rounds keep each frame near 130 ms. 0 restores one round.
 
 The client shell (dot-server-deploy) runs it under its loading screen; `examples/camera_selftest` covers collection, placement and the timeout.
 

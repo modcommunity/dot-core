@@ -468,6 +468,14 @@ func _test_render_warmup() -> void:
 	_check(got == 4, "finished fires even when nothing is drawn, with the count drawn")
 	await get_tree().process_frame
 	_check(not is_instance_valid(warm), "and the warmup frees itself")
+	var cut := DotRenderWarmup.new()
+	cut.batch_size = 3
+	cut.timeout_sec = 0.3
+	cam.add_child(cut)
+	cut.add_items(items)
+	cut.start()
+	_check(cut.batch_count() == 2 and cut.get_child_count() == 3, "a batch size splits the items across frames (%d up, %d rounds)" % [cut.get_child_count(), cut.batch_count()])
+	await cut.finished
 	cam.queue_free()
 	scene.free()
 
