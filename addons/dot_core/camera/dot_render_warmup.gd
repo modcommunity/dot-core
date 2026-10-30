@@ -66,9 +66,9 @@ var _quad: QuadMesh = null
 var _proxied := {}
 
 ## A mesh with more surfaces than this is drawn as one triangle per distinct material and
-## vertex format, not as itself: a converted map is thousands of meshes, so drawing each whole
-## was a ~18000-call frame, the longest of the cover.
-const PROXY_SURFACES := 8
+## vertex format, not as itself: a converted map is thousands of meshes, so drawing each
+## was a ~18000-call frame. Zero: every mesh is warmed once per pipeline.
+const PROXY_SURFACES := 0
 
 
 ## Every [Material] and [Mesh] a subtree draws: geometry's surface and override materials,
@@ -197,7 +197,15 @@ func _instance_for(item: Variant) -> Node3D:
 
 ## One triangle of each surface whose (material, vertex format) has not been drawn yet, in the
 ## surface's own format so its pipeline is the one the full mesh will use. Null if nothing is new.
-func _proxy_for(mesh: Mesh) -> ArrayMesh:
+func _proxy_for(source: Mesh) -> ArrayMesh:
+	var mesh := source
+	if not (source is ArrayMesh):
+		# A primitive mesh has no surface format; an array copy of it does.
+		var copy := ArrayMesh.new()
+		for i in source.get_surface_count():
+			copy.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, source.surface_get_arrays(i))
+			copy.surface_set_material(i, source.surface_get_material(i))
+		mesh = copy
 	var out := ArrayMesh.new()
 	for i in mesh.get_surface_count():
 		if mesh.surface_get_primitive_type(i) != Mesh.PRIMITIVE_TRIANGLES:
