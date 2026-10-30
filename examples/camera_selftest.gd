@@ -13,7 +13,7 @@ extends Node3D
 ## [/codeblock]
 
 const SECTIONS := 10
-const CHECKS := 43
+const CHECKS := 45
 
 const WORLD := 1
 const PEOPLE := 2
@@ -478,6 +478,33 @@ func _test_render_warmup() -> void:
 	await cut.finished
 	cam.queue_free()
 	scene.free()
+
+	# A converted map is hundreds of surfaces over a few materials; drawn whole it was an
+	# 18000-call frame. One triangle per material and format is the same pipelines for ~3 calls.
+	var big := ArrayMesh.new()
+	var mats := [StandardMaterial3D.new(), StandardMaterial3D.new(), StandardMaterial3D.new()]
+	for i in 300:
+		var arrays: Array = []
+		arrays.resize(Mesh.ARRAY_MAX)
+		var o := Vector3(i * 5.0, 0, 0)
+		arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([o, o + Vector3.RIGHT, o + Vector3.UP, o + Vector3.ONE])
+		arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP])
+		arrays[Mesh.ARRAY_TEX_UV2] = PackedVector2Array([Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN, Vector2.ONE])
+		arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2, 2, 1, 3])
+		big.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		big.surface_set_material(i, mats[i % 3])
+	var cam2 := Camera3D.new()
+	add_child(cam2)
+	var warm2 := DotRenderWarmup.new()
+	warm2.timeout_sec = 0.3
+	cam2.add_child(warm2)
+	warm2.add_items([big])
+	warm2.start()
+	var proxy := (warm2.get_child(0) as MeshInstance3D).mesh
+	_check(proxy.get_surface_count() == 3, "a many-surface mesh is warmed as one triangle per material (%d surfaces)" % proxy.get_surface_count())
+	_check(proxy.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV2] != null, "and keeps the vertex format of the surface")
+	var _g: int = await warm2.finished
+	cam2.queue_free()
 
 
 # --- reporting ---------------------------------------------------------------------------

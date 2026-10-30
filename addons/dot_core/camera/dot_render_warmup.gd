@@ -63,6 +63,12 @@ var _started := false
 var _done := false
 var _start_msec := 0
 var _quad: QuadMesh = null
+var _proxied := {}
+
+## A mesh with more surfaces than this is drawn as one triangle per distinct material and
+## vertex format, not as itself: a converted map is thousands of meshes, so drawing each whole
+## was a ~18000-call frame, the longest of the cover.
+const PROXY_SURFACES := 8
 
 
 ## Every [Material] and [Mesh] a subtree draws: geometry's surface and override materials,
@@ -170,6 +176,10 @@ func _instance_for(item: Variant) -> Node3D:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	if item is Mesh:
 		var mesh := item as Mesh
+		if mesh.get_surface_count() > PROXY_SURFACES:
+			mesh = _proxy_for(mesh)
+			if mesh == null:
+				return null
 		mi.mesh = mesh
 		# A mesh is drawn as itself (its vertex format is part of the variant), shrunk to
 		# the same size as a quad.
@@ -183,6 +193,58 @@ func _instance_for(item: Variant) -> Node3D:
 		mi.material_override = item
 		return mi
 	return null
+
+
+## One triangle of each surface whose (material, vertex format) has not been drawn yet, in the
+## surface's own format so its pipeline is the one the full mesh will use. Null if nothing is new.
+func _proxy_for(mesh: Mesh) -> ArrayMesh:
+	var out := ArrayMesh.new()
+	for i in mesh.get_surface_count():
+		if mesh.surface_get_primitive_type(i) != Mesh.PRIMITIVE_TRIANGLES:
+			continue
+		var fmt: int = mesh.surface_get_format(i)
+		var mat := mesh.surface_get_material(i)
+		var key := [mat.get_instance_id() if mat != null else 0, fmt]
+		if _proxied.has(key):
+			continue
+		var arrays := _first_triangle(mesh.surface_get_arrays(i))
+		if arrays.is_empty():
+			continue
+		_proxied[key] = true
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, fmt & ~Mesh.ARRAY_FORMAT_INDEX)
+		out.surface_set_material(out.get_surface_count() - 1, mat)
+	return out if out.get_surface_count() > 0 else null
+
+
+## The first triangle of a surface's arrays, every per-vertex array cut to its three vertices and
+## moved to the origin; empty when the surface has fewer than three.
+static func _first_triangle(arrays: Array) -> Array:
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var count := verts.size()
+	if count < 3:
+		return []
+	var picks: Array[int] = [0, 1, 2]
+	var index: Variant = arrays[Mesh.ARRAY_INDEX]
+	if index != null and (index as PackedInt32Array).size() >= 3:
+		var idx := index as PackedInt32Array
+		picks = [idx[0], idx[1], idx[2]]
+	var out: Array = []
+	out.resize(Mesh.ARRAY_MAX)
+	for k in Mesh.ARRAY_MAX:
+		var src: Variant = arrays[k]
+		if src == null or k == Mesh.ARRAY_INDEX or (src as Variant).size() == 0:
+			continue
+		var stride: int = (src as Variant).size() / count
+		var cut: Variant = src.slice(0, 0)
+		for v in picks:
+			cut.append_array(src.slice(v * stride, (v + 1) * stride))
+		out[k] = cut
+	var base: Vector3 = verts[picks[0]]
+	var moved := PackedVector3Array()
+	for v in picks:
+		moved.append(verts[v] - base)
+	out[Mesh.ARRAY_VERTEX] = moved
+	return out
 
 
 func _process(_delta: float) -> void:
