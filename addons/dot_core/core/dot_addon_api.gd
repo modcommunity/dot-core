@@ -297,12 +297,25 @@ static func derive(
 	var scan := _scan(root, skip_dirs, classes)
 	for addon in declared_uses(root):
 		scan.hard[addon] = true
+	var own := own_addon(root)
 	var out := {}
 	for addon in scan.hard.keys():
+		if addon == own:
+			continue
 		var level := build_level(str(addon))
 		if level > 0:
 			out[str(addon)] = level
 	return out
+
+
+## The addon a project of that name provides itself ("zz-medieval-weapons" is addons/zz_medieval_weapons), or "".
+## A pack must not require the addon it carries: no server has it installed, so the pack is refused. Decided by name because a copied dependency (Windows) looks like owned source.
+static func own_addon(root: String = "res://") -> String:
+	var cfg := ConfigFile.new()
+	if cfg.load(_join(root, "project.godot")) != OK:
+		return ""
+	var addon := str(cfg.get_value("application", "config/name", "")).to_lower().replace("-", "_")
+	return addon if _is_addon_name(addon) and DirAccess.dir_exists_absolute(_join(_join(root, ADDONS_ROOT.trim_prefix("res://")), addon)) else ""
 
 
 ## The addons [param root]'s [constant USES_FILE] names; empty when absent or unreadable.
@@ -335,9 +348,10 @@ static func derive_optional(
 		if addon != "":
 			classes[str(entry.get("class", ""))] = addon
 	var scan := _scan(root, skip_dirs, classes)
+	var own := own_addon(root)
 	var out := {}
 	for addon in scan.soft.keys():
-		if not scan.hard.has(addon):
+		if not scan.hard.has(addon) and addon != own:
 			var level := build_level(str(addon))
 			if level > 0:
 				out[str(addon)] = level

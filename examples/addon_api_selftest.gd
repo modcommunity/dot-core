@@ -11,7 +11,7 @@ extends Node
 ## the refusal is CODE_VERSION and nothing else would pass for a refusal nobody can read.
 
 const SECTIONS := 8
-const CHECKS := 65
+const CHECKS := 67
 
 const SCRATCH := "user://addon_api_selftest"
 
@@ -189,7 +189,26 @@ func _test_deriving_and_auditing() -> void:
 	_check(derived.is_empty(), "this project, with its examples skipped, uses no addon (%s)" % str(derived))
 
 	var with_examples := DotAddonApi.derive("res://", PackedStringArray(["addons", ".godot"]))
-	_check(with_examples.get("dot_core") == _core_level(), "with them, it uses dot-core at this build's level (%s)" % str(with_examples))
+	_check(not with_examples.has("dot_core"), "with them, dot-core still does not require itself (%s)" % str(with_examples))
+
+	var own_dir := SCRATCH + "_own"
+	DirAccess.make_dir_recursive_absolute(own_dir + "/addons/zz_own")
+	DirAccess.make_dir_recursive_absolute(own_dir + "/addons/dot_core")
+	var proj := FileAccess.open(own_dir + "/project.godot", FileAccess.WRITE)
+	proj.store_string('[application]\nconfig/name="zz-own"\n')
+	proj.close()
+	var src := FileAccess.open(own_dir + "/g.gd", FileAccess.WRITE)
+	src.store_string('var a = load("res://addons/zz_own/x.tres")\nvar b = load("res://addons/dot_core/y.tres")\n')
+	src.close()
+	var own_got := DotAddonApi.derive(own_dir)
+	_check(DotAddonApi.own_addon(own_dir) == "zz_own", "a project named zz-own provides the addon zz_own")
+	_check(not own_got.has("zz_own") and own_got.has("dot_core"), "a repo does not require the addon it provides, only the others (%s)" % str(own_got))
+	DirAccess.remove_absolute(own_dir + "/addons/zz_own")
+	DirAccess.remove_absolute(own_dir + "/addons/dot_core")
+	DirAccess.remove_absolute(own_dir + "/addons")
+	DirAccess.remove_absolute(own_dir + "/g.gd")
+	DirAccess.remove_absolute(own_dir + "/project.godot")
+	DirAccess.remove_absolute(own_dir)
 
 	var missing := DotAddonApi.audit({}, {"dot_net": 2})
 	_check(missing.size() == 1 and missing[0].contains("not declared"), "an addon used and not declared is reported")
