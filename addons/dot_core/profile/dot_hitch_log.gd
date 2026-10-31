@@ -27,6 +27,10 @@ extends RefCounted
 
 const CHANNEL := "dot.hitch"
 
+## Every frame's split, {t, ms, physics, script, render, wait, systems}; [code]systems[/code] is
+## [method DotFrameCost.take] (empty while it is disabled). A hitch is emitted as the full hitch record.
+signal frame_measured(rec: Dictionary)
+
 ## A frame at least this long is a hitch.
 var threshold_ms := 33.0
 ## Hitches kept; the worst of the older ones is dropped first.
@@ -50,7 +54,7 @@ var _frame_serial := 0
 var _t0 := 0
 var _start_frames := 0
 
-## Every hitch: {t, ms, physics, script, render, wait, deltas, marks, added}.
+## Every hitch: {t, ms, physics, script, render, wait, systems, deltas, marks, added}.
 var hitches: Array[Dictionary] = []
 var frames := 0
 var worst_ms := 0.0
@@ -118,8 +122,8 @@ func report(top: int = 15) -> PackedStringArray:
 	var sorted := hitches.duplicate()
 	sorted.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.ms > b.ms)
 	for h: Dictionary in sorted.slice(0, top):
-		out.append("HITCH t=%.1fs %.1f ms [phys %.1f script %.1f render %.1f wait %.1f] %s%s%s" % [
-			h.t, h.ms, h.physics, h.script, h.render, h.wait, _fmt(h.deltas),
+		out.append("HITCH t=%.1fs %.1f ms [phys %.1f script %.1f render %.1f wait %.1f] %s%s%s%s" % [
+			h.t, h.ms, h.physics, h.script, h.render, h.wait, _fmt(h.deltas), top_systems(h.get("systems", {})),
 			(" marks=" + ", ".join(h.marks)) if not (h.marks as Array).is_empty() else "",
 			(" new=" + ", ".join(h.added)) if not (h.added as Array).is_empty() else ""])
 	return out
@@ -129,6 +133,18 @@ func report(top: int = 15) -> PackedStringArray:
 func summary() -> Dictionary:
 	return {"frames": frames, "hitches": hitches.size(), "per_min": per_minute(),
 		"worst_ms": worst_ms, "p50_ms": percentile(0.5), "p99_ms": percentile(0.99)}
+
+
+## " systems=a 4.1ms, b 2.0ms" for the [param top] costliest of a frame's systems, or "".
+static func top_systems(systems: Dictionary, top: int = 3) -> String:
+	if systems.is_empty():
+		return ""
+	var names := systems.keys()
+	names.sort_custom(func(a: Variant, b: Variant) -> bool: return systems[a].ms > systems[b].ms)
+	var parts: Array[String] = []
+	for n: Variant in names.slice(0, top):
+		parts.append("%s %.1fms" % [n, systems[n].ms])
+	return " systems=" + ", ".join(parts)
 
 
 func _fmt(d: Dictionary) -> String:
@@ -209,14 +225,9 @@ func _finish(now: int) -> void:
 	frames += 1
 	_all_ms.append(wall)
 	worst_ms = maxf(worst_ms, wall)
-	if wall < threshold_ms:
+	var systems := DotFrameCost.take() if DotFrameCost.enabled else {}
+	if wall < threshold_ms and not has_connections("frame_measured"):
 		return
-	var cur := _read()
-	var deltas := {}
-	for k: String in cur:
-		var d: int = int(cur[k]) - int(_snap.get(k, cur[k]))
-		if d != 0 and k != "draws":
-			deltas[k] = d
 	# The window runs from one process_frame to the next: the previous frame's scripts and
 	# draw, then this iteration's physics steps. Headless has no draw, so scripts take the rest.
 	var phys := ((now - _phys_start) / 1000.0) if _phys_start != 0 else 0.0
@@ -227,8 +238,20 @@ func _finish(now: int) -> void:
 		render = ((_post_draw if _post_draw != 0 else now) - _pre_draw) / 1000.0
 	else:
 		script = maxf(wall - phys, 0.0)
-	hitches.append({"t": (_iter_start - _t0) / 1.0e6, "ms": wall, "physics": phys, "script": script,
-		"render": render, "wait": maxf(wall - phys - script - render, 0.0), "deltas": deltas,
-		"marks": _marks.duplicate(), "added": _added.duplicate()})
+	var rec := {"t": (_iter_start - _t0) / 1.0e6, "ms": wall, "physics": phys, "script": script,
+		"render": render, "wait": maxf(wall - phys - script - render, 0.0), "systems": systems}
+	if wall < threshold_ms:
+		frame_measured.emit(rec)
+		return
+	var cur := _read()
+	var deltas := {}
+	for k: String in cur:
+		var d: int = int(cur[k]) - int(_snap.get(k, cur[k]))
+		if d != 0 and k != "draws":
+			deltas[k] = d
+	var hitch := rec.duplicate()
+	hitch.merge({"deltas": deltas, "marks": _marks.duplicate(), "added": _added.duplicate()})
+	hitches.append(hitch)
 	if hitches.size() > keep:
 		hitches.pop_front()
+	frame_measured.emit(hitch)

@@ -49,5 +49,7 @@ extends RefCounted
 # 24: DotAddonApi.USES_FILE and declared_uses: derive() counts addons a project names in requires.uses.json
 #     (use through config only), so a floor on them is not refused as "does not use".
 # 25: camera/: DotViewLens (the first-person model lens maths: vertical_from_horizontal_4_3, lens_scale, apply).
-const LEVEL := 25
+# 26: profile/: DotFrameCost (systems report their per-frame cost: now, add, add_usec, take, reset);
+#     DotHitchLog.frame_measured, top_systems and a hitch's `systems`.
+const LEVEL := 26
 const OLDEST := 1

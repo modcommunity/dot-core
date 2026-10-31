@@ -1,17 +1,18 @@
 extends Node
 
-## Exercises [DotHitchLog]: a deliberately slow frame is recorded with its mark and the nodes added in it, quiet frames are not, and the report names it.
+## Exercises [DotHitchLog]: a deliberately slow frame is recorded with its mark and the nodes added in it, quiet frames are not, the report names it, and a [DotFrameCost] report pins it on a system.
 ##
 ## [codeblock]
 ## godot --headless --path . res://examples/hitch_log_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 3
-const CHECKS := 14
+const SECTIONS := 4
+const CHECKS := 24
 
 var _passed := 0
 var _failed := 0
 var _section_count := 0
+var _measured: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -20,6 +21,7 @@ func _ready() -> void:
 	await _test_records_a_slow_frame()
 	await _test_quiet_frames()
 	await _test_report_and_stop()
+	await _test_frame_cost()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -98,6 +100,48 @@ func _test_report_and_stop() -> void:
 	await get_tree().process_frame
 	_check(h.frames == seen, "no frames counted after stop")
 	_check(h.hitches.size() == 1, "no hitch recorded after stop")
+
+
+func _on_measured(rec: Dictionary) -> void:
+	_measured.append(rec)
+
+
+func _test_frame_cost() -> void:
+	_section("DotFrameCost charges a slow frame to the system that reported it")
+	_check(DotFrameCost.now() == 0, "now() is 0 while disabled")
+	DotFrameCost.add(&"ignored", 1)
+	DotFrameCost.enabled = true
+	var h := DotHitchLog.new()
+	h.threshold_ms = 40.0
+	var _c := h.frame_measured.connect(_on_measured)
+	h.start(get_tree())
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var t := DotFrameCost.now()
+	_busy(60)
+	DotFrameCost.add(&"navigation", t, "rebuild paths")
+	var t2 := DotFrameCost.now()
+	_busy(5)
+	DotFrameCost.add(&"ui", t2)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(_measured.size() >= 3, "frame_measured fires every frame", str(_measured.size()))
+	_check(h.hitches.size() == 1, "one hitch", str(h.hitches.size()))
+	if h.hitches.is_empty():
+		h.stop()
+		DotFrameCost.reset()
+		return
+	var sys: Dictionary = h.hitches[0].get("systems", {})
+	_check(not sys.has(&"ignored"), "a report made while disabled is dropped")
+	_check(sys.has(&"navigation") and sys[&"navigation"].ms >= 55.0, "navigation carries the busy time", str(sys))
+	_check(sys.get(&"navigation", {}).get("what", "") == "rebuild paths", "the worst call is named")
+	_check(sys.has(&"ui") and sys[&"ui"].calls == 1, "a second system is counted apart")
+	var emitted := _measured.filter(func(r: Dictionary) -> bool: return r.has("deltas"))
+	_check(emitted.size() == 1 and emitted[0].systems.has(&"navigation"), "the hitch is emitted whole, with its deltas", str(emitted.size()))
+	_check(h.report(1)[1].contains("systems=navigation"), "the report line leads with the costliest system", h.report(1)[1])
+	h.stop()
+	DotFrameCost.reset()
+	_check(DotFrameCost.take().is_empty() and not DotFrameCost.enabled, "reset clears and disables")
 
 
 func _section(title: String) -> void:
