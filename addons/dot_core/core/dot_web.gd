@@ -17,6 +17,7 @@ static var _bridge_looked_up: bool = false
 static var _callbacks: Dictionary = {}
 
 static var _sync_guard_installed: bool = false
+static var _unload_flush_installed: bool = false
 static var _sync_failures_seen: int = 0
 
 
@@ -106,6 +107,7 @@ static func sync_filesystem() -> void:
 	if b == null:
 		return
 	_install_sync_guard()
+	_install_unload_flush()
 	_report_sync_failures()
 	if b.has_method("force_fs_sync"):
 		b.call("force_fs_sync")
@@ -151,6 +153,31 @@ static func _install_sync_guard() -> bool:
 			return orig.apply(console, arguments); }; }""", true)
 	_sync_guard_installed = true
 	return true
+
+
+## Starts one more IndexedDB save when the page is hidden or unloading, so a tab closed mid-sync loses less.
+## Installed by the first [method sync_filesystem]; a browser may still cut the save short, so a caller that must not lose a write uses [method flush_filesystem].
+static func _install_unload_flush() -> void:
+	if _unload_flush_installed:
+		return
+	var win: Variant = get_global("window")
+	if win == null:
+		return
+	var on_hide := func(_args: Array) -> void:
+		var b := bridge()
+		if b != null and b.has_method("force_fs_sync"):
+			b.call("force_fs_sync")
+	var on_visibility := func(_args: Array) -> void:
+		if not is_page_visible():
+			on_hide.call(_args)
+	var hide_cb: Variant = create_callback("dot_core.unload_flush", on_hide)
+	var vis_cb: Variant = create_callback("dot_core.unload_flush_visibility", on_visibility)
+	if hide_cb == null or vis_cb == null:
+		return
+	win.addEventListener("pagehide", hide_cb)
+	win.addEventListener("beforeunload", hide_cb)
+	win.addEventListener("visibilitychange", vis_cb)
+	_unload_flush_installed = true
 
 
 static func _report_sync_failures() -> void:
