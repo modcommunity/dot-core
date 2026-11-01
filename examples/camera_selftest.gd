@@ -13,7 +13,7 @@ extends Node3D
 ## [/codeblock]
 
 const SECTIONS := 10
-const CHECKS := 45
+const CHECKS := 46
 
 const WORLD := 1
 const PEOPLE := 2
@@ -483,7 +483,7 @@ func _test_render_warmup() -> void:
 	# 18000-call frame. One triangle per material and format is the same pipelines for ~3 calls.
 	var big := ArrayMesh.new()
 	var mats := [StandardMaterial3D.new(), StandardMaterial3D.new(), StandardMaterial3D.new()]
-	for i in 300:
+	for i in 250:  # the engine refuses a mesh past 256 surfaces
 		var arrays: Array = []
 		arrays.resize(Mesh.ARRAY_MAX)
 		var o := Vector3(i * 5.0, 0, 0)

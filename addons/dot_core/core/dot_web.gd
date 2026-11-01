@@ -5,9 +5,9 @@ extends RefCounted
 ## Everything goes through [method Engine.get_singleton]: naming JavaScriptBridge fails to parse on desktop builds.
 ## Off-web each call is a no-op or a failed [DotResult], so callers can use it unguarded.
 
-# No log channel: static bridges to the browser, each of which is a no-op or a failed
-# DotResult off the web. Whether "not in a browser" or "no quota API" matters is the
-# caller's decision, and on every desktop build it is the ordinary case.
+# Most of this class has no log channel: each call is a no-op or a failed DotResult off the web, and whether
+# "not in a browser" matters is the caller's decision. Only the filesystem sync reports, on its own channel.
+const SYNC_CHANNEL := "web.sync"
 
 static var _bridge: Object = null
 static var _bridge_looked_up: bool = false
@@ -15,6 +15,9 @@ static var _bridge_looked_up: bool = false
 ## Callbacks handed to JS are kept alive here.
 ## [method JavaScriptBridge.create_callback] does not retain its reference; a dropped one leaves JS calling freed memory.
 static var _callbacks: Dictionary = {}
+
+static var _sync_guard_installed: bool = false
+static var _sync_failures_seen: int = 0
 
 
 ## The [code]JavaScriptBridge[/code] singleton, or null off-web.
@@ -94,15 +97,67 @@ static func release_callback(name: String) -> void:
 	_callbacks.erase(name)
 
 
-## Flushes the emulated filesystem to IndexedDB; no-op off-web.
+## Asks for the emulated filesystem to be flushed to IndexedDB; no-op off-web. Returns at once.
 ## On web [code]user://[/code] is an in-memory mirror persisted asynchronously, so a tab closed before the flush loses writes.
 ## dot-cloud calls it after each committed object, not once at the end.
+## The engine's own sync can fail (a file renamed or removed between its listing and its store) and only prints to the console; a failure is counted here and logged at WARN on the next call. Use [method flush_filesystem] where the last write must land.
 static func sync_filesystem() -> void:
 	var b := bridge()
 	if b == null:
 		return
+	_install_sync_guard()
+	_report_sync_failures()
 	if b.has_method("force_fs_sync"):
 		b.call("force_fs_sync")
+
+
+## How many times the engine reported that a save to IndexedDB failed; 0 off-web.
+static func sync_failures() -> int:
+	if not _install_sync_guard():
+		return 0
+	var n: Variant = eval("window.__dotFsSyncFailures|0", true)
+	return int(n) if n != null else 0
+
+
+## Syncs, waits, and syncs again while the engine reports a failed save, up to [param attempts] times.
+## The engine's callback is not visible, so the wait is a fixed [param settle_s] per attempt. Fails with [code]CODE_IO[/code] if the last attempt still reported a failure, and succeeds off-web.
+static func flush_filesystem(tree: SceneTree, attempts: int = 3, settle_s: float = 1.0) -> DotResult:
+	if not available() or tree == null:
+		return DotResult.success(true)
+	for attempt in maxi(attempts, 1):
+		var before := sync_failures()
+		sync_filesystem()
+		await tree.create_timer(settle_s).timeout
+		if sync_failures() == before:
+			return DotResult.success(true)
+		DotLog.warn(SYNC_CHANNEL, "browser storage save failed; trying again", {"attempt": attempt + 1, "of": attempts})
+	return DotResult.fail(DotError.CODE_IO, "The browser would not save user:// to IndexedDB.")
+
+
+## True when [param current] failures is more than the [param seen] count: the one comparison [method _report_sync_failures] makes.
+static func has_new_sync_failures(current: int, seen: int) -> bool:
+	return current > seen
+
+
+## Wraps console.error once so the engine's "Failed to save IDB file system" line is also counted.
+static func _install_sync_guard() -> bool:
+	if _sync_guard_installed:
+		return true
+	if not available():
+		return false
+	eval("""if (!window.__dotFsGuard) { window.__dotFsGuard = true; window.__dotFsSyncFailures = 0;
+		const orig = console.error; console.error = function () {
+			if (arguments.length && String(arguments[0]).indexOf('Failed to save IDB file system') >= 0) window.__dotFsSyncFailures++;
+			return orig.apply(console, arguments); }; }""", true)
+	_sync_guard_installed = true
+	return true
+
+
+static func _report_sync_failures() -> void:
+	var now := sync_failures()
+	if has_new_sync_failures(now, _sync_failures_seen):
+		DotLog.warn(SYNC_CHANNEL, "browser storage save failed; a later sync rewrites what it missed", {"new": now - _sync_failures_seen, "total": now})
+	_sync_failures_seen = now
 
 
 ## Best-effort storage quota, as [code]{"usage": bytes, "quota": bytes}[/code].

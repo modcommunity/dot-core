@@ -52,5 +52,6 @@ extends RefCounted
 # 26: profile/: DotFrameCost (systems report their per-frame cost: now, add, add_usec, take, reset);
 #     DotHitchLog.frame_measured, top_systems and a hitch's `systems`.
 # 27: DotLoadGate.cover_slice_msec and slice_msec(base_ms): a wider per-frame budget for work held under the cover.
-const LEVEL := 27
+# 28: DotWeb.sync_failures, flush_filesystem (a failed IndexedDB save is counted, logged and retried) and has_new_sync_failures.
+const LEVEL := 28
 const OLDEST := 1

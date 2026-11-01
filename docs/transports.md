@@ -6,7 +6,7 @@
 | --- | --- |
 | Browsers have no UDP; `ENetMultiplayerPeer` is absent from the web template | `DotTransportENet` reaches ENet via `ClassDB.instantiate` + `Object.call`, never by name: a script mentioning the identifier fails to compile on web |
 | Browsers have no `HTTPClient`, only `HTTPRequest` | `DotHttp` uses `HTTPRequest` unconditionally |
-| `user://` on web is an IndexedDB mirror needing explicit flushes | every write path calls `DotWeb.sync_filesystem()` |
+| `user://` on web is an IndexedDB mirror needing explicit flushes | every write path calls `DotWeb.sync_filesystem()`; it counts the engine's console-only "Failed to save IDB file system" and logs WARN on channel `web.sync`; a write that must survive (a downloaded pack) awaits `DotWeb.flush_filesystem(tree)`, which retries |
 | Web builds may have no threads | `DotScheduler` slices on the main thread inside a frame budget |
 | A mounted PCK can never be unmounted, on any platform | `DotPlatform.can_unmount_packs()` returns false; see dot-cloud |
 | A browser tab cannot listen for connections | `DotTransport.create_server()` refuses early with an explanatory error |
