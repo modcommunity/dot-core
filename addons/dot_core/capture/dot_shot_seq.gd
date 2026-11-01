@@ -35,3 +35,12 @@ func step(viewport: Viewport) -> bool:
 	_taken += 1
 	_next_msec += _interval_msec
 	return _taken < _frames
+
+
+## For await-style tools: records the sequence beside `still_path` and returns when done; does nothing unless enabled.
+func record(tree: SceneTree, still_path: String) -> void:
+	if not enabled():
+		return
+	begin(still_path)
+	while step(tree.root):
+		await tree.process_frame
