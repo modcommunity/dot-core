@@ -40,7 +40,11 @@ var remote: Dictionary = {}
 ## When [member remote] last changed, in [method Time.get_ticks_msec].
 var remote_at_ms: int = 0
 
+## When the transport last flushed after [method request_flush_stamp], in [method Time.get_ticks_usec]; 0 until then.
+var flush_usec: int = 0
+
 var _queue: Array[Dictionary] = []
+var _flush_wanted := false
 var _current: Dictionary = {}
 var _target_peer: int = 0
 var _transfer_channel: int = 0
@@ -86,6 +90,12 @@ func note_rtt(ms: float) -> void:
 		# heartbeat moves the number without becoming it.
 		rtt_jitter_ms = lerpf(rtt_jitter_ms, absf(ms - rtt_ms), 0.25)
 	rtt_ms = ms
+
+
+## Stamp the next transport poll (where queued packets really leave) into [member flush_usec]. A round trip timed from there excludes the frame a packet waits in the send queue.
+func request_flush_stamp() -> void:
+	flush_usec = 0
+	_flush_wanted = true
 
 
 ## What the other end reported about itself. Replaces what was there.
@@ -212,6 +222,9 @@ func _poll() -> void:
 	if _closed or inner == null:
 		return
 	inner.poll()
+	if _flush_wanted:
+		_flush_wanted = false
+		flush_usec = Time.get_ticks_usec()
 	while inner.get_available_packet_count() > 0:
 		# Described before it is popped: the inner peer describes the packet at the
 		# FRONT of its queue, and popping first would describe the next one.
