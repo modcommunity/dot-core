@@ -117,6 +117,21 @@ func require(reason: StringName, predicate: Callable, text: String = "") -> void
 	_emit_progress()
 
 
+## The per-frame budget a hold's slice of work may spend: [param base_ms] when the gate is open,
+## at least [member cover_slice_msec] while the cover is up. Systems that bake or warm under a hold
+## ask it every frame instead of keeping a constant.
+func slice_msec(base_ms: int) -> int:
+	if _state == State.OPEN:
+		return base_ms
+	var wide := cover_slice_msec
+	for arg in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if arg.begins_with("--cover-slice-msec="):
+			wide = int(arg.get_slice("=", 1))
+	if wide < 0:
+		wide = 0 if DotPlatform.has_threads() else 24
+	return maxi(base_ms, wide)
+
+
 ## True while [param reason] is held or required.
 func is_holding(reason: StringName) -> bool:
 	return _holds.has(reason) or _requires.has(reason)

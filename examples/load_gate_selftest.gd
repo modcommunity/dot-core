@@ -8,8 +8,8 @@ extends Node
 ## godot --headless --path . res://examples/load_gate_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 11
-const CHECKS := 98
+const SECTIONS := 12
+const CHECKS := 102
 
 var _passed := 0
 var _failed := 0
@@ -59,6 +59,7 @@ func _run() -> void:
 	await _test_hosted()
 	await _test_finding_and_old_shells()
 	await _test_cover_title_tip()
+	await _test_slice_msec()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -574,6 +575,17 @@ func _test_cover_title_tip() -> void:
 	_check(float(sub.describe()["fraction"]) < 0.0, "indeterminate bar reports no fraction")
 	remove_child(sub)
 	sub.free()
+
+
+func _test_slice_msec() -> void:
+	_section("cover slice budget")
+	var gate := _make()
+	_check(gate.slice_msec(8) == 8, "an open gate leaves the base budget")
+	gate.hold(&"x", "x")
+	_check(gate.slice_msec(8) >= 8, "a closed gate never goes below the base")
+	gate.cover_slice_msec = 30
+	_check(gate.slice_msec(8) == 30, "a closed gate widens to the exported budget")
+	_check(gate.slice_msec(50) == 50, "a base above the wide budget is kept")
 
 
 func _section(title: String) -> void:

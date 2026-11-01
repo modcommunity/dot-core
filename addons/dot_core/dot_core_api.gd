@@ -51,5 +51,6 @@ extends RefCounted
 # 25: camera/: DotViewLens (the first-person model lens maths: vertical_from_horizontal_4_3, lens_scale, apply).
 # 26: profile/: DotFrameCost (systems report their per-frame cost: now, add, add_usec, take, reset);
 #     DotHitchLog.frame_measured, top_systems and a hitch's `systems`.
-const LEVEL := 26
+# 27: DotLoadGate.cover_slice_msec and slice_msec(base_ms): a wider per-frame budget for work held under the cover.
+const LEVEL := 27
 const OLDEST := 1

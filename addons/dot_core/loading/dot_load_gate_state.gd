@@ -44,6 +44,12 @@ signal progress_changed(fraction: float, text: String)
 ## closing.
 @export var timeout_sec: float = 20.0
 
+## Longest a frame may spend on a hold's slice of work while the cover is up, in milliseconds. -1
+## picks 24 where there are no threads (a browser, where slices are the only way to make
+## progress and the cover needs no smooth animation) and 0 elsewhere. The command line
+## `--cover-slice-msec=N` overrides it. See [method slice_msec].
+@export var cover_slice_msec: int = -1
+
 ## Hold until a current camera (3D or 2D) inside the game exists. A game with no camera of
 ## its own turns this off.
 @export var require_camera: bool = true
