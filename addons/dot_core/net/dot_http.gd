@@ -397,8 +397,9 @@ func download_to_file(
 	return out
 
 
-## Whether [HTTPRequest] actually writes [code]download_file[/code]; assumed true, demoted on the first success that leaves no file.
-static var _engine_writes_downloads: bool = true
+## Whether [HTTPRequest] actually writes [code]download_file[/code]; demoted on the first success that leaves no file.
+## Web starts demoted: the detecting download was the pack bundle, fetched twice on every join.
+static var _engine_writes_downloads: bool = not OS.has_feature("web")
 
 
 ## [method download_to_file] for a platform whose HTTP client will not write a file: the body is held in memory and written through [DotPaths] (which flushes the web filesystem). Content objects are file-sized, so RAM is bounded.
