@@ -119,8 +119,8 @@ static func publish(key: String, text: String) -> void:
 		p.publish(key, text)
 
 
-## Reloads the page; no-op off-web.
-static func reload() -> void:
+## Reloads the page; no-op off-web. Not named reload: DotWeb.reload() would call Script.reload() instead.
+static func reload_page() -> void:
 	var loc: Variant = get_global("location")
 	if loc != null:
 		loc.reload()
