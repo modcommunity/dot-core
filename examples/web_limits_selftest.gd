@@ -1,12 +1,8 @@
 extends Node
 
-## The web transport's message limits: a worst-case snapshot burst, the largest scoreboard and the
-## largest single message cross a real WebSocket pair on loopback, and the old 64 KiB buffers are
-## shown to refuse an oversize message (the control; a loopback burst alone is absorbed by the TCP socket buffers).
-##
-## [codeblock]
-## godot --headless --path . res://examples/web_limits_selftest.tscn
-## [/codeblock]
+## The web transport's message limits: a worst-case snapshot burst, the largest scoreboard and the largest message cross a real WebSocket pair on loopback,
+## and the old 64 KiB buffers are shown to refuse an oversize message (the control).
+## Run: [code]godot --headless --path . res://examples/web_limits_selftest.tscn[/code]
 
 const SECTIONS := 4
 const CHECKS := 19
