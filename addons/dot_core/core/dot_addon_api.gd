@@ -107,7 +107,9 @@ static func _declared(addon: String) -> Dictionary:
 			if constants.has("OLDEST"):
 				found["OLDEST"] = maxi(1, int(constants["OLDEST"]))
 
-	_levels_cache[path] = found
+	# A script absent now may arrive with a mounted pack; only a found level is kept.
+	if not found.is_empty():
+		_levels_cache[path] = found
 	return found
 
 
