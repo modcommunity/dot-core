@@ -15,7 +15,7 @@
 
 ## WebSocket buffers
 
-`DotTransportWebSocket` defaults to 512 KiB in and out per peer and 4096 queued packets: a whole worst-case dot-net snapshot (255 fragments, about 304 KB) must fit, because a send that does not fit is dropped and the engine logs `ERR_OUT_OF_MEMORY`. `max_message_bytes()` is the largest single message. dot-server lowers the server's inbound side (clients send little) through its `ws_*` config keys. The numbers and the WebRTC note are in game-dev's `docs/engine.md`; `examples/web_limits_selftest.tscn` checks them.
+`DotTransportWebSocket` defaults to 512 KiB in and out per peer and 4096 queued packets: a whole worst-case dot-net snapshot (255 fragments, about 304 KB) must fit, because a send that does not fit is dropped and the engine logs `ERR_OUT_OF_MEMORY`. `max_message_bytes()` (on every `DotTransport`; ENet 32 MiB) is the largest single message and `queued_packet_capacity()` the queue length (0 = no fixed count); dot-net's `transport_fit_selftest` checks them against its wire constants. dot-server lowers the server's inbound side (clients send little) through its `ws_*` config keys. The numbers and the WebRTC note are in game-dev's `docs/engine.md`; `examples/web_limits_selftest.tscn` checks them.
 
 ## `DotTransportDual`
 

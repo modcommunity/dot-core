@@ -57,6 +57,10 @@ func max_message_bytes() -> int:
 	return (1 << mini(inbound_buffer_exp, outbound_buffer_exp)) - 4
 
 
+func queued_packet_capacity() -> int:
+	return max_queued_packets
+
+
 func _transport_name() -> String:
 	return "WebSocket"
 

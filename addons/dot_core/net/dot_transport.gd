@@ -82,6 +82,16 @@ func supports_web_clients() -> bool:
 	return false
 
 
+## The largest single message this transport carries, in bytes. The base is ENet's own packet cap (32 MiB); a transport with smaller buffers overrides it.
+func max_message_bytes() -> int:
+	return 1 << 25
+
+
+## Packets a peer may have queued before new ones are dropped; 0 means no fixed count.
+func queued_packet_capacity() -> int:
+	return 0
+
+
 ## The URL scheme this transport advertises, for connect strings and server
 ## listings. Empty when it does not use URLs.
 func scheme() -> String:
