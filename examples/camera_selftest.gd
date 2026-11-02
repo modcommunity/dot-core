@@ -479,6 +479,10 @@ func _test_render_warmup() -> void:
 	cam.queue_free()
 	scene.free()
 
+	await _test_render_warmup_many_surfaces()
+
+
+func _test_render_warmup_many_surfaces() -> void:
 	# A converted map is hundreds of surfaces over a few materials; drawn whole it was an
 	# 18000-call frame. One triangle per material and format is the same pipelines for ~3 calls.
 	var big := ArrayMesh.new()
