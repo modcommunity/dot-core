@@ -38,14 +38,23 @@ extends DotTransport
 
 @export_group("Buffers")
 
-## Per-peer inbound buffer, as a power-of-two exponent (16 = 64 KiB).
-## Must exceed the largest packet (dot-cloud content chunks); too small shows as a disconnect mid-download.
-@export_range(10, 24, 1) var inbound_buffer_exp: int = 16
+## Per-peer inbound buffer, as a power-of-two exponent (19 = 512 KiB).
+## It bounds both the largest single message (about the size minus 4 bytes) and the bytes a peer may have received
+## but not yet polled: a client polls once a frame, so it must hold a whole worst-case snapshot (255 fragments of the
+## dot-net MTU, about 300 KB). A server holds one per client; dot-server lowers it (see its [code]ws_inbound_buffer_exp[/code]).
+@export_range(10, 24, 1) var inbound_buffer_exp: int = 19
 
-@export_range(10, 24, 1) var outbound_buffer_exp: int = 16
+## Per-peer outbound buffer, as a power-of-two exponent (19 = 512 KiB).
+## A send that does not fit fails and the engine closes that peer, so this must hold a client's whole worst-case snapshot burst.
+@export_range(10, 24, 1) var outbound_buffer_exp: int = 19
 
 ## Packets queued per peer before new ones are dropped.
-@export_range(16, 8192, 1) var max_queued_packets: int = 2048
+@export_range(16, 8192, 1) var max_queued_packets: int = 4096
+
+
+## The largest single message this transport's buffers accept, in bytes (the smaller of the two, less the 4-byte length header).
+func max_message_bytes() -> int:
+	return (1 << mini(inbound_buffer_exp, outbound_buffer_exp)) - 4
 
 
 func _transport_name() -> String:

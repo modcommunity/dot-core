@@ -13,6 +13,10 @@
 | One listening socket speaks one protocol | `DotTransportDual` listens twice behind one peer |
 | `OS.get_unique_id()` pushes an engine error on web and iOS before returning "" | `DotPlatform.has_unique_id()` / `unique_id()`: ask first |
 
+## WebSocket buffers
+
+`DotTransportWebSocket` defaults to 512 KiB in and out per peer and 4096 queued packets: a whole worst-case dot-net snapshot (255 fragments, about 304 KB) must fit, because a send that does not fit is dropped and the engine logs `ERR_OUT_OF_MEMORY`. `max_message_bytes()` is the largest single message. dot-server lowers the server's inbound side (clients send little) through its `ws_*` config keys. The numbers and the WebRTC note are in game-dev's `docs/engine.md`; `examples/web_limits_selftest.tscn` checks them.
+
 ## `DotTransportDual`
 
 A server that serves browsers (WebSocket, TCP) and native clients (ENet, UDP) listens on both. `DotTransportDual` does that behind one `MultiplayerPeer` (`DotDualPeer`, a `MultiplayerPeerExtension`): it polls both backends, merges their peers into one id space and routes each send by the target's backend, so `SceneMultiplayer`, dot-net and the games see one peer. It is dot-server's default (`transport_mode: dual`). Before it, every client spoke WebSocket and desktop players had TCP's head-of-line blocking on every snapshot.
