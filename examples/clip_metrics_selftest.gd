@@ -3,10 +3,16 @@ extends Node
 ## DotClipMetrics.pose_sample follows the leg the mesh deforms, not an IK control foot bone under the root.
 ## godot --headless --path . res://examples/clip_metrics_selftest.tscn
 
+const SECTIONS := 1
+const CHECKS := 2
+
 var _failed := 0
+var _checks := 0
+var _sections := 0
 
 
 func _check(ok: bool, what: String) -> void:
+	_checks += 1
 	print("%s  %s" % ["ok  " if ok else "FAIL", what])
 	if not ok:
 		_failed += 1
@@ -41,5 +47,10 @@ func _ready() -> void:
 		# Hips drop 0.1: a leg-driven ankle falls 0.1 whatever the control bone does.
 		_check(absf(drop - 0.1) < 0.001, "%s foot: ankle follows the leg (fell %.3f)" % ["control" if control else "child", drop])
 		sk.queue_free()
-	print("clip_metrics_selftest: %d failed" % _failed)
+	_sections += 1
+	print("clip_metrics_selftest: %d sections, %d checks, %d failed" % [_sections, _checks, _failed])
+	if _sections != SECTIONS or _checks != CHECKS:
+		print("ERROR: %d of %d sections, %d of %d checks ran." % [_sections, SECTIONS, _checks, CHECKS])
+		get_tree().quit(1)
+		return
 	get_tree().quit(1 if _failed > 0 else 0)
