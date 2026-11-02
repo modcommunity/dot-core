@@ -38,3 +38,7 @@ In a debug build the engine appends an `at:` line and a full GDScript backtrace 
 ## `HTTPRequest` has no append mode
 
 A ranged body written straight to the destination replaced the partial with its own tail, and `DotHttp.download_to_file` returned `ok`, `resumed: true` and a plausible status. Only the bytes on disk showed it, which is why `http_selftest` runs a real server ([transports.md](transports.md#dothttp)).
+
+## No JavaScript evaluation
+
+The game origin's CSP is `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:`, so `JavaScriptBridge.eval` throws `EvalError` and returns null, which reads like an empty page. Add a named function to `web/dot_web.js` (on `window.dotWeb`) and call it from `DotWeb` through `get_interface`; pass structured data as a JSON string, since only primitives and objects cross the bridge, and park a Promise's result on a property to poll. dot-ci's `check-no-js-eval.py` enforces it.

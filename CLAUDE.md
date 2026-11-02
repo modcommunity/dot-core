@@ -24,7 +24,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 | --- | --- |
 | `core/dot_content_index.gd`, `dot_content_entry.gd` | what mounted packs provide (`entries(kind)`), tagged solo or online; registered as `dot_content_index`; dot-cloud fills it, catalogues read it; `examples/content_index_selftest` |
 | `core/dot_error.gd`, `dot_result.gd` | failure codes (`CODE_*` is the contract); ok/value/error, where reading `.value` on a failure errors |
-| `core/dot_platform.gd`, `dot_web.gd` | cached capability detection; JavaScriptBridge access, safe on every platform |
+| `core/dot_platform.gd`, `dot_web.gd`, `web/dot_web.js` | cached capability detection; JavaScriptBridge access, safe on every platform. Nothing evaluates a string (the game origin's CSP has no `unsafe-eval`): browser calls are named functions in `dot_web.js`, which the shell loads |
 | `core/dot_paths.gd` | path sanitisation (traversal refusal), atomic writes |
 | `core/dot_log.gd`, `dot_log_bus.gd`, `dot_log_sink.gd` | levelled, channelled logging; its signal carrier; the rotating file sink (a Node) |
 | `core/dot_registry.gd`, `dot_registry_bus.gd` | name to instance, the autoload replacement; its signal carrier |
