@@ -1,27 +1,8 @@
 extends Node
 
-## Exercises DotHttp and the filesystem helpers it leans on, against a real
-## socket, headless.
-##
-## [codeblock]
-## godot --headless --path . res://examples/http_selftest.tscn
-## [/codeblock]
-##
-## Exits non-zero on any failure, so it works as a smoke test as-is.
-##
-## [b]Why a server lives in this file.[/b] Everything interesting about
-## [method DotHttp.download_to_file] is in how it reacts to what a server sends
-## back — a 206 that continues a partial, a 200 from a host that ignored the
-## [code]Range[/code] header entirely, a 416, a 500 mid-resume. None of that is
-## reachable without something on the other end of a socket, and mocking
-## [HTTPRequest] would test the mock. So this binds a loopback port and speaks
-## enough HTTP/1.1 to answer the four shapes that matter. dot-auth's issuer does
-## the same thing for the same reason.
-##
-## The resume cases are the point. [HTTPRequest] has no append mode, so the
-## whole of resuming a download is what dot-core does *around* it, and a resume
-## that silently writes only the tail of a file passes every check that looks at
-## the response rather than the bytes on disk.
+## Exercises DotHttp and the filesystem helpers it leans on, against a real loopback socket, headless; exits non-zero on failure.
+## The server lives here because [method DotHttp.download_to_file]'s resume cases (206, a 200 ignoring Range, 416, a 500 mid-resume) are reachable
+## only over a socket; [HTTPRequest] has no append mode, so a resume writing only the tail passes any check of the response rather than the bytes.
 
 const PORT_FIRST := 28230
 const PORT_LAST := 28330
@@ -36,10 +17,8 @@ const CHECKS := 45
 ## The scratch directory. Removed at the start of every run and at the end.
 const SCRATCH := "user://http_selftest"
 
-## Sections entered against sections that ran to their last line, and against this. A
-## runtime error inside a section aborts that function and nothing says so; a section that
-## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
-## total is the other half — see docs/testing.md.
+## Sections entered against sections that ran to their last line, and against this: a runtime error aborts a section silently,
+## and a section that bailed after a failed guard counts as unfinished on purpose. The CHECKS total is the other half (docs/testing.md).
 const SECTIONS := 9
 
 var _passed := 0
@@ -73,10 +52,8 @@ func _run() -> void:
 		get_tree().quit(1)
 		return
 
-	# [b]Every file here is written fresh each run.[/b] They used to be left behind, so from
-	# the second run on `replace_absent.bin` already existed and "works when there is
-	# nothing to replace" was replacing something — a check that quietly stopped testing
-	# the case it names. See docs/testing.md.
+	# Every file is written fresh each run: a leftover `replace_absent.bin` made "works when there is
+	# nothing to replace" replace something (docs/testing.md).
 	DotPaths.remove_tree(SCRATCH)
 
 	_http = DotHttp.new()
@@ -121,7 +98,7 @@ func _run() -> void:
 	get_tree().quit(1 if _failed > 0 else 0)
 
 
-# --- Downloads -------------------------------------------------------------
+# Downloads
 
 func _test_transfer_defaults() -> void:
 	_entered += 1
@@ -259,7 +236,7 @@ func _test_range_not_satisfiable() -> void:
 	_done()
 
 
-# --- The filesystem primitive ----------------------------------------------
+# The filesystem primitive
 
 func _test_max_bytes() -> void:
 	_section("max_bytes: a body longer than the caller allows is refused")
@@ -345,7 +322,7 @@ func _test_replace_file() -> void:
 	_done()
 
 
-# --- The server ------------------------------------------------------------
+# The server
 
 func _listen() -> bool:
 	for p in range(PORT_FIRST, PORT_LAST):
@@ -422,7 +399,7 @@ func _answer(c: StreamPeerTCP, raw: String) -> void:
 	c.disconnect_from_host()
 
 
-# --- Scratch files ---------------------------------------------------------
+# Scratch files
 
 func _scratch(name: String) -> String:
 	DotPaths.ensure_dir(SCRATCH)
@@ -441,7 +418,7 @@ func _read(path: String) -> String:
 	return FileAccess.get_file_as_string(path)
 
 
-# --- Assertions ------------------------------------------------------------
+# Assertions
 
 func _section(title: String) -> void:
 	_entered += 1

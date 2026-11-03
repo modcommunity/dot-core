@@ -2,10 +2,8 @@
 class_name DotTransportDual
 extends DotTransport
 
-## One server, two audiences: browsers over WebSocket (TCP [code]port[/code]) and native
-## clients over ENet (UDP [member enet_port], 0 = same number) in the same match, as a [DotDualPeer].
-## With [member share_udp_port] the public UDP port belongs to a [DotUdpDemux] shared with query
-## protocols. Never fails to start for ENet: it degrades to WebSocket only with a WARN. Clients use [DotTransportAuto].
+## One server, two audiences: browsers over WebSocket (TCP [code]port[/code]) and native clients over ENet (UDP [member enet_port], 0 = same) as a [DotDualPeer].
+## [member share_udp_port] gives the public UDP port to a [DotUdpDemux]. ENet failure degrades to WebSocket only with a WARN. Clients use [DotTransportAuto].
 
 ## UDP port for ENet. 0: the same number as the game port.
 @export var enet_port: int = 0
@@ -20,10 +18,9 @@ extends DotTransport
 
 enum TlsHelloScreen { AUTO = 0, ON = 1, OFF = 2 }
 
-## Whether a [DotTcpScreen] holds the public TCP port with the WebSocket server behind it on
-## loopback, closing a TLS ClientHello at once; otherwise a native client waits out its 2.5 s TLS
-## timeout before trying ws://. Auto screens every plain listener (about 0.5 ms at 32 clients),
-## also behind a proxy, whose scanner traffic the screen stops. Never when the server terminates TLS.
+## Whether a [DotTcpScreen] holds the public TCP port with the WebSocket server on loopback behind it, closing a TLS ClientHello
+## at once (else a native client waits out a 2.5 s TLS timeout). Auto screens every plain listener (about 0.5 ms at 32 clients),
+## also behind a proxy; never when the server terminates TLS.
 @export_enum("Auto", "On", "Off") var tls_hello_screen: int = TlsHelloScreen.AUTO
 
 ## Sub-transport for browsers. Created with defaults if unset.

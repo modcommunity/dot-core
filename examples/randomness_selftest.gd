@@ -1,14 +1,7 @@
 extends Node
 
-## Exercises dot-randomness with no world, no transport and no scene.
-##
-## Every check is about a distribution or about agreement, never one particular number: a
-## hash that returned only half its range once passed a maximum-magnitude assertion, so
-## the uniformity checks count quadrants and buckets.
-##
-## [codeblock]
-## godot --headless --path . res://examples/randomness_selftest.tscn
-## [/codeblock]
+## Exercises dot-randomness with no world, transport or scene. Every check is about a distribution or agreement, never one number:
+## a hash returning half its range once passed a maximum-magnitude assertion, so uniformity is counted in quadrants and buckets.
 
 ## CHECKS is the guard the section counter cannot be: a script error aborts a test, not
 ## the run, and a section that already announced itself still counts. A total does fire.

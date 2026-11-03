@@ -1,27 +1,13 @@
 class_name DotCameraCheck
 extends RefCounted
 
-## Flies a third-person, chase or death camera along a scripted path through a real level
-## and counts the frames it ended inside geometry: the check every game's camera tool runs
-## against its own maps.
-##
-## [codeblock]
-## var path := DotCameraCheck.orbit_path(spawn_eye)        # one turn round a spawn
-## var got := DotCameraCheck.fly(get_world_3d(), path, Vector3(0.4, 0.3, 2.6), level_mask)
-## print(DotCameraCheck.summary(got))
-## if not DotCameraCheck.passed(got): quit(1)
-## [/codeblock]
-##
-## [b]Armed by construction.[/b] Every frame is asked twice: where the camera wanted to be
-## (no probe), and where [DotCameraProbe] put it. [method passed] requires the first to be
-## inside or behind the level on some frames, so a path that never goes near a wall cannot
-## pass, and the second on none. A probe that snapped (cut a third of a metre off its eased
-## answer in one frame) fails it too.
+## Flies a camera along a scripted path through a real level and counts the frames it ended inside geometry.
+## Armed by construction: [method passed] needs the unprotected camera inside the level on some frames
+## and the [DotCameraProbe] one on none, and fails a probe that snapped a third of a metre in one frame.
 
-## One turn of the view round [param pivot] over [param frames] frames, the pitch swinging
-## between [param pitch_low] and [param pitch_high] (radians; negative looks down, which
-## lifts a camera behind the head), so the camera passes over every wall and under any
-## roof near the pivot.
+## One turn of the view round [param pivot] over [param frames] frames, pitch swinging between
+## [param pitch_low] and [param pitch_high] (radians; negative looks down), so the camera passes
+## over every wall and under any roof near the pivot.
 static func orbit_path(
 	pivot: Vector3, frames: int = 180, pitch_low: float = -0.6, pitch_high: float = 0.35
 ) -> Array[Transform3D]:
@@ -47,10 +33,8 @@ static func walk_path(
 	return out
 
 
-## Eye points worth flying round, found rather than listed: a grid over [param bounds],
-## dropped onto whatever floor is there, kept where the eye is clear and a wall is within
-## [param near] metres in some direction (an open floor proves nothing), at most
-## [param count] of them, nearest walls first.
+## Eye points worth flying round: a grid over [param bounds] dropped onto the floor, kept where the
+## eye is clear and a wall is within [param near] metres, at most [param count], nearest walls first.
 static func pivots_near_walls(
 	world: World3D, bounds: AABB, mask: int, eye_height: float = 1.6,
 	step: float = 3.0, near: float = 3.0, count: int = 40

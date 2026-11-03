@@ -1,10 +1,6 @@
 extends Node
 
-## Exercises [DotHitchLog]: a deliberately slow frame is recorded with its mark and the nodes added in it, quiet frames are not, the report names it, and a [DotFrameCost] report pins it on a system.
-##
-## [codeblock]
-## godot --headless --path . res://examples/hitch_log_selftest.tscn
-## [/codeblock]
+## Exercises [DotHitchLog]: a deliberately slow frame is recorded with its mark and added nodes, quiet frames are not, the report names it, and a [DotFrameCost] report pins it on a system.
 
 const SECTIONS := 4
 const CHECKS := 24

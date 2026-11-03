@@ -1,16 +1,7 @@
 extends Node
 
-## Exercises [DotParallel]: the fork/join the server builds per-peer snapshots on.
-##
-## What it guards: that a pooled run returns exactly what the inline run does, slot for slot;
-## that the pool really ran the tasks off the calling thread (a "threads on" mode that quietly
-## ran inline would pass every equality check); and that [member DotParallel.verify] catches
-## a task whose answer depends on the order the tasks ran in. Three ERROR lines on stderr
-## from the verify section (one per slot) are expected and announced.
-##
-## [codeblock]
-## godot --headless --path . res://examples/parallel_selftest.tscn
-## [/codeblock]
+## Exercises [DotParallel]: a pooled run equals the inline run slot for slot, the pool really ran off the calling thread (a "threads on" mode
+## that ran inline would pass equality), and [member DotParallel.verify] catches an order-dependent task. Three ERROR lines from the verify section are expected.
 
 const SECTIONS := 4
 const CHECKS := 15

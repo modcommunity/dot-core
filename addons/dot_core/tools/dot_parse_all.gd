@@ -1,33 +1,8 @@
 extends SceneTree
 
-## Compiles every script in a list inside ONE Godot process: the family's parse pass.
-##
-## [codeblock]
-## godot --headless --path <project> --script res://addons/dot_core/tools/dot_parse_all.gd -- <list-file>
-## # or the list's path in the environment: PARSE_LIST=<list-file>
-## [/codeblock]
-##
-## The list is one path per line: relative to the project (taken as [code]res://[/code]),
-## or already a [code]res://[/code] or [code]user://[/code] path.
-##
-## [b]Why one process.[/b] [code]--check-only --script[/code] once per file pays the engine's
-## start-up and the class-cache load for every script: 66 scripts took 40 s that way and
-## 4 s here. Detection is the same: a syntax error, a type mismatch, an undeclared
-## identifier and a preload of a broken script all fail here exactly as they do there.
-## [code]CACHE_MODE_IGNORE[/code] plus [code]reload()[/code] so a script already pulled in
-## by an earlier one's preload is still compiled and judged on its own.
-##
-## [b]The contract the callers rely on[/b] (dot-ci's check.sh, every game.sh): the old pass
-## called a script bad if the engine wrote ANYTHING to stderr for it, so a caller needs to
-## attribute stderr to files. Before loading each script this prints
-## [code]PARSE> <path>[/code] on stderr, the same stream as the engine's own errors, so the
-## order is kept. A failed script is then named by [code]PARSE_FAIL <path>[/code]. After the
-## last one comes [code]PARSE_END[/code] (anything later is shutdown noise, not a script's).
-## Stdout gets [code]PARSED <n> FAILED <m>[/code]. Exit code 1 if anything failed (or the
-## list is unreadable), else 0. A caller still has to read stderr: an engine message
-## with no failed load (a warning promoted to an error, say) is a failure to it.
-##
-## No [code]class_name[/code]: it adds no global, so no consumer needs a re-import.
+## Compiles every script in a list inside ONE Godot process: the family's parse pass (66 scripts: 40 s per-file, 4 s here; same verdicts).
+## `--script ... -- <list-file>` or PARSE_LIST; one path per line. Per script: `PARSE> <path>` on stderr, `PARSE_FAIL <path>` after a failure, then `PARSE_END`;
+## stdout `PARSED <n> FAILED <m>`, exit 1 on failure. Callers must still read stderr. No class_name, so no consumer re-imports.
 
 
 func _initialize() -> void:

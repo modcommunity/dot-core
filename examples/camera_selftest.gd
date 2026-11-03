@@ -1,16 +1,8 @@
 extends Node3D
 
 ## Exercises [DotCameraProbe], [DotCameraBoom] and [DotCameraFade] in a real physics space.
-##
-## [b]Every "never inside" check is armed[/b]: the same path is first flown with no probe,
-## and the suite requires that flight to put the camera inside geometry on many frames.
-## A check that a camera stays out of walls on a path that never goes near a wall passes
-## for the one reason it could not fail, which is how dot-player-controller's tps_selftest
-## once passed with every third-person camera inside its own player.
-##
-## [codeblock]
-## godot --headless --path . res://examples/camera_selftest.tscn
-## [/codeblock]
+## Every "never inside" check is armed: the same path is first flown with no probe and must put the camera inside geometry on many frames,
+## else a path that never nears a wall passes for the one reason it could not fail.
 
 const SECTIONS := 10
 const CHECKS := 46
@@ -64,7 +56,7 @@ func _run() -> void:
 	get_tree().quit(1 if _failed > 0 else 0)
 
 
-# --- the level ---------------------------------------------------------------------------
+# the level
 
 func _build_level() -> void:
 	# A wall 1.5 m behind the origin, across the whole width.
@@ -128,7 +120,7 @@ func _inside(point: Vector3, radius: float) -> bool:
 	return DotCameraProbe.is_inside(_space(), point, radius, WORLD)
 
 
-# --- sections ----------------------------------------------------------------------------
+# sections
 
 func _test_wall_behind() -> void:
 	_section("A wall between the pivot and the wanted camera pulls it in")
@@ -511,7 +503,7 @@ func _test_render_warmup_many_surfaces() -> void:
 	cam2.queue_free()
 
 
-# --- reporting ---------------------------------------------------------------------------
+# reporting
 
 func _section(title: String) -> void:
 	_section_count += 1

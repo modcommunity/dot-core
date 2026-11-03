@@ -2,22 +2,8 @@ class_name DotCollisionSweep
 extends RefCounted
 
 ## Compares what a level draws with what its physics world collides with, by rays, and lists where they disagree.
-##
-## [codeblock]
-## var sweep := DotCollisionSweep.new(space, mask)
-## sweep.add_faces(&"world", faces)
-## sweep.play = func(p: Vector3) -> bool: return my_floor_plan_has(p)
-## sweep.sweep_drawn()                  # drawn floor and walls nothing collides with
-## sweep.sweep_collision(standing_points) # collision nothing is drawn at (invisible walls)
-## print(sweep.describe_lines())
-## [/codeblock]
-##
-## [b]Why rays and not shapes.[/b] [DotCollisionAudit] asks whether a mesh has a body near it; a level made of
-## a few hundred merged shapes and a drawn world beside them passes that while a staircase's treads sit
-## a metre off the shapes that were meant to hold them. A ray down onto the drawn surface and out of the
-## drawn wall asks what a player's capsule would ask.
-## [br][b]Cells, not triangles[/b]: findings are counted per [constant CELL] of floor, so one missing room
-## is one number however it was tessellated.
+## Rays, not shapes: a mesh with a body near it passes [DotCollisionAudit] while a staircase's treads sit a metre off its shapes.
+## Findings are counted per [constant CELL] of floor, so one missing room is one number. Use: [code]add_faces[/code], [code]sweep_drawn()[/code], [code]sweep_collision(points)[/code].
 
 ## Findings of one kind within this many metres of each other are one place.
 const CELL := 2.0

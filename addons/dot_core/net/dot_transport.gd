@@ -2,11 +2,9 @@
 class_name DotTransport
 extends Resource
 
-## Base class for a swappable multiplayer transport. The browser has no UDP, so ENet is
-## absent there: the choice is a deployment decision in a [Resource], not a code one.
-## A server for both audiences uses [DotTransportDual]; a client uses ENet or WebSocket
-## ([DotTransportAuto] if undecided). Subclasses implement [method _create_server] and
-## [method _create_client], returning a [MultiplayerPeer] in a [DotResult].
+## Base class for a swappable multiplayer transport; the choice (the browser has no UDP, so no ENet) is a deployment decision in a [Resource].
+## A dual-audience server uses [DotTransportDual]; a client ENet, WebSocket or [DotTransportAuto]. Subclasses implement
+## [method _create_server] and [method _create_client], returning a [MultiplayerPeer] in a [DotResult].
 
 const CHANNEL := "transport"
 

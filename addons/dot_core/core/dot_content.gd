@@ -1,11 +1,9 @@
 class_name DotContent
 extends Object
 
-## The one place the family asks for downloadable content.
-##
-## dot-cloud is found through [DotRegistry] under [constant SERVICE] and duck-typed, never
-## imported: a build that ships its content installs no cloud client. Static, so no state;
-## the client's [code]ensure/resolve/is_mounted[/code] interface is the cloud's to keep.
+## The one place the family asks for downloadable content. dot-cloud is found through [DotRegistry]
+## under [constant SERVICE] and duck-typed, never imported (a build that ships its content installs no
+## cloud client). Static; the client's [code]ensure/resolve/is_mounted[/code] interface is the cloud's to keep.
 
 ## Registry name dot-cloud publishes itself under.
 const SERVICE := &"dot_cloud_client"

@@ -1,12 +1,8 @@
 class_name DotRegistry
 extends RefCounted
 
-## A name-to-object registry that replaces autoloads: an autoload reserves a global name and
-## cannot be instantiated twice, which rules out a server and a client in one process.
-## [codeblock]
-## DotRegistry.register(&"dot_server", self)
-## var server := DotRegistry.get_node_service(&"dot_server") as DotServer
-## [/codeblock]
+## A name-to-object registry that replaces autoloads, which cannot be instantiated twice (no server and client in one process).
+## [code]DotRegistry.register(&"dot_server", self)[/code]; [code]get_node_service(&"dot_server")[/code].
 ## Names are namespaced by convention; use [method register_scoped] when you need two.
 
 ## Emitted through this bus so late arrivals can wait for a service instead of

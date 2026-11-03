@@ -1,12 +1,9 @@
 class_name DotDualPeer
 extends MultiplayerPeerExtension
 
-## A server peer that is two, WebSocket for browsers and ENet for native clients, presented
-## to [SceneMultiplayer] as one so every RPC and spawner reaches both.
-## Ids collide across backends (random 31-bit); the later peer is disconnected, not renumbered,
-## because a renumbered client would never see "this entity is yours". With [member demux] or
-## [member screen] set the backends sit on loopback and [method get_peer_address] maps back.
-## No ENet identifier is named here (the web template has none); reached by [method Object.call].
+## A server peer that is two, WebSocket for browsers and ENet for native clients, presented to [SceneMultiplayer] as one.
+## Colliding ids (random 31-bit) disconnect the later peer, not renumber it. With [member demux] or [member screen] the backends sit on loopback
+## and [method get_peer_address] maps back. No ENet identifier is named (the web template has none): reached by [method Object.call].
 
 const CHANNEL := "transport"
 
@@ -490,10 +487,8 @@ func _disconnect_peer(peer: int, force: bool) -> void:
 		_on_disconnected(peer, backend)
 
 
-## Tell every ENet client the server is going, through the demux, before closing. Behind the
-## demux a send reaches only the loopback relay until pump_out(), so closing at once sent
-## nothing and clients learned of it from their peer timeout. Disconnect gracefully, service
-## the host and forward, a few times over a few milliseconds.
+## Tell every ENet client the server is going, through the demux, before closing: behind it a send reaches only
+## the loopback relay until pump_out(), so closing at once left clients to their peer timeout. Disconnect, service, forward, a few times.
 func _say_goodbye_through_demux() -> void:
 	for id: int in _backend_of.keys():
 		if _backend_of[id] == Backend.ENET:

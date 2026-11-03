@@ -1,14 +1,7 @@
 extends Node
 
 ## Exercises [DotAddonApi]: what a build has, what a pack needs, and the sentence between.
-##
-## [codeblock]
-## godot --headless --path . res://examples/addon_api_selftest.tscn
-## [/codeblock]
-##
-## [b]The sentences are asserted, not only the codes.[/b] The whole point of the class is
-## that a player reads "this server has level 2" instead of a parse error, so a check that
-## the refusal is CODE_VERSION and nothing else would pass for a refusal nobody can read.
+## The sentences are asserted, not only the codes: a check for CODE_VERSION alone passes for a refusal nobody can read.
 
 const SECTIONS := 8
 const CHECKS := 67

@@ -1,11 +1,8 @@
 class_name DotTcpScreen
 extends RefCounted
 
-## The public TCP port of a plain WebSocket listener, answering a TLS ClientHello with a close
-## instead of silence (the engine's server would wait out its handshake timeout).
-## A relay, not a peek: [StreamPeerTCP] cannot peek and [method WebSocketPeer.accept_stream]
-## takes only a TCP or TLS stream. 'G' with a full Upgrade header is relayed to the inner port,
-## a scanner's "GET /" gets 426, anything else is closed. [DotDualPeer] maps addresses back.
+## The public TCP port of a plain WebSocket listener, answering a TLS ClientHello with a close instead of silence. A relay, not a peek
+## ([StreamPeerTCP] cannot peek): 'G' with a full Upgrade header goes to the inner port, "GET /" gets 426, anything else is closed.
 
 const CHANNEL := "transport"
 

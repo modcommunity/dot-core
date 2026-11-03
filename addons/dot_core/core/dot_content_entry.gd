@@ -1,12 +1,8 @@
 class_name DotContentEntry
 extends RefCounted
 
-## One thing a mounted content pack provides: a map, a weapon, a prop.
-##
-## Built by [DotContentIndex.add_pack] from the `provides.entries` of a manifest. Consumers
-## read the typed fields and [method path]; nobody joins a mount prefix by hand, because the
-## prefix (`res://<mount_root>/<content_id>/<version>/`) is an implementation detail of
-## dot-cloud that has already changed once.
+## One thing a mounted content pack provides: a map, a weapon, a prop. Built by [DotContentIndex.add_pack];
+## read the typed fields and [method path], never join a mount prefix by hand (it is dot-cloud's detail).
 
 var kind: StringName = &""
 var id: String = ""
@@ -68,10 +64,8 @@ static func from_dict(d: Dictionary, pack: Dictionary) -> DotContentEntry:
 	return e
 
 
-## A path field of the entry (`scene`, `def`, `thumbnail`...) resolved onto the pack's mount,
-## or "" when the entry has no such field. The publisher has already refused absolute and
-## `..` paths, but a manifest from elsewhere is re-checked here: a path that climbs out of the
-## prefix resolves to "" rather than to a file outside the pack.
+## A path field of the entry resolved onto the pack's mount, or "" when absent. Re-checked here
+## though the publisher refuses absolute and `..` paths: one climbing out of the prefix resolves to "".
 func path(field: String) -> String:
 	var v: Variant = raw.get(field, null)
 	if not (v is String) or (v as String) == "":

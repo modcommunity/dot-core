@@ -1,10 +1,6 @@
 extends Node
 
 ## Exercises [DotAddonConfig]: `cfg/addon/<name>/*.yml` read in file-name order over defaults.
-##
-## [codeblock]
-## godot --headless --path . res://examples/addon_config_selftest.tscn
-## [/codeblock]
 
 const SECTIONS := 11
 const CHECKS := 129

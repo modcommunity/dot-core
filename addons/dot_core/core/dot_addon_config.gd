@@ -1,14 +1,9 @@
 class_name DotAddonConfig
 extends RefCounted
 
-## Where an addon's or pack's tuning lives: every `*.yml` in `cfg/addon/<addon_name>/`.
-## Files are read sorted by name and a later key overrides an earlier one (maps merge, lists
-## and scalars replace); layers: defaults < yml < environment < command line. The roots,
-## env/argv naming and secret refusal are in docs/addon-config.md and [method export_filter_hint].
-## [codeblock]
-## var res := DotAddonConfig.load_dir("dot-map", {"rotation": {"mode": "sequential"}})
-## var mode: String = DotAddonConfig.get_value(res.value, "rotation.mode", "sequential")
-## [/codeblock]
+## Where an addon's or pack's tuning lives: every `*.yml` in `cfg/addon/<addon_name>/`, read sorted by
+## name, a later key overriding (maps merge, lists and scalars replace); defaults < yml < environment < command line.
+## `DotAddonConfig.load_dir("dot-map", defaults)`; roots, naming and secret refusal: docs/addon-config.md, [method export_filter_hint].
 
 const CHANNEL := "addon_config"
 const SUBDIR := "addon"

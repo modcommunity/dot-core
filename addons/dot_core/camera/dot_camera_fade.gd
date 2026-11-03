@@ -1,35 +1,8 @@
 class_name DotCameraFade
 extends Node
-
-## Fades characters that come between a camera and what it is looking at, and hides one
-## that walks into the camera itself.
-##
-## [codeblock]
-## var fade := DotCameraFade.new()
-## fade.collision_mask = layout.layer_mask(&"player") | layout.layer_mask(&"npc")
-## fade.add_excluded_object(player.get_rid())
-## camera.add_child(fade)          # it follows its parent camera
-##
-## fade.focus = boom               # third person: what the camera looks at
-## fade.focus = null               # first person: only the near test
-## [/codeblock]
-##
-## [b]Two tests, once a frame.[/b] A sphere of [member near] round the camera: anything in
-## it is a body the near plane is about to cut, and goes fully transparent (the play
-## test's "a face fills the screen"). And, in third person, a capsule along the line from
-## the camera to [member focus], stopped short of the focus so the watched character is
-## never in it: anything there goes to [member faded], seen through rather than gone,
-## because a player wants to know somebody is standing there.
-##
-## [b]Characters are faded, not collided with.[/b] A camera that stopped against every
-## body would pull into the player's head each time a bot walked behind them, and a crowd
-## would pin it there. [DotCameraProbe] stops against the level; this deals with people.
-##
-## [b]What fades is every [GeometryInstance3D] under the body that was hit[/b], by its
-## `transparency`, which every renderer honours — or under whatever [member root_fn]
-## names, for a game whose drawn figure is not a child of its collider. A [Camera3D] in
-## that subtree is skipped with everything under it: a first-person camera parented to a
-## body carries the view model, and fading somebody's body must not fade their gun.
+## Fades characters between a camera and its [member focus], and hides one that walks into the camera: a [member near] sphere goes transparent,
+## a capsule to the focus sets [member faded]. Faded, not collided with, so a bot behind the player cannot pull the camera in.
+## Fades every [GeometryInstance3D] under the hit body (or [member root_fn]'s), skipping any [Camera3D] subtree.
 
 ## Layers whose bodies fade: characters, never the level.
 @export_flags_3d_physics var collision_mask: int = 0
@@ -56,11 +29,9 @@ var focus: Node3D = null
 ## collider itself.
 var root_fn: Callable = Callable()
 
-## [code]() -> Array[/code] of [Node3D]s: characters that are not in the physics space at
-## all (a game whose players collide analytically, or whose remote figures have no
-## collider on a client). Each is taken as an upright capsule of [member body_radius] and
-## [member body_height] standing on its origin, and its own meshes fade. Used as well as
-## [member collision_mask], not instead.
+## [code]() -> Array[/code] of [Node3D]s that are not in the physics space (analytic players, remote
+## figures with no client collider), each taken as an upright capsule of [member body_radius] and
+## [member body_height] on its origin. Used as well as [member collision_mask], not instead.
 var bodies_fn: Callable = Callable()
 
 ## The capsule [member bodies_fn]'s characters are taken as.

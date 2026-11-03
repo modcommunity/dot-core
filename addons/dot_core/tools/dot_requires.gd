@@ -1,34 +1,8 @@
 extends SceneTree
 
-## Writes, or checks, the requirements file a pack carries. See [DotAddonApi].
-##
-## [codeblock]
-## # What this project's files use, at the levels this build's addons have:
-## godot --headless --path <game> --script res://addons/dot_core/tools/dot_requires.gd
-##
-## # Written into a pack being built (dot-ci's package.sh --pack does this):
-## godot --headless --path <game> --script res://addons/dot_core/tools/dot_requires.gd \
-##     -- --out /tmp/pack/requires.json
-##
-## # A file the game committed, checked against what its files use:
-## godot --headless --path <game> --script res://addons/dot_core/tools/dot_requires.gd \
-##     -- --check requires.json
-## [/codeblock]
-##
-## [b]Floors.[/b] Writing or printing, a [code]requires.floor.json[/code] at the project
-## root lowers the addons it names to the levels it gives, for a game that asks the host's
-## level before using that addon's newer API (see [method DotAddonApi.apply_floors]). A
-## floor [method DotAddonApi.floor_audit] refuses fails the run. A committed requires.json
-## is the whole answer and floors are not applied to it.
-##
-## Exit codes: 0 ok, 1 a committed file is incomplete or overstated or a floor is unsound,
-## 2 usage or I/O.
-## The project has to have been imported first, or the global class list is empty and
-## nothing is found -- which is refused rather than written, because an empty file would
-## claim the game needs nothing.
-##
-## Output is the document on stdout and everything said to a person on stderr, so a
-## caller can redirect the one without the other.
+## Writes, or checks, the requirements file a pack carries (see [DotAddonApi]): no args derives from the project's files, `--out F` writes, `--check F` audits.
+## A `requires.floor.json` lowers the addons it names ([method DotAddonApi.apply_floors]); an unsound floor fails; a committed file is whole and unfloored.
+## Exit 0 ok, 1 incomplete/overstated/unsound, 2 usage or I/O. Import first (an empty class list is refused). Document on stdout, messages on stderr.
 
 
 func _init() -> void:

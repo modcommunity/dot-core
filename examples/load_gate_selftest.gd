@@ -1,12 +1,6 @@
 extends Node
 
-## Exercises [DotLoadGate] and [DotLoadingCover]: holds and releases, predicates, the
-## timeout and its warning, freezing, settling frozen bodies under the cover, closing again, the camera requirement and its own
-## warm-up, a host claiming the cover, and the older shells' root signal.
-##
-## [codeblock]
-## godot --headless --path . res://examples/load_gate_selftest.tscn
-## [/codeblock]
+## Exercises [DotLoadGate] and [DotLoadingCover]: holds, predicates, the timeout warning, freezing and settling under the cover, closing again, the camera requirement and warm-up, a host claiming the cover, the older shells' root signal.
 
 const SECTIONS := 12
 const CHECKS := 102

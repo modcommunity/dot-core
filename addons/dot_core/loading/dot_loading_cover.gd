@@ -1,17 +1,9 @@
 class_name DotLoadingCover
 extends CanvasLayer
 
-## The plain cover a [DotLoadGate] shows when nothing else covers the screen: a dark full
-## screen, a status line and a progress bar (indeterminate when there is no fraction).
-##
-## [b]Swapping it.[/b] Subclass this and override [method _build] (or the four methods), or
-## give the gate any node with [code]show_cover()[/code], [code]hide_cover()[/code],
-## [code]set_status(text)[/code] and [code]set_progress(fraction)[/code] through
-## [member DotLoadGate.cover] or [member DotLoadGate.cover_scene]. A host such as a client
-## shell claims the job instead and this is never built.
-##
-## It shows at full opacity in the frame it is asked to, never fading in: what it covers has
-## just been put on screen, and a fade is a quarter of a second of that.
+## The plain cover a [DotLoadGate] shows when nothing else does: dark full screen, status line, progress bar. Shown at full opacity, never fading in.
+## Subclass and override [method _build], or give the gate any node with show_cover/hide_cover/set_status/set_progress
+## ([member DotLoadGate.cover], [member DotLoadGate.cover_scene]). A host claiming the job means this is never built.
 
 ## Above every game's own UI layers.
 const LAYER := 120

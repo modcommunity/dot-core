@@ -2,10 +2,8 @@
 class_name DotLogSink
 extends Node
 
-## Writes [DotLog] output to a rotating file, and optionally forwards it.
-##
-## Buffered, not line-by-line: a flush per line is a syscall (an IndexedDB transaction on
-## web). A crash loses at most [member flush_interval_sec]; [member flush_on_error] narrows it.
+## Writes [DotLog] output to a rotating file, and optionally forwards it. Buffered: a flush per line is a
+## syscall (an IndexedDB transaction on web). A crash loses at most [member flush_interval_sec]; [member flush_on_error] narrows it.
 
 const CHANNEL := "logsink"
 

@@ -1,12 +1,8 @@
 class_name DotMeteredPeer
 extends MultiplayerPeerExtension
 
-## Any [MultiplayerPeer], counted: bytes and packets each way, per channel, plus what the
-## transport can say about itself ([method transport_stats]).
-## A wrapper because ENet keeps byte totals and WebSocket none, and a browser is a WebSocket
-## client. Payload bytes, not wire bytes, and totals, never rates: each reader differences them.
-## Incoming packets are queued on [method _poll] like [DotDualPeer], and no ENet identifier is
-## named here (reached by [method Object.call]).
+## Any [MultiplayerPeer], counted: payload bytes and packets each way per channel, plus [method transport_stats]. A wrapper because ENet keeps
+## totals and WebSocket none; totals, never rates. Packets are queued on [method _poll] like [DotDualPeer]; no ENet identifier is named.
 
 ## The peer underneath. Everything is forwarded to it.
 var inner: MultiplayerPeer = null

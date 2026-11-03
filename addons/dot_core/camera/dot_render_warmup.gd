@@ -1,37 +1,9 @@
 class_name DotRenderWarmup
 extends Node3D
 
-## Draws every material a scene will need once, out of sight, so their shaders compile while
-## something covers the screen instead of in the middle of play.
-##
-## [codeblock]
-## var warm := DotRenderWarmup.new()
-## camera.add_child(warm)
-## warm.add_items(DotRenderWarmup.collect(level))
-## warm.add_items(game_extras)          # Materials, Meshes, ParticleProcessMaterials
-## warm.start()
-## await warm.finished                  # it frees itself
-## [/codeblock]
-##
-## [b]Why it is needed.[/b] A renderer compiles a material's shader the first time something
-## using it is drawn, and under the Compatibility renderer (every browser) that compile and
-## the program link are synchronous on the one thread the game has: a material first seen in
-## a fight (a muzzle flash, an impact, the first enemy's character) stops the frame for tens
-## to hundreds of milliseconds in a browser. Nothing can compile a shader ahead of time
-## without drawing it, so this draws it.
-##
-## [b]How it hides.[/b] Each item is put on a tiny instance just past the camera's near
-## plane, inside the frustum. Culling is by bounds on the CPU, not by covered pixels, so a
-## millimetre-sized quad is submitted and its program built exactly as a full-screen one
-## would be, and a player who sees the frame sees nothing. It still costs the compile, which
-## is the point: start it under a loading screen.
-##
-## [b]What it cannot reach.[/b] A shader's variant depends on what draws it as well as on
-## the material: lit by an omni light or not, skinned or not, with fog or shadows. Items are
-## drawn as they are in the scene's light (casting shadows, under the camera's environment),
-## and a [Mesh] is drawn as itself so its vertex format matches; a skinned mesh still warms
-## the unskinned variant, and a light that appears later (a muzzle flash's) adds variants
-## nobody drew. It removes the bulk of the first-use stalls, not every one.
+## Draws every material a scene will need once, out of sight, so shaders compile under a cover (the
+## Compatibility renderer compiles synchronously on first draw). Items sit on a tiny instance past the near plane.
+## Variants it cannot reach (skinned, later lights) still stall. Use: [code]add_items(collect(level))[/code], [code]start()[/code], await [signal finished].
 
 const CHANNEL := "dot.render_warmup"
 

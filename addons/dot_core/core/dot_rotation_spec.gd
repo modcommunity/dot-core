@@ -1,11 +1,9 @@
 class_name DotRotationSpec
 extends RefCounted
 
-## What an operator's rotation file says, and the one matcher turning its entries into ids,
-## shared by maps.yml and games.yml so `mg-*` means the same in both. A candidate is
-## `{"id", "ref"}` (ref optional). An entry is a string or a mapping with per-entry settings,
-## see [method settings_for]. A plain list under [param list_key] is shorthand for rotation
-## `main`; if `rotations: main` also exists, that wins with a warning.
+## What an operator's rotation file says, and the one matcher turning entries into ids, shared by maps.yml and games.yml.
+## A candidate is `{"id", "ref"}`; an entry is a string or a mapping with settings ([method settings_for]).
+## A plain list under [param list_key] is rotation `main`; if `rotations: main` also exists, that wins with a warning.
 
 const MAIN := "main"
 const MODES := ["random", "cycle"]
@@ -119,10 +117,9 @@ static func cooldown_of(spec: Dictionary, name: String, fallback: int) -> int:
 	return c if c >= 0 else fallback
 
 
-## Expands [param entries] against [param candidates] in written order, each glob's matches
-## sorted by id, no repeats. Shapes: `owner/map`, a name or glob, `owner/*`, and
-## `owner/collection/*` (members of [param collections]). Case-insensitive; entries matching
-## nothing are appended to [param unmatched] so the caller can WARN.
+## Expands [param entries] against [param candidates] in written order, each glob's matches sorted by id, no repeats.
+## Shapes: `owner/map`, a name or glob, `owner/*`, `owner/collection/*` ([param collections]). Case-insensitive;
+## entries matching nothing go to [param unmatched] for the caller to WARN.
 static func expand(entries: PackedStringArray, candidates: Array, collections: Dictionary,
 		unmatched: PackedStringArray) -> PackedStringArray:
 	var out := PackedStringArray()

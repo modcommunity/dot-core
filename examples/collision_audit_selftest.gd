@@ -1,11 +1,6 @@
 extends Node
 
-## Exercises [DotCollisionAudit] on hand-built trees: what it must report, what it must not,
-## and the opt-out. Structural, so no physics space is needed.
-##
-## [codeblock]
-## godot --headless --path . res://examples/collision_audit_selftest.tscn
-## [/codeblock]
+## Exercises [DotCollisionAudit] on hand-built trees: what it must report, what it must not, and the opt-out. No physics space needed.
 
 const SECTIONS := 8
 const CHECKS := 30

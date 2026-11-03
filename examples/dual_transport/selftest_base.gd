@@ -73,7 +73,7 @@ func _quiet_client(server_transport: DotTransportENet, port: int) -> Array:
 	return [lost[0], ("dropped" if lost[0] else "still connected, backlog in %.1f s" % (back_in / 1000.0)), got, sent]
 
 
-# --- Helpers ---------------------------------------------------------------
+# Helpers
 
 func _poll_all() -> void:
 	if _server != null:

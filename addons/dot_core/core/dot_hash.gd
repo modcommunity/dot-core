@@ -1,10 +1,8 @@
 class_name DotHash
 extends RefCounted
 
-## Hashing and HMAC, in slices where the input can be large.
-##
-## SHA-256 throughout, because a downloaded PCK is mounted into the running game and its
-## hash is the only integrity check. Files too large for one frame go through [DotHashJob].
+## Hashing and HMAC, in slices where the input can be large. SHA-256 throughout: a downloaded PCK is mounted
+## into the running game and its hash is the only integrity check. Files too large for one frame go through [DotHashJob].
 
 # No log channel: pure static hashing. The one engine failure it can meet (an HMAC
 # context that will not start) is a push_error, because the person who can fix it is

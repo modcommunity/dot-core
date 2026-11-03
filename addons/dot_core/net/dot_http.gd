@@ -2,16 +2,9 @@
 class_name DotHttp
 extends "res://addons/dot_core/net/dot_http_base.gd"
 
-## An HTTP client that works identically on desktop, mobile and in a browser.
-##
-## [HTTPRequest], not [HTTPClient], which does not exist on web. Retries (jittered backoff)
-## cover transport failures, 5xx and 429 only: never 4xx, which would lock an account out.
-## On web a request that fails with no useful error is almost always CORS.
-## [codeblock]
-## var http := DotHttp.new()
-## add_child(http)
-## var res := await http.get_json("/api/app/v1/me", {"Authorization": "Bearer …"})
-## [/codeblock]
+## An HTTP client that works identically on desktop, mobile and the browser: [HTTPRequest], not [HTTPClient] (absent on web).
+## Retries (jittered backoff) cover transport failures, 5xx and 429 only, never 4xx. On web a failure with no useful error is almost always CORS.
+## [code]await http.get_json("/api/app/v1/me", {"Authorization": "Bearer …"})[/code].
 
 const CHANNEL := "http"
 

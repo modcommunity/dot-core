@@ -1,23 +1,9 @@
 class_name DotContentIndex
 extends RefCounted
 
-## What has been mounted that a game could offer, for every consumer.
-##
-## A map menu, a spawn menu or a weapon catalogue asks [method entries] and never names a pack
-## path. dot-cloud fills it on mount; a deployment without dot-cloud has an empty index, which
-## is the same "content ships in the build" answer [DotContent] gives.
-##
-## [b]An instance, not a static class[/b], because it needs signals (the reason [DotLogBus] and
-## [DotRegistryBus] exist as carriers). It lives in [DotRegistry] under [constant SERVICE], and
-## [method shared] creates and registers one on first call so a catalogue built before the
-## first mount and a cloud client that mounts before any catalogue exists find the same object.
-## A test replaces it with [code]DotRegistry.register(DotContentIndex.SERVICE, its_own)[/code].
-##
-## [b]Sessions.[/b] Every pack carries the set of sessions it was mounted for, and the index has
-## one current session set by the host. [method entries] answers for the current session only:
-## a subscription pack is tagged [constant SESSION_SOLO] and never anything else, so an online
-## session never sees it. Nothing is removed at runtime, because a mounted pack cannot be
-## unmounted: entries outside the current session are invisible, not gone.
+## What has been mounted that a game could offer. Menus ask [method entries], never a pack path; an empty index means content ships in the build.
+## An instance (it has signals), registered under [constant SERVICE]; [method shared] creates it on first call; a test registers its own.
+## Each pack carries its sessions; [method entries] answers the current one only (a subscription pack is [constant SESSION_SOLO]), since mounts cannot be undone.
 
 const CHANNEL := "dot.content.index"
 
@@ -54,10 +40,9 @@ static func pack_key(p_content_id: String, p_version: String) -> String:
 	return "%s@%s" % [p_content_id, p_version]
 
 
-## Registers a mounted pack. [param info] is
-## [code]{content_id, version, prefix, provides, session, source}[/code]. Idempotent: a pack
-## already present only gains the session tag. Value on success: the pack's new entries
-## ([code]Array[DotContentEntry][/code]; empty when it was already there).
+## Registers a mounted pack; [param info] is [code]{content_id, version, prefix, provides, session, source}[/code].
+## Idempotent: a present pack only gains the session tag. Value: the new entries
+## ([code]Array[DotContentEntry][/code]; empty when already there).
 func add_pack(info: Dictionary) -> DotResult:
 	var cid := str(info.get("content_id", ""))
 	var ver := str(info.get("version", ""))

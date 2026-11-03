@@ -1,34 +1,9 @@
 class_name DotCameraTool
 extends SceneTree
 
-## The camera render-and-check every game's `tools/render_cameras.gd` is: a game names its
-## level, the pivots worth flying round (spawns, a start line, a route) and its cameras'
-## offsets, and this flies them, fails on any frame inside the level, and draws the worst
-## case before and after so a person can look at it.
-##
-## [codeblock]
-## extends DotCameraTool
-## func _build_level() -> Node3D: return MyMap.build("dm_box")
-## func _pivots() -> Array[Vector3]: return my_spawn_eyes
-## [/codeblock]
-##
-## [codeblock]
-## xvfb-run -a godot --path . --resolution 1280x720 --script tools/render_cameras.gd
-## [/codeblock]
-##
-## Writes `screenshots/cameras/<name>_<case>_{before,after}.png`:
-##
-## - [b]third_person / chase[/b]: the frame of the flight where the unprotected camera was
-##   deepest in or behind the level, drawn from there (before) and from where the probe put
-##   it (after);
-## - [b]between[/b]: somebody standing between that camera and the player, drawn plain and
-##   with dot-core's [DotCameraFade];
-## - [b]walk_in[/b]: somebody walking into a first-person camera, plain and faded.
-##
-## Exits 1 when a flight fails [method DotCameraCheck.passed]: the unprotected camera never
-## went near a wall (the check was not armed), or the probed one ended inside on a frame.
-## Needs a renderer, so not `--headless`; with `--no-render` it only flies, which runs
-## headless and is what a suite can call.
+## The base of every game's `tools/render_cameras.gd`: a game names its level, pivots and camera offsets;
+## this flies them, fails on any frame inside the level (see [method DotCameraCheck.passed]) and draws the
+## worst case before and after to `screenshots/cameras/`. Needs a renderer; `--no-render` only flies.
 
 var _out_dir := "screenshots/cameras"
 var _name := "game"

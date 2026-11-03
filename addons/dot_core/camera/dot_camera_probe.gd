@@ -1,43 +1,9 @@
 class_name DotCameraProbe
 extends RefCounted
 
-## Keeps a camera out of geometry: a sphere swept from a pivot (the head it looks over, the
-## vehicle it chases, the place somebody died) toward where the camera wants to be, and the
-## camera put no further out than the sphere got.
-##
-## [codeblock]
-## var probe := DotCameraProbe.new()
-## probe.world = get_world_3d()
-## probe.collision_mask = layout.layer_mask(&"world")
-## probe.add_excluded_object(player.get_rid())
-##
-## # once a frame, after the pivot has moved
-## camera.global_position = probe.resolve(head, wanted, delta)
-## [/codeblock]
-##
-## [b]Why not SpringArm3D.[/b] The family used it in every third-person view, and the play
-## test still had cameras inside rock, walls and arches. A spring arm casts a ray unless
-## it is handed a shape, so a ray that slips through a gap between two boxes (an arch's
-## pillar and its beam) leaves a camera whose near plane is inside both; it jumps to the
-## hit on the frame the hit appears and back out on the frame it goes; and it excludes
-## nothing, so every arm hung off a player collapsed into that player until each game
-## learned to exclude it. This sweeps a sphere, eases, and takes the exclusions as data.
-##
-## [b]Pulling in is smooth without ever being late.[/b] A sweep along the line as it is,
-## which is a hard limit applied on every frame, and sweeps along the line as it will be
-## over the next [member look_ahead] seconds if the pivot and the camera keep moving the way
-## they moved since the last frame. The camera eases toward the nearer of the two, so a
-## pillar the view is swinging toward has already brought it in by the time the hard limit
-## would bite, and a camera standing still rests exactly at the hard limit (the two lines
-## are the same). Only a wall that appears faster than the look-ahead (a door slamming
-## behind the head, a cut) makes the hard limit visible, and then a cut is right: the
-## alternative is a frame of the inside of a door. Going back out is slower
-## ([member ease_out_time]), because a camera that springs back the moment a pillar is
-## passed swings in and out along a colonnade.
-##
-## [b]Presentation only.[/b] It reads the physics space and never writes it, keeps no
-## simulation state, and its clock is the caller's delta — or, through [method clip_view],
-## its own, for callers that have none (a spectator transform computed on demand).
+## Keeps a camera out of geometry: a sphere swept from a pivot toward where the camera wants to be,
+## the camera put no further out than the sphere got. Not SpringArm3D, which casts a ray through gaps,
+## jumps on hit frames and excludes nothing. Eases in on a look-ahead sweep, slower out ([member ease_out_time]); presentation only.
 
 ## The space the sweep runs in. A probe without one returns what it was asked for.
 var world: World3D = null
@@ -155,10 +121,9 @@ func resolve(pivot: Vector3, wanted: Vector3, delta: float) -> Vector3:
 	else:
 		var time := pull_in_time if target < _distance else ease_out_time
 		var eased := lerpf(_distance, target, 1.0 - exp(-maxf(delta, 0.0) / maxf(time, 0.001)))
-		# Never late: every predicted limit is reached by the moment it was predicted for, at
-		# an even pace, when the ease alone would still be short of it. The ease alone aims
-		# at the nearest limit and gets there when it gets there; a pillar that arrives in a
-		# tenth of a second needs the camera in by then, not most of the way.
+		# Never late: each predicted limit is reached by the moment it was predicted for, where the
+		# ease alone would still be short of it (a pillar arriving in a tenth of a second needs the
+		# camera in by then).
 		if pace > 0.0:
 			eased = minf(eased, _distance - pace * delta)
 		_distance = eased
@@ -233,12 +198,9 @@ func clip_view(pivot: Vector3, wanted: Transform3D) -> Transform3D:
 	return Transform3D(wanted.basis, resolve(pivot, wanted.origin, delta))
 
 
-## How far along [param from] → [param to] a sphere of [param p_radius] travels before it
-## touches something, in metres. [param to]'s whole length when nothing is in the way.
-##
-## Two queries, because each misses what the other sees. `cast_motion` ignores any shape
-## the sphere already overlaps at [param from] — a wall the back of the head is against —
-## so a ray down the same line is asked too, and the nearer of the two wins.
+## How far along [param from] → [param to] a sphere of [param p_radius] travels before it touches
+## something, in metres; the whole length when clear. Also casts a ray, because `cast_motion` ignores
+## a shape the sphere already overlaps at [param from]; the nearer wins.
 static func clear_length(
 	space: PhysicsDirectSpaceState3D,
 	from: Vector3,

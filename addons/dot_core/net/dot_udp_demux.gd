@@ -1,38 +1,9 @@
 class_name DotUdpDemux
 extends RefCounted
 
-## One public UDP port shared by ENet and connectionless protocols (A2S, DQP).
-##
-## [b]Why this exists.[/b] Godot's [code]ENetConnection[/code] can send raw datagrams
-## from its socket ([code]socket_send[/code]) but exposes no receive hook — C ENet's
-## [code]host->intercept[/code] is not bound. An A2S query arriving at an ENet host
-## is silently dropped, so the game port cannot be handed to ENet and also answer a
-## server browser. This class owns the public port instead:
-##
-## [codeblock]
-## datagram in on the public port
-##   claimed by a handler (A2S: FF FF FF FF, DQP: "DQP1")  -> handler, replies out
-##   otherwise                                            -> ENet, via a relay
-## [/codeblock]
-##
-## The ENet host listens on loopback, on a port the OS picks. Every remote client
-## gets its OWN loopback relay socket, so ENet sees one distinct peer per client
-## (one shared socket would make every client the same peer). What ENet sends to a
-## relay goes back out of the public socket to the remote it stands for.
-##
-## [b]The relay hides the client's address from ENet[/b], which would see
-## 127.0.0.1 for everyone. [method remote_for_relay_port] maps it back; the dual
-## peer answers [code]get_peer_address[/code] with the real one, so bans, rate
-## limits and logs keep working.
-##
-## [b]Telling ENet from the rest.[/b] Handlers are asked first. A connectionless
-## datagram begins FF FF FF FF; an ENet datagram begins with a 16-bit peer id whose
-## top bits are flags, so 0xFFFF followed by a 16-bit sent-time of 0xFFFF can in
-## principle occur — only on a compressed connect, one time in 65536. That datagram
-## is lost to the handler, and ENet retransmits a connect it gets no answer to, so
-## the cost of the collision is one retry. A relay is only created for a datagram
-## whose peer-id field is ENet's "not yet connected" id (0xFFF), so random noise and
-## spoofed floods cannot open a socket per source address.
+## One public UDP port shared by ENet and connectionless protocols (A2S, DQP): ENet exposes no receive hook, so this owns the port.
+## Handlers are asked first (FF FF FF FF); the rest goes to an ENet host on loopback via one relay socket per client, and only
+## a datagram with ENet's "not yet connected" peer id (0xFFF) opens one. [method remote_for_relay_port] maps back for bans and logs.
 
 const CHANNEL := "transport"
 

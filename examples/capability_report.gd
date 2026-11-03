@@ -1,13 +1,7 @@
 extends Control
 
-## Prints what this build can do, then exercises the pieces that can be tested
-## without a network.
-##
-## Run it on each target you ship to. It is the fastest way to find out that your
-## web export has no threads, or that your Android build's storage estimate comes
-## back unknown — both of which change how dot-cloud behaves, and neither of which
-## is visible from a desktop editor run.
-##
+## Prints what this build can do, then exercises the pieces testable without a network. Run it on each export target:
+## a web export without threads or an Android storage estimate that comes back unknown is invisible from a desktop run.
 ## Headless-friendly: [code]godot --headless --path . --scene examples/capability_report.tscn[/code]
 
 @export var scheduler_ref: DotNodeRef

@@ -2,10 +2,9 @@
 class_name DotValue
 extends RefCounted
 
-## Comparisons that are total, because GDScript's are not: `==` between mismatched Variant
-## types is a runtime ERROR, not false, and the caller carries on with a plausible wrong answer.
-## Use these wherever a side is a [Variant] whose type you do not control (config, wire, sentinel);
-## ordinary comparisons of declared types should stay as they are.
+## Comparisons that are total: `==` between mismatched Variant types is a runtime ERROR, not false.
+## Use these where a side is a [Variant] whose type you do not control (config, wire, sentinel);
+## ordinary comparisons of declared types stay as they are.
 
 ## Whether two values are the same value, without erroring on mismatched types. Different
 ## types differ, except [int] against [float] and [StringName] against [String], which fold:

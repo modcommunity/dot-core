@@ -1,17 +1,9 @@
 class_name DotCommandNames
 extends RefCounted
 
-## What a commands class is called, in one place, so renaming a vote or map command is the same
-## act in dot-vote, dot-map and the server's game vote.
-##
-## A commands class (`DotVoteCommands`, `DotMapCommands`) has a `prefix`, a `names` Dictionary
-## of role to name, and a table of defaults. A role's value is a name or a list of names: the
-## first is the one help text and hints show, the rest are aliases. The file side is the
-## `commands:` block of maps.yml / games.yml, normalised by [DotRotationSpec].
-##
-## [b]A collision is a warning and a skip, never a steal.[/b] A name another command (or cvar)
-## already has stays theirs and this one is not registered; an operator who renamed `rtv` to
-## `map` must find the old `map` working and a line saying why theirs did not.
+## What a commands class (`DotVoteCommands`, `DotMapCommands`) is called, in one place: a `prefix`, a `names`
+## Dictionary of role to name or list of names (first shown, rest aliases), from the `commands:` block of maps.yml / games.yml.
+## A collision is a warning and a skip, never a steal: a name another command already has stays theirs.
 
 const CHANNEL := "core.command_names"
 

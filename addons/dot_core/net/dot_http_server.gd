@@ -2,10 +2,8 @@ class_name DotHttpServer
 extends RefCounted
 
 ## A small HTTP/1.1 server on [TCPServer] for admin pages and JSON endpoints; the host calls [method poll] every frame.
-##
-## Desktop and dedicated server only ([method DotPlatform.can_listen]). One request per connection,
-## no keep-alive, no chunked bodies, no pipelining, handlers run synchronously inside [method poll].
-## It is strict: a malformed request gets 400, 408, 413, 414, 431, 501 or 505 and never reaches a route.
+## Desktop and dedicated server only ([method DotPlatform.can_listen]); one request per connection, no keep-alive, chunking or pipelining, handlers synchronous.
+## Strict: a malformed request gets 400, 408, 413, 414, 431, 501 or 505 and never reaches a route.
 
 const CHANNEL := "http_server"
 const LOOPBACK := "127.0.0.1"

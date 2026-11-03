@@ -1,30 +1,9 @@
 class_name DotCameraBoom
 extends Node3D
 
-## A third-person camera mount that stays out of the level: where `SpringArm3D` was, with
-## the same four names a game already wrote ([member spring_length], [member margin],
-## [member collision_mask], [method add_excluded_object]), so replacing one is a
-## constructor and nothing else.
-##
-## [codeblock]
-## var boom := DotCameraBoom.new()
-## boom.spring_length = 3.0
-## boom.collision_mask = layout.layer_mask(&"world")
-## boom.add_excluded_object(player.get_rid())
-## boom.position = Vector3(0, eye, 0)      # the pivot: a point that is itself clear
-## player.add_child(boom)
-## boom.add_child(camera)                  # placed along +Z, like a spring arm's
-## [/codeblock]
-##
-## The boom's origin is the pivot and its +Z the direction the camera sits in, as with a
-## spring arm: rotate the boom to orbit. [member side_offset] moves the camera over a
-## shoulder, and the sweep runs straight from the pivot to that point, so a shoulder
-## against a wall pulls in along the same line instead of putting the near plane through
-## it. The sweep and the easing are [DotCameraProbe]'s; read it for why there are two.
-##
-## Children are placed once a frame at a late priority, after whatever moved the pivot;
-## [method force_update] places them now (a cut, a teleport, a test), and [method place]
-## is the same step for a caller that turns [member auto_place] off.
+## A third-person camera mount that stays out of the level: `SpringArm3D`'s four names
+## ([member spring_length], [member margin], [member collision_mask], [method add_excluded_object]).
+## Origin is the pivot, +Z where the camera sits; children are placed each frame ([method force_update] cuts). See docs/camera.md.
 
 ## How far behind the pivot the camera wants to be.
 @export var spring_length: float = 3.0:
@@ -41,10 +20,9 @@ extends Node3D
 ## Sideways offset of the camera from the line behind the pivot (a shoulder).
 @export var side_offset: float = 0.0
 
-## Metres straight up (the world's up, not the boom's) added to where the camera wants to
-## be: a chase camera that looks over the head from above it, swept from a pivot at the eye.
-## A pivot raised above the head instead can itself be inside a low beam, and a sweep that
-## starts inside geometry does not see it.
+## Metres straight up (world up) added to where the camera wants to be, swept from a pivot at the eye:
+## a pivot raised above the head can itself be inside a low beam, and a sweep that starts inside
+## geometry does not see it.
 @export var lift: float = 0.0
 
 ## Layers the camera stops against.
@@ -89,7 +67,8 @@ func clear_excluded_objects() -> void:
 
 
 ## Excludes every collision object from here up to the root: the body a rig hangs off,
-## found by walking rather than handed over, for a rig built before its body is known.
+## Excludes every collision object from here up to the root: the body a rig hangs off, walked
+## rather than handed over, for a rig built before its body is known.
 func exclude_ancestors() -> void:
 	var node: Node = get_parent()
 

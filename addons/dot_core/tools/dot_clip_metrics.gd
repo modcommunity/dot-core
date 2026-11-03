@@ -67,7 +67,8 @@ static func _leg_anchor(skeleton: Skeleton3D, foot: int) -> Variant:
 
 
 ## A sample (without `points`, `blocked`) from [param skeleton]'s pose at [param t]: foot bones
-## found by name, soles taken from the first frame so a foot's height is above the ground.
+## A sample (without `points`, `blocked`) from [param skeleton]'s pose at [param t]: foot bones by
+## name, soles taken from the first frame so a foot's height is above the ground.
 func pose_sample(t: float, skeleton: Skeleton3D, root: Vector3, grounded: bool) -> Dictionary:
 	var sample := {"t": t, "root": root, "ground_y": root.y, "grounded": grounded}
 	if skeleton == null:

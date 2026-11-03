@@ -1,16 +1,7 @@
 extends Node
 
-## Exercises [DotJob], [DotScheduler] and [DotHashJob] across threads.
-##
-## [b]What it guards is a dedicated server that died mid map change.[/b] A hash job's
-## worker logged `File must be opened before use` from `get_length`, then crashed with
-## signal 11 in `eof_reached`: a second thread had been inside the same job and closed
-## its file. Every check here runs real threads; the probe job sleeps inside its hooks so
-## an overlap that a fast machine would hide is wide enough to land every run.
-##
-## [codeblock]
-## godot --headless --path . res://examples/scheduler_selftest.tscn
-## [/codeblock]
+## Exercises [DotJob], [DotScheduler] and [DotHashJob] across threads, guarding a server that crashed mid map change: a second thread inside the same
+## hash job closed its file under `eof_reached`. The probe job sleeps inside its hooks so an overlap a fast machine would hide lands every run.
 
 const SECTIONS := 5
 const CHECKS := 22
@@ -238,10 +229,8 @@ func _test_submitted_twice() -> void:
 func _test_many_hash_jobs() -> void:
 	_section("Many hash jobs over the same files on four workers, some cancelled")
 
-	# The server's verify pass: every object already in the store, two acquisitions at
-	# once, several of them hashing the same object. Cancels are thrown in right after
-	# submission, which is the race that let the main thread close a file a worker had
-	# just opened.
+	# The server's verify pass: every stored object, two acquisitions at once, several hashing the same object,
+	# cancels right after submission (the race that let the main thread close a file a worker had just opened).
 	var scheduler := DotScheduler.new()
 	scheduler.thread_count = 4
 	add_child(scheduler)

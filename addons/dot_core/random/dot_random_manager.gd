@@ -1,10 +1,8 @@
 class_name DotRandomManager
 extends Node
 
-## The one node a game holds, and the only thing that knows the session's seed.
-## No autoload: a server and a client in one process may disagree about the seed. Other addons
-## find it through [DotRegistry] under [constant SERVICE] without naming this class.
-## [code]var loot := rng.stream(&"loot")[/code] after [code]setup()[/code] and add_child.
+## The one node a game holds, and the only thing that knows the session's seed (no autoload: a server and client in one process may disagree).
+## Others find it through [DotRegistry] under [constant SERVICE]. [code]rng.stream(&"loot")[/code] after [code]setup()[/code] and add_child.
 
 ## Registry name. Anything with [code]stream(name)[/code] can stand in.
 const SERVICE := &"dot_random_source"

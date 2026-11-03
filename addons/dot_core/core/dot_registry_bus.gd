@@ -1,12 +1,8 @@
 class_name DotRegistryBus
 extends RefCounted
 
-## Carries [DotRegistry]'s signals, for the same reason [DotLogBus] exists:
-## a static class cannot declare one.
-##
-## [codeblock]
-## DotRegistry.signals().service_registered.connect(_on_service)
-## [/codeblock]
+## Carries [DotRegistry]'s signals, as [DotLogBus] does for logs: a static class cannot declare one.
+## [code]DotRegistry.signals().service_registered.connect(fn)[/code].
 
 signal service_registered(name: StringName, instance: Object)
 signal service_unregistered(name: StringName)

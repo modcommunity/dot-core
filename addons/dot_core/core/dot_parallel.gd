@@ -1,11 +1,9 @@
 class_name DotParallel
 extends RefCounted
 
-## A fork/join that returns inside the tick: [code]count[/code] pure tasks, each writing only its
-## own result slot, on the worker pool or inline. Not [DotScheduler]: the answer lands this tick.
-## A task reads frozen data and writes only its return value: no node API, physics, [DotLog],
-## signal, shared container or shared random stream, and no typed node array. Static, so
-## [param workers] comes from the caller. See docs/engine-traps.md and server-threading.md.
+## A fork/join that returns inside the tick: [code]count[/code] pure tasks, each writing only its own result slot, on the pool or inline.
+## Not [DotScheduler]. A task reads frozen data and touches no node API, physics, [DotLog], signal, shared container or random stream.
+## Static; [param workers] comes from the caller. See docs/engine-traps.md and server-threading.md.
 
 const CHANNEL := "parallel"
 
@@ -51,10 +49,9 @@ static func resolve_workers(workers: int) -> int:
 	return workers
 
 
-## Calls [code]task.call(i)[/code] for each [code]i[/code] in [code]0..count-1[/code] and returns
-## the results by slot. On the pool when [method resolve_workers] of [param workers] is not 0,
-## else a plain loop in index order, which is every suite's "off" half. [param compare]
-## (func(a, b) -> String, empty when equal) lets [member verify] re-run; without it never re-run.
+## Calls [code]task.call(i)[/code] for each [code]i[/code] in [code]0..count-1[/code], results by slot: on the pool when
+## [method resolve_workers] of [param workers] is not 0, else a loop in index order. [param compare] (func(a, b) -> String,
+## empty when equal) lets [member verify] re-run; without it never re-run.
 static func run(
 	task: Callable, count: int, label: StringName, workers: int,
 	compare: Callable = Callable()

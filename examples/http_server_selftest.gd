@@ -1,10 +1,6 @@
 extends Node
 
 ## Exercises DotHttpServer against real loopback sockets: parsing, routing, limits, traversal, JSON, bad input, DotHttp and TLS.
-##
-## [codeblock]
-## godot --headless --path . res://examples/http_server_selftest.tscn
-## [/codeblock]
 
 const SECTIONS := 8
 const CHECKS := 63

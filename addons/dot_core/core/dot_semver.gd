@@ -1,14 +1,8 @@
 class_name DotSemVer
 extends RefCounted
 
-## Semantic version parsing and comparison.
-##
-## Needed in three places that all have the same failure mode if they guess:
-## dot-cloud refusing content built for a newer manifest format, dot-server
-## refusing a client with an incompatible protocol, and dot-auth refusing an API
-## version it does not understand. Comparing version strings lexically makes
-## [code]"0.10.0" < "0.9.0"[/code], which is how a client that should have been
-## refused gets let in.
+## Semantic version parsing and comparison, for dot-cloud, dot-server and dot-auth refusals. Lexical comparison
+## makes [code]"0.10.0" < "0.9.0"[/code], which lets in a client that should have been refused.
 
 var major: int = 0
 var minor: int = 0
@@ -110,11 +104,8 @@ func equals(other: DotSemVer) -> bool:
 	return compare(other) == 0
 
 
-## Whether [param other] can consume content produced by this version.
-##
-## Caret semantics: same major, and [param other] at least as new. Below 1.0.0
-## the minor acts as the major, because pre-1.0 projects break compatibility on
-## minor bumps and pretending otherwise loads content that does not work.
+## Whether [param other] can consume content produced by this version: same major and [param other] at least as new.
+## Below 1.0.0 the minor acts as the major, since pre-1.0 projects break on minor bumps.
 func is_compatible_with(other: DotSemVer) -> bool:
 	if major != other.major:
 		return false

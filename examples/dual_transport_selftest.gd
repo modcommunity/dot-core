@@ -1,14 +1,7 @@
 extends "dual_transport/selftest_base.gd"
 
-## Exercises [DotTransportDual]: a WebSocket client and an ENet client on one server,
-## a query datagram on the same UDP port, and the routing between them.
-##
-## Real sockets on loopback, real ENet and WebSocket peers — the point of the class is
-## the seam between two engine peers, and a mock of either would only test the mock.
-##
-## [codeblock]
-## godot --headless --path . res://examples/dual_transport_selftest.tscn
-## [/codeblock]
+## Exercises [DotTransportDual]: a WebSocket and an ENet client on one server, a query datagram on the same UDP port, and the routing between them.
+## Real loopback sockets and peers: the point is the seam between two engine peers, and a mock would only test the mock.
 
 const SECTIONS := 14
 const CHECKS := 95
@@ -165,11 +158,8 @@ func _test_routing() -> void:
 	_check(seen.get("from-ws", [0])[0] == ws_id, "and the WebSocket client as itself")
 
 
-## [DotMeteredPeer] behind a real [SceneMultiplayer], on both transports: what net_stat
-## draws is only worth drawing if the wrapper is invisible to everything above it. The
-## SceneMultiplayer half is the one that matters — it decides "connected" from the
-## wrapper's status and its peer_connected(1), and a wrapper that got either wrong would
-## be a client that never finishes connecting, with nothing in the log.
+## [DotMeteredPeer] behind a real [SceneMultiplayer], on both transports: the wrapper must be invisible to everything above it.
+## SceneMultiplayer decides "connected" from its status and peer_connected(1); getting either wrong is a client that never connects, silently.
 func _test_metered_clients() -> void:
 	_section("A metered client is counted, and SceneMultiplayer cannot tell it is there")
 
@@ -294,10 +284,8 @@ func _test_disconnect_closes_relay() -> void:
 	_check(_server.peer_counts() == {"websocket": 1, "enet": 0}, "the WebSocket client is still there")
 
 
-## The engine's own lines, caught by a [Logger]: a send to a leaving peer is not an error
-## anything returns, only a line on stderr. ENet: "Unable to send packet on channel N, max
-## channels: 0" for the one still leaving, "Parameter "peer" is null" for the one already gone.
-## WebSocket: "ready_state != STATE_OPEN" for any peer whose socket is no longer open.
+## The engine's own lines, caught by a [Logger]: a send to a leaving peer is only a stderr line (ENet "Unable to send packet on channel N",
+## "Parameter "peer" is null"; WebSocket "ready_state != STATE_OPEN").
 class SendWatch:
 	extends Logger
 
@@ -328,10 +316,8 @@ class SendWatch:
 		return n
 
 
-## Armed by deleting the [method DotDualPeer._enet_sendable] checks in _put_packet_script:
-## the watch then counts the engine's errors, which is what every voice_<game>.log in
-## dot-server-deploy carried at a client's disconnect. Deleting only the _enet_departing
-## line in _send_enet_except arms it too (the all-but-the-second-leaver send).
+## Armed by deleting the [method DotDualPeer._enet_sendable] checks in _put_packet_script, or only the _enet_departing line in
+## _send_enet_except: the watch then counts the engine's errors.
 func _test_leaving_together() -> void:
 	_section("Two ENet clients leaving in one poll: the first one's handler sends to the second")
 
@@ -596,10 +582,8 @@ func _test_enet_peer_timeout() -> void:
 
 
 
-## A server closing behind the demux must tell its ENet clients. Closing the ENet host
-## sends each peer a disconnect, but to its loopback relay; the dual peer closed the demux
-## in the same call, so nothing left, and a native client noticed only at its own peer
-## timeout -- 33.8 s in dot-server-deploy's reconnect suite once that was raised to 30 s.
+## A server closing behind the demux must tell its ENet clients: the host's disconnect goes to the loopback relay, so closing the demux
+## in the same call left a native client to its own peer timeout.
 func _test_shutdown_reaches_enet() -> void:
 	_section("A server that shuts down tells its ENet clients at once")
 

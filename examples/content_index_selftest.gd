@@ -1,11 +1,6 @@
 extends Node
 
-## Exercises [DotContentIndex]: two packs, two sessions, tag reuse, the session signal, and a
-## kind this build does not know.
-##
-## [codeblock]
-## godot --headless --path . res://examples/content_index_selftest.tscn
-## [/codeblock]
+## Exercises [DotContentIndex]: two packs, two sessions, tag reuse, the session signal, and a kind this build does not know.
 
 const SECTIONS := 5
 const CHECKS := 32

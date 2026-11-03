@@ -1,17 +1,9 @@
 class_name DotFrameCost
 extends RefCounted
 
-## What each system cost this frame, reported by the systems themselves, so a slow frame is pinned on one.
-##
-## [codeblock]
-## var t := DotFrameCost.now()          # 0 while disabled, so the add below is a no-op
-## _rebuild_paths()
-## DotFrameCost.add(&"navigation", t, "rebuild 40 paths")
-## [/codeblock]
-##
-## Off by default and free while off. One reader drains it per frame with [method take] (DotHitchLog
-## does while [member enabled]); a second reader would see half the frame. Only plain values are kept,
-## because a script object in a static survives to teardown and aborts the process.
+## What each system cost this frame, reported by the systems, so a slow frame is pinned on one. Off by default and free while off.
+## [code]var t := DotFrameCost.now()[/code] (0 while disabled), then [code]DotFrameCost.add(&"navigation", t, "note")[/code].
+## One reader drains it per frame with [method take] (DotHitchLog does); only plain values are kept, since a script object in a static aborts teardown.
 
 ## Set by the profiler; systems only ever call [method now] and [method add].
 static var enabled := false

@@ -1,12 +1,9 @@
 class_name DotLoadGate
 extends "res://addons/dot_core/loading/dot_load_gate_state.gd"
 
-## One node a game holds closed while its level, camera and players arrive, lifting a cover
-## once they have: without it the player sees a half-built world and a body falling through
-## floor that is not there yet. Hold, require or freeze, then release; a map change holds again.
-## A host claims the cover via [constant HOST_META] (see [method host_finished]); with no host
-## the gate shows its own [DotLoadingCover] and warms under it. [method of] finds it by
-## [constant META]; it also registers as [constant SERVICE]. Nothing is global.
+## One node a game holds closed while its level, camera and players arrive, then lifts a cover. Hold, require or freeze, then release; a map change holds again.
+## A host claims the cover via [constant HOST_META] ([method host_finished]); with none the gate shows its own [DotLoadingCover] and warms under it.
+## [method of] finds it by [constant META]; also registered as [constant SERVICE].
 
 const CHANNEL := "dot.load_gate"
 

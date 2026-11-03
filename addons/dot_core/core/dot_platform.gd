@@ -149,7 +149,7 @@ static func has_raw_http_client() -> bool:
 	return not is_web()
 
 
-## Whether HTTP range requests can be used to resume a partial download.
+## Whether HTTP range requests can resume a partial download.
 ## On web it also depends on CORS exposing [code]Accept-Ranges[/code]; fall back to restarting the transfer.
 static func can_resume_downloads() -> bool:
 	return true

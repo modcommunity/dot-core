@@ -1,10 +1,6 @@
 extends Node
 
 ## Exercises [DotRotationSpec]: string entries, mapping entries with per-entry settings, layering.
-##
-## [codeblock]
-## godot --headless --path . res://examples/rotation_spec_selftest.tscn
-## [/codeblock]
 
 const SECTIONS := 4
 const CHECKS := 25

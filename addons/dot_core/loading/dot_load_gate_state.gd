@@ -44,10 +44,8 @@ signal progress_changed(fraction: float, text: String)
 ## closing.
 @export var timeout_sec: float = 20.0
 
-## Longest a frame may spend on a hold's slice of work while the cover is up, in milliseconds. -1
-## picks 24 where there are no threads (a browser, where slices are the only way to make
-## progress and the cover needs no smooth animation) and 0 elsewhere. The command line
-## `--cover-slice-msec=N` overrides it. See [method slice_msec].
+## Longest a frame may spend on a hold's slice of work under the cover, in milliseconds. -1 picks 24 with no threads
+## (a browser) and 0 elsewhere; `--cover-slice-msec=N` overrides. See [method slice_msec].
 @export var cover_slice_msec: int = -1
 
 ## Hold until a current camera (3D or 2D) inside the game exists. A game with no camera of
@@ -63,10 +61,9 @@ signal progress_changed(fraction: float, text: String)
 ## frames at 60 Hz. 0 skips settling.
 @export var settle_frames: int = 30
 
-## End settling early once every frozen body is at rest: the engine says so (on floor and
-## slower than [member settle_rest_speed]), or its position moved less than
-## [constant REST_EPSILON] for [constant REST_FRAMES] frames. The position test cannot be
-## fooled by a body lacking [code]is_on_floor()[/code] or velocity. No position counts as rest.
+## End settling early once every frozen body is at rest: the engine says so (on floor, slower than [member settle_rest_speed]),
+## or its position moved less than [constant REST_EPSILON] for [constant REST_FRAMES] frames, which a body lacking
+## [code]is_on_floor()[/code] or velocity cannot fool. No position counts as rest.
 @export var settle_until_rest: bool = true
 
 ## Metres per second under which a settling body counts as at rest.

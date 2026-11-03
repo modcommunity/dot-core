@@ -1,11 +1,6 @@
 extends Node
 
-## Exercises [DotCollisionSweep] against a real physics space: drawn floor and walls with and without collision,
-## the causes it names, collision nothing is drawn at, and the [member DotCollisionSweep.play] filter.
-##
-## [codeblock]
-## godot --headless --path . res://examples/collision_sweep_selftest.tscn
-## [/codeblock]
+## Exercises [DotCollisionSweep] in a real physics space: drawn floor and walls with and without collision, the causes it names, collision nothing is drawn at, the [member DotCollisionSweep.play] filter.
 
 const SECTIONS := 7
 const CHECKS := 35

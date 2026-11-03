@@ -1,29 +1,9 @@
 class_name DotHitchLog
 extends RefCounted
 
-## Records every frame longer than a threshold with what changed during it, so a lag spike
-## can be named instead of guessed at.
-##
-## [codeblock]
-## var hitches := DotHitchLog.new()
-## hitches.threshold_ms = 33.0
-## hitches.start(get_tree())
-## hitches.mark("killcam start")         # optional: a label attached to the current frame
-## # ... later:
-## for line in hitches.report(): print(line)
-## [/codeblock]
-##
-## [b]What "what ran" means.[/b] The engine exposes no per-script timer, so each hitch carries
-## the frame's split (physics, script, render, wait for vsync) and the deltas of counters that
-## betray the usual causes: pipeline compilations (a shader built mid-frame), nodes and
-## resources created or freed (an instantiate or a load), static memory (an allocation burst),
-## draw calls, video memory, log lines written, and the labels [method mark] was given. A
-## hitch whose split is all [code]script[/code] with new nodes is an instantiate; all
-## [code]render[/code] with a compile delta is a shader; all [code]wait[/code] is the
-## frame cap or the GPU.
-##
-## Wall time is read from [method Time.get_ticks_usec] at the engine's own per-iteration
-## signals, not from the delta [method Node._process] gets, which is smoothed and clamped.
+## Records every frame longer than a threshold with what changed during it, so a spike can be named. Each hitch carries the frame's split
+## (physics, script, render, wait) and deltas of counters that betray causes (pipeline compiles, nodes and resources, memory, draw calls, log lines, [method mark] labels).
+## Wall time comes from the engine's iteration signals, not the smoothed, clamped delta. [code]start(get_tree())[/code], then [code]report()[/code].
 
 const CHANNEL := "dot.hitch"
 

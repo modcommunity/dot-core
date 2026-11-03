@@ -143,9 +143,8 @@ static func release_callback(name: String) -> void:
 
 
 ## Asks for the emulated filesystem to be flushed to IndexedDB; no-op off-web. Returns at once.
-## On web [code]user://[/code] is an in-memory mirror persisted asynchronously, so a tab closed before the flush loses writes.
-## dot-cloud calls it after each committed object, not once at the end.
-## The engine's own sync can fail (a file renamed or removed between its listing and its store) and only prints to the console; a failure is counted here and logged at WARN on the next call. Use [method flush_filesystem] where the last write must land.
+## [code]user://[/code] is an in-memory mirror persisted asynchronously, so a tab closed before the flush loses writes; dot-cloud calls it after each committed object.
+## The engine's sync only prints on failure; a failure is counted here and logged at WARN on the next call. Use [method flush_filesystem] where the last write must land.
 static func sync_filesystem() -> void:
 	var b := bridge()
 	if b == null:

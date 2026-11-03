@@ -1,14 +1,7 @@
 extends Node
 
-## Exercises [DotValue], the comparisons that are total.
-##
-## [b]Every check here would be a runtime ERROR written the obvious way.[/b] That is the
-## point of the class and it is why the checks look trivial: `1 != "1"` is not `true` in
-## GDScript, it is an abandoned expression and a line in a log.
-##
-## [codeblock]
-## godot --headless --path . res://examples/value_selftest.tscn
-## [/codeblock]
+## Exercises [DotValue], the comparisons that are total. Every check would be a runtime ERROR written the obvious way:
+## `1 != "1"` is an abandoned expression and a log line in GDScript, not `true`.
 
 const SECTIONS := 4
 const CHECKS := 27

@@ -1,12 +1,8 @@
 class_name DotScenario
 extends RefCounted
 
-## A scripted play session as data: a clip is a list of steps, each applying from its time
-## `t` (seconds) until the next, so another game adds a clip with JSON and no code.
-##
-## A step may set `move` [x, y], `yaw`, `pitch`, `turn` (degrees a second added to yaw),
-## `buttons` (names the game's driver maps) and fire one-shot `event` names at its time.
-## Fields persist until a later step sets them again.
+## A scripted play session as data: a clip is a list of steps, each applying from its time `t` (seconds) until the next, so a game adds a clip with JSON.
+## A step may set `move` [x, y], `yaw`, `pitch`, `turn` (deg/s), `buttons` and fire one-shot `event` names; fields persist until set again.
 
 var name := ""
 var duration := 10.0

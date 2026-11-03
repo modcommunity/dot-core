@@ -1,16 +1,8 @@
 @tool
 extends EditorPlugin
 
-## Editor entry point for dot-core.
-##
-## dot-core is deliberately autoload-free: every class here is either a static
-## utility, a [Resource], or a [Node] you place yourself. That is what lets a
-## consumer drop the addon into an existing project without inheriting a fixed
-## scene-tree shape or a reserved global name.
-##
-## The plugin therefore registers custom types for the inspector and nothing
-## else — enabling or disabling it never changes runtime behaviour of code that
-## already references the classes by [code]class_name[/code].
+## Editor entry point for dot-core. The addon is autoload-free (static utilities, [Resource]s and [Node]s you place yourself),
+## so the plugin only registers inspector custom types: enabling or disabling it never changes runtime behaviour.
 
 const _ICON := "res://addons/dot_core/icon_placeholder.svg"
 
@@ -36,10 +28,8 @@ func _enter_tree() -> void:
 		icon
 	)
 
-	# Registered like the other two and for the same reason, but note what it is
-	# NOT: a manager is placed by the host, never autoloaded. A server's
-	# authoritative streams and a client's private cosmetic ones are two managers
-	# in one process with two different seeds, on purpose.
+	# A manager is placed by the host, never autoloaded: a server's streams and a client's cosmetic
+	# ones are two managers in one process with different seeds.
 	add_custom_type(
 		"DotRandomManager",
 		"Node",

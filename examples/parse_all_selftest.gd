@@ -1,15 +1,7 @@
 extends Node
 
-## Runs tools/dot_parse_all.gd, as a separate process, over scripts known to be bad and good.
-##
-## [b]The bad scripts are written to user:// here, not committed.[/b] A tracked broken
-## .gd would fail this repository's own parse pass and dot-ci on every push, which is the
-## pass the tool exists to speed up. Armed by construction: every bad one must be named,
-## the good ones must not be, and the process must exit non-zero.
-##
-## [codeblock]
-## godot --headless --path . res://examples/parse_all_selftest.tscn
-## [/codeblock]
+## Runs tools/dot_parse_all.gd as a separate process over bad and good scripts. The bad ones are written to user:// here, since a tracked broken
+## .gd would fail this repository's own parse pass. Armed: every bad one is named, no good one is, and the exit is non-zero.
 
 const TOOL := "res://addons/dot_core/tools/dot_parse_all.gd"
 const DIR := "user://parse_all_selftest"

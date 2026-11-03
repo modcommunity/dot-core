@@ -1,12 +1,9 @@
 class_name DotCollisionAudit
 extends RefCounted
 
-## Lists the visible geometry under a node that nothing collides with, the level pieces a player
-## walks through. Structural, so it needs no physics space and runs on a scene not in the tree.
-## Covered: a solid body that is an ancestor, child or sibling with an enabled shape and a layer;
-## a CSG root with [code]use_collision[/code]; a GridMap item with shapes. Areas never cover.
-## Skipped: invisible, shadow-only, under a character or rigid body, or [code]dot_no_collision[/code]
-## (metadata or group, inherited by a subtree).
+## Lists visible geometry under a node that nothing collides with. Structural: no physics space needed.
+## Covered by an ancestor, child or sibling solid body, a CSG root with [code]use_collision[/code], or a GridMap item with shapes
+## (Areas never). Skipped: invisible, shadow-only, under a character or rigid body, or [code]dot_no_collision[/code] (inherited).
 
 const META := &"dot_no_collision"
 const GROUP := &"dot_no_collision"
