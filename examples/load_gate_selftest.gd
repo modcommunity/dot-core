@@ -3,7 +3,7 @@ extends Node
 ## Exercises [DotLoadGate] and [DotLoadingCover]: holds, predicates, the timeout warning, freezing and settling under the cover, closing again, the camera requirement and warm-up, a host claiming the cover, the older shells' root signal.
 
 const SECTIONS := 12
-const CHECKS := 102
+const CHECKS := 104
 
 var _passed := 0
 var _failed := 0
@@ -486,6 +486,30 @@ func _test_hosted() -> void:
 	remove_child(root)
 	root.free()
 	_drop(gate2)
+	await _hosted_placed_cover()
+
+
+## A cover the game put on screen itself (assigned, never shown by the gate) goes when a hosted gate opens.
+func _hosted_placed_cover() -> void:
+	var root := Node.new()
+	root.name = "PlacedCoverGame"
+	add_child(root)
+	var cover := DotLoadingCover.new()
+	root.add_child(cover)
+	cover.show_cover()
+	set_meta(DotLoadGate.HOST_META, FakeHost.new())
+	var gate := DotLoadGate.new()
+	gate.register_service = false
+	gate.require_camera = false
+	gate.cover = cover
+	root.add_child(gate)
+	remove_meta(DotLoadGate.HOST_META)
+	await _frames(6)
+	_check(cover.is_showing(), "a placed cover stays up while the host warms")
+	gate.host_finished()
+	_check(gate.is_open() and not cover.is_showing(), "and is lifted when the gate opens", str(gate.describe()))
+	remove_child(root)
+	root.free()
 
 
 func _test_finding_and_old_shells() -> void:

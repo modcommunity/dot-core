@@ -532,6 +532,7 @@ func _open() -> void:
 	_restore_all()
 	_release_input()
 	_hide_own_cover()
+	_hide_placed_cover()
 	_progress_text = ""
 	_fraction = -1.0
 	DotLog.info(CHANNEL, "the game is ready to be seen", {
@@ -616,6 +617,13 @@ func _show_own_cover() -> void:
 
 func _hide_own_cover() -> void:
 	if _cover_made and is_instance_valid(cover):
+		cover.call(&"hide_cover")
+
+
+## A [member cover] the game put on screen itself is lifted on opening even when a host covered:
+## the gate never showed it, so [method _hide_own_cover] would leave it up for good.
+func _hide_placed_cover() -> void:
+	if not _cover_made and is_instance_valid(cover) and cover.is_inside_tree():
 		cover.call(&"hide_cover")
 
 
