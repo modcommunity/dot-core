@@ -28,6 +28,8 @@ enum Storage {
 
 static var _kind: int = -1
 static var _storage: int = -1
+## Tests set this: -1 asks the build, 0 forces no touch, 1 forces touch.
+static var touch_override: int = -1
 
 
 static func kind() -> int:
@@ -89,6 +91,14 @@ static func is_mobile() -> bool:
 static func is_desktop() -> bool:
 	var k := kind()
 	return k == Kind.WINDOWS or k == Kind.MACOS or k == Kind.LINUX
+
+
+## Whether the player can reach the screen by finger: a phone or tablet build, or a browser or desktop on a touch screen.
+## Not [method is_mobile]: a touch laptop has a pointer too, and a phone browser reports web.
+static func has_touch() -> bool:
+	if touch_override >= 0:
+		return touch_override == 1
+	return is_mobile() or (not is_headless() and DisplayServer.is_touchscreen_available())
 
 
 ## True when this build runs without a display server.
