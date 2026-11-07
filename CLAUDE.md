@@ -4,7 +4,7 @@ Shared foundation for the dot-* family: logging, platform capability detection, 
 
 **The distributable is `addons/dot_core/`.** `project.godot` and `examples/` exist so the addon can be opened and validated on its own.
 
-The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-conventions) (no autoloads, `DotNodeRef`, `DotResult`, capabilities not platforms, `Dot` prefix, layered config, `DotLog` levels, `print`/`push_error`, `describe()`) are implemented here; changing one is a breaking change for every repository. The reasoning for what is specific to dot-core is in [docs/](docs/README.md).
+The family-wide conventions in [family CLAUDE.md](../../CLAUDE.md#family-wide-conventions) (no autoloads, `DotNodeRef`, `DotResult`, capabilities not platforms, `Dot` prefix, layered config, `DotLog` levels, `print`/`push_error`, `describe()`) are implemented here; changing one is a breaking change for every repository. The reasoning for what is specific to dot-core is in [docs/](docs/README.md).
 
 ## Read before
 
@@ -49,7 +49,7 @@ The family-wide conventions in [game-dev/CLAUDE.md](../../CLAUDE.md#family-wide-
 
 ## Running and testing
 
-The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything)), which dot-ci runs on every push. Then every scene in `examples/`; each selftest exits non-zero on failure. `scheduler_selftest` puts real threads into one job, cancels under a worker and closes a hash job's file under it. `parallel_selftest` checks a pooled run against an inline one slot for slot, that the pool really left the calling thread, and that verify catches an order-dependent task (three verify ERROR lines on stderr are expected). `dual_transport_selftest` runs real WebSocket and ENet clients, a metered client, a query on the shared port, the server's bandwidth, the packet throttle's settings, peer timeouts, a shutdown, and a TLS ClientHello closed by the TCP screen (armed: the same hello with the screen off). **Run `capability_report` on each export target**: it reports whether that build has threads, UDP and a storage quota. A dot-core change touches every consumer: re-run `--import` in projects that link it after adding a `class_name`.
+The family's two steps ([family CLAUDE.md](../../CLAUDE.md#validating-anything)), which dot-ci runs on every push. Then every scene in `examples/`; each selftest exits non-zero on failure. `scheduler_selftest` puts real threads into one job, cancels under a worker and closes a hash job's file under it. `parallel_selftest` checks a pooled run against an inline one slot for slot, that the pool really left the calling thread, and that verify catches an order-dependent task (three verify ERROR lines on stderr are expected). `dual_transport_selftest` runs real WebSocket and ENet clients, a metered client, a query on the shared port, the server's bandwidth, the packet throttle's settings, peer timeouts, a shutdown, and a TLS ClientHello closed by the TCP screen (armed: the same hello with the screen off). **Run `capability_report` on each export target**: it reports whether that build has threads, UDP and a storage quota. A dot-core change touches every consumer: re-run `--import` in projects that link it after adding a `class_name`.
 
 ## Rules that bite
 
