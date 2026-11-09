@@ -10,6 +10,10 @@ static var enabled := false
 ## Also keep every span's start and end, so a profiler can rebuild who ran inside whom ([method take_events]).
 static var trace := false
 
+## Run facts a game states for the profiler's report header (for example `native` = "motor=on bots=on"). Plain strings only.
+## Not cleared by [method reset]: they describe the process, not one recording.
+static var notes := {}
+
 static var _rows := {}
 static var _what := {}
 static var _queries := {}
