@@ -62,3 +62,4 @@ A pack says what it needs at its root: `{"format": 1, "addons": {"dot_net": 3}}`
 - 27: DotLoadGate.cover_slice_msec and slice_msec(base_ms): a wider per-frame budget for work held under the cover.
 - 28: DotWeb.sync_failures, flush_filesystem (a failed IndexedDB save is counted, logged and retried) and has_new_sync_failures.
 - 29: core/DotAdminIdentity (the admin-only identity gate hoisted from dot-workbench: resolver, admin_uids, admin_groups, flags, fallback_permit; authenticate and permit are the hooks).
+- 30: profile/: DotFrameCost.trace, span, take_events, add_query and take_queries (nested spans and physics queries per system); DotSpaceQuery (cast_motion, rest_info, ray, shape, point, collide_shape, move_and_collide, body_test_motion: counted and timed while DotFrameCost is enabled); a DotHitchLog frame record's `queries`, `events` and `usec`.

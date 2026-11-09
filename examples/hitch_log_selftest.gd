@@ -1,9 +1,10 @@
 extends Node
 
 ## Exercises [DotHitchLog]: a deliberately slow frame is recorded with its mark and added nodes, quiet frames are not, the report names it, and a [DotFrameCost] report pins it on a system.
+## The last section traces nested spans and [DotSpaceQuery] queries through a frame record.
 
-const SECTIONS := 4
-const CHECKS := 24
+const SECTIONS := 5
+const CHECKS := 36
 
 var _passed := 0
 var _failed := 0
@@ -18,6 +19,7 @@ func _ready() -> void:
 	await _test_quiet_frames()
 	await _test_report_and_stop()
 	await _test_frame_cost()
+	await _test_trace_and_queries()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -138,6 +140,69 @@ func _test_frame_cost() -> void:
 	h.stop()
 	DotFrameCost.reset()
 	_check(DotFrameCost.take().is_empty() and not DotFrameCost.enabled, "reset clears and disables")
+
+
+func _test_trace_and_queries() -> void:
+	_section("Tracing keeps nested spans; DotSpaceQuery counts queries per system")
+	var wall := StaticBody3D.new()
+	var col := CollisionShape3D.new()
+	col.shape = BoxShape3D.new()
+	wall.add_child(col)
+	wall.position = Vector3(0, 0, -5)
+	add_child(wall)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var space := get_viewport().world_3d.direct_space_state
+	var q := PhysicsRayQueryParameters3D.create(Vector3.ZERO, Vector3(0, 0, -10))
+	var off := DotSpaceQuery.ray(space, q, &"bots")
+	_check(not off.is_empty(), "a query answers while disabled")
+	_check(DotFrameCost.take_queries().is_empty(), "and records nothing")
+	DotFrameCost.enabled = true
+	DotFrameCost.trace = true
+	_measured.clear()
+	var h := DotHitchLog.new()
+	h.threshold_ms = 1000.0
+	var _c := h.frame_measured.connect(_on_measured)
+	h.start(get_tree())
+	await get_tree().process_frame
+	var outer := DotFrameCost.now()
+	var inner := DotFrameCost.now()
+	var hit := DotSpaceQuery.ray(space, q, &"bots")
+	var _r := DotSpaceQuery.ray(space, q)
+	_busy(2)
+	DotFrameCost.add(&"bot_los", inner)
+	DotFrameCost.add(&"bots", outer)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	h.stop()
+	_check(not hit.is_empty(), "the traced query still answers")
+	var rec: Dictionary = {}
+	for r: Dictionary in _measured:
+		if not (r.get("queries", {}) as Dictionary).is_empty():
+			rec = r
+	var qs: Dictionary = rec.get("queries", {})
+	_check(qs.get(&"bots", {}).get(DotSpaceQuery.RAY, {}).get("calls", 0) == 1, "the query is charged to its system", str(qs))
+	_check(qs.has(&"unattributed"), "a query without a system is kept apart")
+	var ev: Dictionary = rec.get("events", {})
+	var events: PackedInt64Array = ev.get("events", PackedInt64Array())
+	var names: Array = ev.get("names", [])
+	_check(events.size() == 12, "four spans traced: two queries, two systems", str(events.size()))
+	var spans := {}
+	for i in range(0, events.size(), 3):
+		spans[names[events[i + 2]]] = [events[i], events[i + 1]]
+	_check(spans.has(&"q.intersect_ray") and spans.has(&"bots") and spans.has(&"bot_los"), "the spans are named", str(spans.keys()))
+	if spans.has(&"bots") and spans.has(&"bot_los") and spans.has(&"q.intersect_ray"):
+		_check(spans[&"bots"][0] <= spans[&"bot_los"][0] and spans[&"bot_los"][1] <= spans[&"bots"][1], "the inner span sits inside the outer")
+		_check(spans[&"bot_los"][0] <= spans[&"q.intersect_ray"][0], "the query sits inside its caller")
+	else:
+		_check(false, "the inner span sits inside the outer")
+		_check(false, "the query sits inside its caller")
+	var usec: PackedInt64Array = rec.get("usec", PackedInt64Array())
+	_check(usec.size() == 5 and usec[0] > 0 and usec[4] >= usec[0], "the record carries its window stamps", str(usec))
+	_check(h.hitches.is_empty() or not h.hitches[0].has("events"), "kept hitches do not hold spans")
+	DotFrameCost.reset()
+	_check(not DotFrameCost.trace and DotFrameCost.take_events().events.is_empty(), "reset stops tracing and clears spans")
+	wall.queue_free()
 
 
 func _section(title: String) -> void:
