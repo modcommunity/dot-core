@@ -7,8 +7,9 @@ extends RefCounted
 
 const CHANNEL := "dot.hitch"
 
-## Every frame's split, {t, ms, physics, script, render, wait, systems}; [code]systems[/code] is
-## [method DotFrameCost.take] (empty while it is disabled). A hitch is emitted as the full hitch record.
+## Every frame's split, {t, ms, physics, script, render, wait, systems, queries, events, usec}: [code]systems[/code],
+## [code]queries[/code] and [code]events[/code] are DotFrameCost's take, take_queries and take_events (empty while off);
+## [code]usec[/code] is the window's stamps [start, first physics, pre draw, post draw, end] (0 when absent).
 signal frame_measured(rec: Dictionary)
 
 ## A frame at least this long is a hitch.
@@ -206,6 +207,8 @@ func _finish(now: int) -> void:
 	_all_ms.append(wall)
 	worst_ms = maxf(worst_ms, wall)
 	var systems := DotFrameCost.take() if DotFrameCost.enabled else {}
+	var queries := DotFrameCost.take_queries() if DotFrameCost.enabled else {}
+	var events := DotFrameCost.take_events() if DotFrameCost.trace else {}
 	if wall < threshold_ms and not has_connections("frame_measured"):
 		return
 	# The window runs from one process_frame to the next: the previous frame's scripts and
@@ -219,7 +222,8 @@ func _finish(now: int) -> void:
 	else:
 		script = maxf(wall - phys, 0.0)
 	var rec := {"t": (_iter_start - _t0) / 1.0e6, "ms": wall, "physics": phys, "script": script,
-		"render": render, "wait": maxf(wall - phys - script - render, 0.0), "systems": systems}
+		"render": render, "wait": maxf(wall - phys - script - render, 0.0), "systems": systems, "queries": queries,
+		"events": events, "usec": PackedInt64Array([_iter_start, _phys_start, _pre_draw, _post_draw, now])}
 	if wall < threshold_ms:
 		frame_measured.emit(rec)
 		return
@@ -235,3 +239,5 @@ func _finish(now: int) -> void:
 	if hitches.size() > keep:
 		hitches.pop_front()
 	frame_measured.emit(hitch)
+	# Kept hitches would otherwise hold every traced span; listeners read them during the emit.
+	var _e := hitch.erase("events")
