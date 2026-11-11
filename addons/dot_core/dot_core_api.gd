@@ -4,5 +4,5 @@ extends RefCounted
 ## could call; OLDEST is raised to LEVEL when something callable is removed or changes meaning.
 
 # What each level added: docs/addon-api.md.
-const LEVEL := 31
+const LEVEL := 32
 const OLDEST := 1
