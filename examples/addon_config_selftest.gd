@@ -2,8 +2,8 @@ extends Node
 
 ## Exercises [DotAddonConfig]: `cfg/addon/<name>/*.yml` read in file-name order over defaults.
 
-const SECTIONS := 11
-const CHECKS := 129
+const SECTIONS := 12
+const CHECKS := 133
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -30,6 +30,7 @@ func _run() -> void:
 	_test_plural_legacy()
 	_test_apply_file()
 	_test_user_tier()
+	_test_former_game()
 	_clean()
 
 	_line("")
@@ -64,6 +65,10 @@ func _server_game_dir() -> String:
 	return "user://cfg/server/game/selftest_game/selftest_addon"
 
 
+func _old_game_dir() -> String:
+	return "user://cfg/game/selftest_old/selftest_addon"
+
+
 func _game_dir() -> String:
 	return "user://cfg/game/selftest_game/selftest_addon"
 
@@ -81,7 +86,7 @@ func _write_at(dir: String, file: String, text: String) -> void:
 
 
 func _clean() -> void:
-	for dir in [_dir(), _server_dir(), _old_server_dir(), _game_dir(), _plural("addons"), _plural("games/selftest_game"), _plural("server/addons"), _plural("server/games/selftest_game"), _server_game_dir(), DotAddonConfig.user_dir_for(NAME), "user://cfg/legacy_selftest"]:
+	for dir in [_dir(), _server_dir(), _old_server_dir(), _game_dir(), _old_game_dir(), _plural("addons"), _plural("games/selftest_game"), _plural("server/addons"), _plural("server/games/selftest_game"), _server_game_dir(), DotAddonConfig.user_dir_for(NAME), "user://cfg/legacy_selftest"]:
 		if DirAccess.dir_exists_absolute(dir):
 			for f in DirAccess.get_files_at(dir):
 				DirAccess.remove_absolute(dir.path_join(f))
@@ -483,4 +488,21 @@ func _test_user_tier() -> void:
 	var back := DotYaml.parse(String(text))
 	_check(text != null and back.ok and back.value == tree, "DotYaml.emit round-trips nested maps, quotes and lists through parse")
 	_check(DotYaml.emit({"a": {1: Vector2.ZERO}}) == null, "DotYaml.emit refuses a value yml cannot carry")
+	_clean()
+
+
+func _test_former_game() -> void:
+	_section("A former game id's directory still loads, under the new id's")
+	DotAddonConfig.register_former_game("selftest_game", PackedStringArray(["selftest_old"]))
+	DotAddonConfig.game = "selftest_game"
+	_write_at(_old_game_dir(), "10-base.yml", "mode: old\nold_only: 1\n")
+	var res := DotAddonConfig.load_dir(NAME)
+	_check(res.ok and DotAddonConfig.get_value(res.value, "mode") == "old", "cfg/game/<former>/ loads when only it exists")
+	_write_at(_game_dir(), "10-base.yml", "mode: new\n")
+	res = DotAddonConfig.load_dir(NAME)
+	_check(res.ok and DotAddonConfig.get_value(res.value, "mode") == "new" and DotAddonConfig.get_value(res.value, "old_only") == 1, "the new id's copy wins; the former one merges under it")
+	_check(DotAddonConfig.game_names("gamemann/selftest_game") == PackedStringArray(["selftest_old", "gamemann/selftest_game"]), "game_names finds an id by its name half")
+	_check(DotRotationSpec.key_matches("selftest_old", "selftest_game") and DotRotationSpec.key_matches("gamemann/selftest_old", "selftest_game") and not DotRotationSpec.key_matches("other", "selftest_game"), "a rotation games: key with a former id matches")
+	DotAddonConfig.game = ""
+	DotAddonConfig.former_games.erase("selftest_game")
 	_clean()

@@ -44,6 +44,30 @@ static var config_root: String = ""
 static var _last: Dictionary = {}
 ## Env names already warned about as ambiguous, so a reload does not repeat the line.
 static var _warned_ambiguous: Dictionary = {}
+## Game id -> the ids it had before a rename, oldest first; see [method register_former_game].
+static var former_games: Dictionary = {}
+## Former-id directories already warned about.
+static var _warned_former: Dictionary = {}
+
+
+## Declares that [param game_id] was called [param olds] (oldest first) before a rename. Its
+## `cfg/game/<old>/` and `cfg/server/game/<old>/` keep loading, under the new id's copy, and rotation
+## `games:` keys with an old id still match. No expiry: a deployed server may never rename its directory.
+static func register_former_game(game_id: String, olds: PackedStringArray) -> void:
+	var have: PackedStringArray = former_games.get(game_id, PackedStringArray())
+	for old in olds:
+		if old != "" and old != game_id and not have.has(old):
+			have.append(old)
+	former_games[game_id] = have
+
+
+## [param game_id]'s former ids then itself, weakest first. Looked up by the whole id, then by its name half (`gamemann/game-x` as `game-x`).
+static func game_names(game_id: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var olds: PackedStringArray = former_games.get(game_id, former_games.get(game_id.get_slice("/", game_id.get_slice_count("/") - 1), PackedStringArray()))
+	out.append_array(olds)
+	out.append(game_id)
+	return out
 
 
 ## The directory a [b]read[/b] finds first: the strongest root that has one (it may be
@@ -486,22 +510,33 @@ static func _tier_dirs(addon_name: String, tier: String, extra_dir: String = "",
 		if user_tier_enabled:
 			out.append(user_dir_for(addon_name, base))
 		return out
-	var sub_root := ""
+	var subs := PackedStringArray()
+	var names := PackedStringArray()
 	if tier == GAME_SUBDIR or tier == SERVER_GAME_SUBDIR:
 		if game == "":
 			return out
-		sub_root = base.path_join(game)
-	var sub := (sub_root if sub_root != "" else base).path_join(folder_name(addon_name))
-	out.append("res://cfg".path_join(sub))
+		names = game_names(game)
+		for n in names:
+			subs.append(base.path_join(n).path_join(folder_name(addon_name)))
+	else:
+		subs.append(base.path_join(folder_name(addon_name)))
+	var roots := PackedStringArray(["res://cfg"])
 	var exe := OS.get_executable_path().get_base_dir()
 	if exe != "":
-		out.append(exe.path_join("cfg").path_join(sub))
-	out.append("user://cfg".path_join(sub))
+		roots.append(exe.path_join("cfg"))
+	roots.append("user://cfg")
 	var given := _config_dir_arg()
 	if given != "":
-		out.append(given.path_join(sub))
+		roots.append(given)
 	if extra_dir != "" and extra_dir != given:
-		out.append(extra_dir.path_join(sub))
+		roots.append(extra_dir)
+	for r in roots:
+		for i in subs.size():
+			var dir := r.path_join(subs[i])
+			out.append(dir)
+			if i < names.size() - 1 and not _warned_former.has(dir) and DirAccess.dir_exists_absolute(dir):
+				_warned_former[dir] = true
+				DotLog.warn(CHANNEL, "config read under a former game id", {"dir": dir, "game": game, "former": names[i]})
 	return out
 
 
