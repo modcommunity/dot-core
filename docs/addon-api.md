@@ -63,3 +63,4 @@ A pack says what it needs at its root: `{"format": 1, "addons": {"dot_net": 3}}`
 - 28: DotWeb.sync_failures, flush_filesystem (a failed IndexedDB save is counted, logged and retried) and has_new_sync_failures.
 - 29: core/DotAdminIdentity (the admin-only identity gate hoisted from dot-workbench: resolver, admin_uids, admin_groups, flags, fallback_permit; authenticate and permit are the hooks).
 - 30: profile/: DotFrameCost.trace, span, take_events, add_query and take_queries (nested spans and physics queries per system); DotSpaceQuery (cast_motion, rest_info, ray, shape, point, collide_shape, move_and_collide, body_test_motion: counted and timed while DotFrameCost is enabled); a DotHitchLog frame record's `queries`, `events` and `usec`.
+- 31: DotAddonConfig.register_former_game, game_names and former_games (a renamed game's old `cfg/game/<old>/` tiers and rotation keys still apply).

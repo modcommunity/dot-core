@@ -86,11 +86,15 @@ static func layer(specs: Array) -> Dictionary:
 
 ## Whether a file key (`game-g2gfast`, `gamemann/game-g2gfast`) names [param game].
 ## Id or name half, as content.yml matches games.
+## A former id of the game ([method DotAddonConfig.register_former_game]) matches too.
 static func key_matches(key: String, game: String) -> bool:
-	if key == game:
-		return true
-	return key.get_slice("/", key.get_slice_count("/") - 1) == game.get_slice("/", game.get_slice_count("/") - 1) \
-		and (not key.contains("/") or not game.contains("/"))
+	for g in DotAddonConfig.game_names(game):
+		if key == g:
+			return true
+		if key.get_slice("/", key.get_slice_count("/") - 1) == g.get_slice("/", g.get_slice_count("/") - 1) \
+				and (not key.contains("/") or not g.contains("/")):
+			return true
+	return false
 
 
 ## The rotation to play: [param requested] if the spec has it, else the spec's `rotation:`,
