@@ -5,7 +5,7 @@ extends Node3D
 ## else a path that never nears a wall passes for the one reason it could not fail.
 
 const SECTIONS := 10
-const CHECKS := 46
+const CHECKS := 48
 
 const WORLD := 1
 const PEOPLE := 2
@@ -409,6 +409,18 @@ func _test_check_helper() -> void:
 
 	var found := DotCameraCheck.pivots_near_walls(get_world_3d(), AABB(Vector3(26.0, -1.0, -3.0), Vector3(40.0, 5.0, 4.0)), WORLD, 1.6, 2.0, 3.0, 10)
 	_check(found.size() > 0 and found.size() <= 10 and found.all(func(p: Vector3) -> bool: return not _inside(p, 0.3)), "pivots_near_walls finds clear eyes beside the colonnade (%d)" % found.size())
+
+	# The second frame of a flight is the first the probe can look ahead from (the first is a cut, with no
+	# history): a wall the view turns onto in that one step cannot have been predicted, and is not a snap
+	# the look-ahead was too slow for. Armed: the same turn one frame later is counted.
+	var behind := Vector3(0.0, 0.0, 3.0)
+	var pivot := Vector3(0.0, 1.6, 0.0)
+	var turned: Array[Transform3D] = [Transform3D(Basis(Vector3.UP, PI), pivot), Transform3D(Basis.IDENTITY, pivot), Transform3D(Basis.IDENTITY, pivot)]
+	var first_turn := DotCameraCheck.fly(get_world_3d(), turned, behind, WORLD)
+	_check(int(first_turn["snaps"]) == 0 and float(first_turn["worst_snap"]) == 0.0, "the first step after a flight starts is not a snap")
+	var later: Array[Transform3D] = [turned[0], turned[0], turned[1]]
+	var later_turn := DotCameraCheck.fly(get_world_3d(), later, behind, WORLD)
+	_check(int(later_turn["snaps"]) == 1, "a turn onto a wall after the first step still counts as a snap (%.2f m)" % float(later_turn["worst_snap"]))
 
 	var total := DotCameraCheck.add(DotCameraCheck.add({}, near_pillars), open)
 	_check(int(total["frames"]) == int(near_pillars["frames"]) + int(open["frames"]), "flights add up")
