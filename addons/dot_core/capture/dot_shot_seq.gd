@@ -31,7 +31,9 @@ func step(viewport: Viewport) -> bool:
 		return false
 	if Time.get_ticks_msec() < _next_msec:
 		return true
-	viewport.get_texture().get_image().save_png("%s/%03d.png" % [_dir, _taken])
+	var img := viewport.get_texture().get_image()
+	if img != null:  # headless renderers give no image; still advance so callers terminate
+		img.save_png("%s/%03d.png" % [_dir, _taken])
 	_taken += 1
 	_next_msec += _interval_msec
 	return _taken < _frames
