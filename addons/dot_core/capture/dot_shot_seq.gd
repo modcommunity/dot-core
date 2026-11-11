@@ -35,7 +35,9 @@ func step(viewport: Viewport) -> bool:
 	if img != null:  # headless renderers give no image; still advance so callers terminate
 		img.save_png("%s/%03d.png" % [_dir, _taken])
 	_taken += 1
-	_next_msec += _interval_msec
+	# Saving a large frame can outlast the interval; counting from before the save made the next frame due one
+	# process frame later, near-identical to this one (render_reload frames 000 and 001 were duplicates).
+	_next_msec = maxi(_next_msec + _interval_msec, Time.get_ticks_msec() + _interval_msec / 2)
 	return _taken < _frames
 
 
