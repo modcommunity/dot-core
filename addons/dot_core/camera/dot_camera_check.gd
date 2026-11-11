@@ -91,8 +91,10 @@ static func fly(
 	var worst_snap := 0.0
 	var pulled := 0
 	var frames: Array[Dictionary] = []
+	var index := -1
 
 	for t in path:
+		index += 1
 		var pivot := t.origin
 		var wanted := pivot + t.basis * offset
 		var got := probe.resolve(pivot, wanted, delta)
@@ -109,11 +111,14 @@ static func fly(
 		if got.distance_to(wanted) > 0.05:
 			pulled += 1
 
-		worst_snap = maxf(worst_snap, probe.last_snap())
-		if probe.last_snap() > 0.3:
+		# The first frame is a cut (no history, no look-ahead), so a wall the view turns onto in the
+		# very next step was unpredictable: no snap is counted for frame 1.
+		var snap := probe.last_snap() if index != 1 else 0.0
+		worst_snap = maxf(worst_snap, snap)
+		if snap > 0.3:
 			snaps += 1
 			if OS.get_environment("CAMERA_DEBUG") != "":
-				print("    snap %.2f m at frame %d: pivot %s wanted %s got %s, hard %.2f" % [probe.last_snap(), frames.size(), pivot, wanted, got, float(probe.describe()["hard_limit"])])
+				print("    snap %.2f m at frame %d: pivot %s wanted %s got %s, hard %.2f" % [snap, frames.size(), pivot, wanted, got, float(probe.describe()["hard_limit"])])
 
 		frames.append({"pivot": pivot, "wanted": wanted, "got": got, "basis": t.basis})
 
