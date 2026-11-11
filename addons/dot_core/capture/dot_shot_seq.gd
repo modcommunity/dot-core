@@ -39,10 +39,11 @@ func step(viewport: Viewport) -> bool:
 	return _taken < _frames
 
 
-## For await-style tools: records the sequence beside `still_path` and returns when done; does nothing unless enabled.
-func record(tree: SceneTree, still_path: String) -> void:
+## For await-style tools: records the sequence beside `still_path` and returns when done; does nothing unless enabled. `viewport` is what is saved (the root when null), so a tool that renders into a SubViewport records that.
+func record(tree: SceneTree, still_path: String, viewport: Viewport = null) -> void:
 	if not enabled():
 		return
 	begin(still_path)
-	while step(tree.root):
+	var vp := viewport if viewport != null else tree.root
+	while step(vp):
 		await tree.process_frame
