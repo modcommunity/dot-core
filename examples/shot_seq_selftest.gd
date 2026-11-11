@@ -3,8 +3,8 @@ extends Node
 ## DotShotSeq: off unless DOT_SHOT_FRAMES is set, clamps frames and seconds, and writes "<still>.seq/NNN.png" frames, the names tools/shot_post.sh and seq_to_mp4.sh read.
 ## godot --headless --path . res://examples/shot_seq_selftest.tscn
 
-const SECTIONS := 3
-const CHECKS := 10
+const SECTIONS := 4
+const CHECKS := 14
 
 var _failed := 0
 var _checks := 0
@@ -22,6 +22,7 @@ func _ready() -> void:
 	_env_section()
 	await _record_section()
 	_clamp_section()
+	await _follow_section()
 	print("shot_seq_selftest: %d sections, %d checks, %d failed" % [_sections, _checks, _failed])
 	if _sections != SECTIONS or _checks != CHECKS:
 		print("ERROR: %d of %d sections, %d of %d checks ran." % [_sections, SECTIONS, _checks, CHECKS])
@@ -83,4 +84,27 @@ func _clamp_section() -> void:
 	OS.unset_environment("DOT_SHOT_FRAMES")
 	OS.unset_environment("DOT_SHOT_SECS")
 	_check(not seq.enabled(), "and off again once unset")
+	_sections += 1
+
+
+func _follow_section() -> void:
+	var dir := ProjectSettings.globalize_path("user://shot_seq_selftest")
+	var seq := DotShotSeq.new()
+	var vp := SubViewport.new()
+	vp.size = Vector2i(8, 8)
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(vp)
+	OS.set_environment("DOT_SHOT_FRAMES", "0")
+	_check(not seq.start_follow(dir.path_join("f.png")) and not seq.follow(vp), "follow does nothing when disabled")
+	OS.set_environment("DOT_SHOT_FRAMES", "3")
+	OS.set_environment("DOT_SHOT_SECS", "0.2")
+	_check(seq.start_follow(dir.path_join("f.png")), "start_follow starts when enabled")
+	var guard := 0
+	while seq.follow(vp) and guard < 600:
+		guard += 1
+		await get_tree().process_frame
+	_check(guard < 600 and not seq.follow(vp), "follow returns false once the clip is done")
+	_check(DirAccess.dir_exists_absolute(dir.path_join("f.seq")), "follow clip dir exists")
+	OS.unset_environment("DOT_SHOT_FRAMES")
+	OS.unset_environment("DOT_SHOT_SECS")
 	_sections += 1

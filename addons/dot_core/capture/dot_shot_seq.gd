@@ -47,3 +47,24 @@ func record(tree: SceneTree, still_path: String, viewport: Viewport = null) -> v
 	var vp := viewport if viewport != null else tree.root
 	while step(vp):
 		await tree.process_frame
+
+
+var _following := false
+
+
+## For tools that save stills from _process and keep simulating: starts a clip beside `still_path` that follow() fills while the tool carries on. False (and nothing to do) unless enabled.
+func start_follow(still_path: String) -> bool:
+	if _following or not enabled():
+		return false
+	begin(still_path)
+	_following = true
+	return true
+
+
+## Call at the top of _process; true while a clip started by start_follow() is still recording, so the tool should hold its state machine (the scene keeps simulating) until it returns false.
+func follow(viewport: Viewport) -> bool:
+	if not _following:
+		return false
+	if not step(viewport):
+		_following = false
+	return _following
