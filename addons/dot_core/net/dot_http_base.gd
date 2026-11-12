@@ -54,6 +54,10 @@ const MAX_POOL := 16
 ## Default from [method default_use_threads].
 @export var use_threads: bool = default_use_threads()
 
+## On web, downloads held in memory are read whole by the browser ([method DotWeb.fetch_bytes]) instead of [HTTPRequest].
+## HTTPRequest reads one stream chunk per frame there: an 8 MiB bundle took 20 s against 3.5 s with curl.
+@export var web_whole_body_fetch: bool = true
+
 const DEFAULT_CHUNK_SIZE := 1048576
 const MAX_CHUNK_SIZE := 16777216
 

@@ -243,6 +243,68 @@ static func estimate_storage() -> DotResult:
 	return DotResult.fail(DotError.CODE_TIMEOUT, "Storage estimate did not resolve.")
 
 
+## Whether [method fetch_bytes] can run: a browser whose page loads a dot_web.js with fetchStart.
+static func can_fetch_bytes() -> bool:
+	var b := bridge()
+	if b == null or not b.has_method("js_buffer_to_packed_byte_array"):
+		return false
+	var p: Variant = page()
+	return p != null and p.fetchStart != null
+
+
+## A GET read whole by the browser, as [code]{status, headers (PackedStringArray "k: v"), body}[/code].
+## [HTTPRequest] on web reads one stream chunk per frame, so a large body arrives at chunk x fps; this does not.
+## Fails CODE_UNSUPPORTED when [method can_fetch_bytes] is false, CODE_INVALID over [param max_bytes] (0 = none).
+static func fetch_bytes(url: String, header_list: PackedStringArray, timeout_s: float, max_bytes: int = 0) -> DotResult:
+	if not can_fetch_bytes():
+		return DotResult.fail(DotError.CODE_UNSUPPORTED, "The page cannot fetch a whole body.")
+	var p: Variant = page()
+	var headers := {}
+	for line in header_list:
+		var idx := line.find(":")
+		if idx > 0:
+			headers[line.substr(0, idx).strip_edges()] = line.substr(idx + 1).strip_edges()
+	var timeout_ms := int(maxf(timeout_s, 0.0) * 1000.0)
+	var id: Variant = p.fetchStart(url, JSON.stringify(headers), timeout_ms, max_bytes)
+	if id == null or int(id) <= 0:
+		return DotResult.fail(DotError.CODE_UNSUPPORTED, "fetch is unavailable.")
+
+	# The page parks the outcome and GDScript polls once a frame, as in estimate_storage.
+	var loop := Engine.get_main_loop()
+	var started := Time.get_ticks_msec()
+	var raw := ""
+	while true:
+		var polled: Variant = p.fetchPoll(id)
+		raw = "" if polled == null else str(polled)
+		if raw != "":
+			break
+		var stuck := timeout_ms > 0 and Time.get_ticks_msec() - started > timeout_ms + 5000
+		if stuck or not (loop is SceneTree):
+			p.fetchDrop(id)
+			return DotResult.fail(DotError.CODE_TIMEOUT, "The browser fetch did not finish.", url)
+		await (loop as SceneTree).process_frame
+
+	var buf: Variant = p.fetchTake(id)
+	var parsed: Variant = JSON.parse_string(raw)
+	var info: Dictionary = parsed if parsed is Dictionary else {"error": "unknown"}
+	var error := str(info.get("error", ""))
+	if error == "timeout":
+		return DotResult.fail(DotError.CODE_TIMEOUT, "The browser fetch timed out.", url)
+	if error == "too_large":
+		return DotResult.fail(DotError.CODE_INVALID, "Response is larger than the caller allows.",
+			"%d > %d bytes" % [int(info.get("size", 0)), max_bytes])
+	if error != "" or buf == null:
+		return DotResult.fail(DotError.CODE_NETWORK, "The browser fetch failed.", str(info.get("detail", error)))
+
+	var body: PackedByteArray = bridge().call("js_buffer_to_packed_byte_array", buf)
+	var lines := PackedStringArray()
+	var listed: Variant = info.get("headers", [])
+	if listed is Array:
+		for h in listed:
+			lines.append(str(h))
+	return DotResult.success({"status": int(info.get("status", 0)), "headers": lines, "body": body})
+
+
 ## Asks the browser to make storage persistent so it is not evicted under pressure.
 ## Chrome grants silently, Firefox prompts, Safari ignores: always call, never rely on it.
 static func request_persistent_storage() -> void:

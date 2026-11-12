@@ -90,7 +90,8 @@ func _request(
 	body: PackedByteArray,
 	headers: Dictionary,
 	decode_text: bool,
-	max_bytes: int
+	max_bytes: int,
+	whole_body: bool = false
 ) -> DotResult:
 	var url := resolve_url(path)
 	var header_list := _build_headers(headers)
@@ -101,7 +102,10 @@ func _request(
 	while attempt <= max_retries:
 		attempt += 1
 
-		last = await _attempt(method, url, body, header_list, decode_text, max_bytes)
+		if whole_body:
+			last = await _attempt_whole(url, header_list, decode_text, max_bytes)
+		else:
+			last = await _attempt(method, url, body, header_list, decode_text, max_bytes)
 
 		if last.ok:
 			var v: Dictionary = last.value
@@ -164,6 +168,15 @@ func _attempt(
 	_in_flight -= 1
 	_release(req)
 	return out
+
+
+## [method _attempt] as one browser fetch read whole ([method DotWeb.fetch_bytes]); GET only.
+func _attempt_whole(url: String, header_list: PackedStringArray, decode_text: bool, max_bytes: int) -> DotResult:
+	var res := await DotWeb.fetch_bytes(url, header_list, timeout_sec, maxi(_limit_for(max_bytes), 0))
+	if not res.ok:
+		return res
+	var r: Dictionary = res.value
+	return _interpret([HTTPRequest.RESULT_SUCCESS, r["status"], r["headers"], r["body"]], url, decode_text)
 
 
 ## Turns [signal HTTPRequest.request_completed]'s four arguments into a result.
@@ -408,7 +421,11 @@ func _download_in_memory(
 	if range_start > 0:
 		merged["Range"] = "bytes=%d-" % range_start
 
-	var res := await _capped(max_bytes, HTTPClient.METHOD_GET, url, PackedByteArray(), merged, false)
+	var res: DotResult
+	if web_whole_body_fetch and DotWeb.can_fetch_bytes():
+		res = await _request(HTTPClient.METHOD_GET, url, PackedByteArray(), merged, false, max_bytes, true)
+	else:
+		res = await _capped(max_bytes, HTTPClient.METHOD_GET, url, PackedByteArray(), merged, false)
 
 	if not res.ok:
 		return res
