@@ -75,6 +75,10 @@ signal progress_changed(fraction: float, text: String)
 ## The warm-up's own cap. A headless run never draws, so this is what ends it there.
 @export var warm_timeout_sec: float = 5.0
 
+## Milliseconds a warm-up round may cost a frame; [member DotRenderWarmup.budget_msec]. One round of
+## a game's every material was a 459 ms frame. 0 draws everything in rounds of the warm-up's batch size.
+@export var warm_budget_msec: float = 40.0
+
 ## Seconds a host has, after [signal ready_to_show], to call [method host_finished].
 @export var host_wait_sec: float = 10.0
 

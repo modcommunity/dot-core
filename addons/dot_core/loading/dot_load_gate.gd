@@ -502,6 +502,7 @@ func _begin_warming() -> void:
 	var warm := DotRenderWarmup.new()
 	warm.name = "LoadGateWarmup"
 	warm.timeout_sec = warm_timeout_sec
+	warm.budget_msec = warm_budget_msec
 	# The camera is often under a frozen body, and a disabled warm-up never times out.
 	warm.process_mode = Node.PROCESS_MODE_ALWAYS
 	warm.add_items(collect_warm_items())

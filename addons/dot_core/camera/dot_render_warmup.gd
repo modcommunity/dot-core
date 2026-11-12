@@ -19,9 +19,19 @@ signal finished(count: int)
 ## 0 draws everything at once.
 @export var batch_size: int = 1000
 
+## Milliseconds a round may cost its frame. Above 0, rounds start at [constant FIRST_BATCH] items, placing stops at
+## half the budget, and each next round is sized from the last one's measured draw cost per item, up to
+## [member batch_size]. A count alone cannot bound a frame: one first-draw compile costs far more than another.
+@export var budget_msec: float = 0.0
+
 ## Seconds without a drawn frame after which [signal finished] fires anyway: a headless run or a
 ## hidden window never draws, and a cover waiting on this must not wait for ever.
 @export var timeout_sec: float = 5.0
+
+## Items in the first budgeted round, before any cost has been measured.
+const FIRST_BATCH := 16
+## Fewest items a budgeted round places, so a frame slow for other reasons cannot stretch the warm-up out.
+const MIN_BATCH := 4
 
 ## Side of each instance, in metres. Small enough to be invisible at the near plane.
 const SIZE := 0.0005
@@ -36,6 +46,13 @@ var _done := false
 var _start_msec := 0
 var _quad: QuadMesh = null
 var _proxied := {}
+var _rounds := 0
+var _cap := 0  # items the next budgeted round places
+var _round_placed := 0
+var _round_usec := 0  # when the current round was placed
+var _draw_usec := 0  # the last frame_post_draw
+var _first_cost_usec := 0  # placing to first draw of the current round
+var _base_usec := -1  # cheapest frame with nothing new placed: the frame without the warm-up
 
 ## A mesh with more surfaces than this is drawn as one triangle per distinct material and
 ## vertex format, not as itself: a converted map is thousands of meshes, so drawing each
@@ -106,22 +123,35 @@ func start() -> void:
 	_quad = QuadMesh.new()
 	_quad.size = Vector2(SIZE, SIZE)
 	var _c := RenderingServer.frame_post_draw.connect(_on_drawn)
+	_cap = FIRST_BATCH if batch_size <= 0 else mini(FIRST_BATCH, batch_size)
+	_draw_usec = Time.get_ticks_usec()
 	_place_batch()
-	DotLog.debug(CHANNEL, "warming %d materials and meshes" % _items.size(), {"items": _items.size(), "batch": batch_size})
+	DotLog.debug(CHANNEL, "warming %d materials and meshes" % _items.size(), {"items": _items.size(), "batch": batch_size, "budget_msec": budget_msec})
 
 
-## Rounds the items are drawn in.
+## Rounds the items are drawn in. With [member budget_msec] the size follows the measured cost,
+## so this is the rounds placed so far.
 func batch_count() -> int:
+	if budget_msec > 0.0:
+		return maxi(_rounds, 1)
 	if batch_size <= 0 or _items.is_empty():
 		return 1
 	return ceili(float(_items.size()) / float(batch_size))
 
 
-## Puts the next [member batch_size] items up and returns how many were placed.
+## Puts the next round up and returns how many were placed: [member batch_size] items, or under a
+## budget, [member _cap] instances or half the budget's time, whichever comes first.
 func _place_batch() -> int:
-	var end := _items.size() if batch_size <= 0 else mini(_next + batch_size, _items.size())
+	var budgeted := budget_msec > 0.0
+	var end := _items.size() if batch_size <= 0 or budgeted else mini(_next + batch_size, _items.size())
+	var t0 := Time.get_ticks_usec()
+	var stop_usec := t0 + int(budget_msec * 500.0)
+	_round_usec = t0
+	_rounds += 1
 	var i := 0
 	while _next < end:
+		if budgeted and i > 0 and (i >= _cap or Time.get_ticks_usec() > stop_usec):
+			break
 		var node := _instance_for(_items[_next])
 		_next += 1
 		if node == null:
@@ -132,6 +162,7 @@ func _place_batch() -> int:
 		add_child(node)
 		i += 1
 	_placed += i
+	_round_placed = i
 	return i
 
 
@@ -237,6 +268,12 @@ func _process(_delta: float) -> void:
 
 func _on_drawn() -> void:
 	_start_msec = Time.get_ticks_msec()
+	var now := Time.get_ticks_usec()
+	if _drawn == 0:
+		_first_cost_usec = now - _round_usec
+	elif _base_usec < 0 or now - _draw_usec < _base_usec:
+		_base_usec = now - _draw_usec
+	_draw_usec = now
 	_drawn += 1
 	if _drawn < frames:
 		return
@@ -246,7 +283,23 @@ func _on_drawn() -> void:
 	_drawn = 0
 	for child in get_children():
 		child.queue_free()
+	if budget_msec > 0.0:
+		_resize()
 	_place_batch()
+
+
+## Sizes the next budgeted round from the last: its first frame less the cheapest frame seen is
+## what its items cost, and the budget less that frame is the room they get.
+func _resize() -> void:
+	if _round_placed <= 0:
+		return
+	var base := maxi(_base_usec, 0)
+	var per_item := maxf(float(_first_cost_usec - base) / float(_round_placed), 1.0)
+	var room := budget_msec * 1000.0 - float(base)
+	var n := int(room / per_item) if room > 0.0 else MIN_BATCH
+	_cap = clampi(n, MIN_BATCH, maxi(_round_placed * 4, MIN_BATCH))
+	if batch_size > 0:
+		_cap = mini(_cap, batch_size)
 
 
 func _finish() -> void:
@@ -265,4 +318,4 @@ func _exit_tree() -> void:
 
 
 func describe() -> Dictionary:
-	return {"items": _items.size(), "started": _started, "drawn_frames": _drawn, "done": _done}
+	return {"items": _items.size(), "started": _started, "drawn_frames": _drawn, "done": _done, "rounds": _rounds, "placed": _placed, "budget_msec": budget_msec}

@@ -5,7 +5,7 @@ extends Node3D
 ## else a path that never nears a wall passes for the one reason it could not fail.
 
 const SECTIONS := 10
-const CHECKS := 48
+const CHECKS := 52
 
 const WORLD := 1
 const PEOPLE := 2
@@ -480,6 +480,29 @@ func _test_render_warmup() -> void:
 	cut.start()
 	_check(cut.batch_count() == 2 and cut.get_child_count() == 3, "a batch size splits the items across frames (%d up, %d rounds)" % [cut.get_child_count(), cut.batch_count()])
 	await cut.finished
+	var mats: Array = []
+	for i in 40:
+		mats.append(StandardMaterial3D.new())
+	var paced := DotRenderWarmup.new()
+	paced.budget_msec = 40.0
+	paced.timeout_sec = 0.3
+	cam.add_child(paced)
+	paced.add_items(mats)
+	paced.start()
+	_check(paced.get_child_count() == DotRenderWarmup.FIRST_BATCH, "a budgeted warm-up starts with a small round (%d up)" % paced.get_child_count())
+	# 16 items drew in a 26 ms frame where an empty one takes 10: 1 ms each, 30 ms of room.
+	paced._round_placed = 16
+	paced._base_usec = 10000
+	paced._first_cost_usec = 26000
+	paced._resize()
+	_check(paced._cap == 30, "the next round is sized from the measured cost per item (%d)" % paced._cap)
+	paced._first_cost_usec = 900000
+	paced._resize()
+	_check(paced._cap == DotRenderWarmup.MIN_BATCH, "a round far over budget shrinks the next to the floor (%d)" % paced._cap)
+	paced._first_cost_usec = 10100
+	paced._resize()
+	_check(paced._cap == 64, "a cheap round grows the next at most fourfold (%d)" % paced._cap)
+	await paced.finished
 	cam.queue_free()
 	scene.free()
 
