@@ -3,7 +3,7 @@ extends Node
 ## Exercises [DotAddonConfig]: `cfg/addon/<name>/*.yml` read in file-name order over defaults.
 
 const SECTIONS := 12
-const CHECKS := 133
+const CHECKS := 135
 const NAME := "selftest-addon"
 
 var _passed := 0
@@ -488,6 +488,9 @@ func _test_user_tier() -> void:
 	var back := DotYaml.parse(String(text))
 	_check(text != null and back.ok and back.value == tree, "DotYaml.emit round-trips nested maps, quotes and lists through parse")
 	_check(DotYaml.emit({"a": {1: Vector2.ZERO}}) == null, "DotYaml.emit refuses a value yml cannot carry")
+	var fl := DotYaml.parse("maps:\n  - {map: cp_orange_x3, mode: ctf}\n  - x: {mode: ctf, n: 2}\n  - {t: \"a, b\", l: [1, {k: v}]}\ne: {}\nq: [{a: 1}, [2, 3]]\n")
+	_check(fl.ok and fl.value["maps"][0] == {"map": "cp_orange_x3", "mode": "ctf"} and fl.value["maps"][1] == {"x": {"mode": "ctf", "n": 2}} and fl.value["maps"][2] == {"t": "a, b", "l": [1, {"k": "v"}]} and fl.value["e"] == {} and fl.value["q"] == [{"a": 1}, [2, 3]], "DotYaml reads flow mappings: list items, values, nested, quoted commas")
+	_check(not DotYaml.parse("a: {b: 1").ok and not DotYaml.parse("a: {b}").ok and not DotYaml.parse("a: {b: 1, b: 2}").ok and not DotYaml.parse("a: {b: 1} x").ok, "DotYaml refuses unclosed, keyless, duplicate-key and trailing-text flow mappings")
 	_clean()
 
 

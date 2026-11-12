@@ -2,8 +2,8 @@ class_name DotYaml
 extends RefCounted
 
 ## A YAML reader for configuration files, and nothing more: a deliberately small subset that refuses everything else.
-## Supported: comments, quoted or bare scalars, ints, floats, bools, nested maps, sequences, one-line flow sequences.
-## Refused with a line number: tabs, bad indent, duplicate keys, anchors, aliases, tags, block scalars, flow mappings.
+## Supported: comments, quoted or bare scalars, ints, floats, bools, nested maps, sequences, one-line flow sequences and mappings (nested, quoted strings may hold commas).
+## Refused with a line number: tabs, bad indent, duplicate keys, anchors, aliases, tags, block scalars.
 
 # No log channel: a parser that returns a DotResult naming the line it refused. Every
 # caller (TmcConfig, TmcContent, install_games) wraps that with the file's path and
@@ -273,7 +273,7 @@ static func _parse_sequence(
 		# for a mapping and they drift.
 		var inner := _split_key(body)
 
-		if not inner.is_empty() and not _looks_quoted(body):
+		if not inner.is_empty() and not _looks_quoted(body) and not body.begins_with("{"):
 			var item_indent := indent + 2
 			rows[cursor[0] - 1] = {
 				"line": row["line"], "indent": item_indent, "text": body,
@@ -361,14 +361,8 @@ static func _parse_scalar(text: String, source: String, line: int) -> Variant:
 				"anchors, aliases, tags and block scalars are not supported ('%s')" % text
 			)
 
-	if text.begins_with("{"):
-		return _fail(
-			source, line,
-			"an inline mapping is not supported; indent it on the following lines"
-		)
-
-	if text.begins_with("["):
-		return _parse_flow_sequence(text, source, line)
+	if text.begins_with("{") or text.begins_with("["):
+		return _parse_flow(text, source, line)
 
 	if _looks_quoted(text):
 		return _unquote(text)
@@ -393,51 +387,129 @@ static func _parse_scalar(text: String, source: String, line: int) -> Variant:
 	return text
 
 
-## `[a, b, c]` on one line. Scalars only.
-static func _parse_flow_sequence(text: String, source: String, line: int) -> Variant:
-	if not text.ends_with("]"):
-		return _fail(source, line, "a flow sequence must close on the same line")
+## `[a, b]` or `{a: b}` on one line, nested to MAX_DEPTH, quoted strings may hold commas.
+static func _parse_flow(text: String, source: String, line: int) -> Variant:
+	var pos := [0]
+	var value: Variant = _flow_value(text, pos, source, line, 0)
 
-	var body := text.substr(1, text.length() - 2).strip_edges()
-	var out: Array = []
+	if value is DotResult:
+		return value
 
-	if body == "":
-		return out
+	if text.substr(pos[0]).strip_edges() != "":
+		return _fail(source, line, "unexpected text after a flow collection")
 
-	for part in _split_flow(body):
-		var value: Variant = _parse_scalar(String(part).strip_edges(), source, line)
-
-		if value is DotResult:
-			return value
-
-		out.append(value)
-
-	return out
+	return value
 
 
-## Splits on commas outside quotes.
-static func _split_flow(text: String) -> PackedStringArray:
-	var out := PackedStringArray()
-	var quote := ""
-	var start := 0
-	var index := 0
+static func _flow_skip(text: String, pos: Array) -> void:
+	while pos[0] < text.length() and (text[pos[0]] == " " or text[pos[0]] == "\t"):
+		pos[0] += 1
+
+
+## One flow value at [param pos]: a collection, or a scalar up to the next `,` `]` `}` (or `:` as a key).
+static func _flow_value(text: String, pos: Array, source: String, line: int, depth: int, key: bool = false) -> Variant:
+	if depth > MAX_DEPTH:
+		return _fail(source, line, "nested deeper than %d" % MAX_DEPTH)
+
+	_flow_skip(text, pos)
+	var start: int = pos[0]
+	var ch := text[start] if start < text.length() else ""
+
+	if ch == "[" or ch == "{":
+		return _flow_collection(text, pos, source, line, depth, ch)
+
+	return _flow_scalar(text, pos, source, line, key)
+
+
+static func _flow_collection(text: String, pos: Array, source: String, line: int, depth: int, ch: String) -> Variant:
+	var close := "]" if ch == "[" else "}"
+	var items: Array = []
+	var map := {}
+	pos[0] += 1
+
+	while true:
+		_flow_skip(text, pos)
+
+		if pos[0] >= text.length():
+			return _fail(source, line, "a flow collection must close on the same line")
+
+		if text[pos[0]] == close:
+			pos[0] += 1
+			return items if ch == "[" else map
+
+		if not items.is_empty() or not map.is_empty():
+			if text[pos[0]] != ",":
+				return _fail(source, line, "expected ',' in a flow collection")
+
+			pos[0] += 1
+			_flow_skip(text, pos)
+
+			if pos[0] < text.length() and text[pos[0]] == close:
+				pos[0] += 1
+				return items if ch == "[" else map
+
+		var item: Variant = _flow_value(text, pos, source, line, depth + 1, ch == "{")
+
+		if item is DotResult:
+			return item
+
+		if ch == "[":
+			items.append(item)
+			continue
+
+		_flow_skip(text, pos)
+
+		if pos[0] >= text.length() or text[pos[0]] != ":":
+			return _fail(source, line, "expected 'key: value' in a flow mapping")
+
+		pos[0] += 1
+
+		if map.has(String(item)):
+			return _fail(source, line, "duplicate key '%s'" % item)
+
+		var val: Variant = _flow_value(text, pos, source, line, depth + 1)
+
+		if val is DotResult:
+			return val
+
+		map[String(item)] = val
+
+	return null
+
+
+static func _flow_scalar(text: String, pos: Array, source: String, line: int, key: bool) -> Variant:
+	var start: int = pos[0]
+	var ch := text[start] if start < text.length() else ""
+	var quote := ch if (ch == "\"" or ch == "'") else ""
+	var index := start + (1 if quote != "" else 0)
 
 	while index < text.length():
-		var ch := text[index]
+		var c := text[index]
 
 		if quote != "":
-			if ch == quote:
-				quote = ""
-		elif ch == "\"" or ch == "'":
-			quote = ch
-		elif ch == ",":
-			out.append(text.substr(start, index - start))
-			start = index + 1
+			if c == "\\" and quote == "\"":
+				index += 2
+				continue
+			if c == quote:
+				if quote == "'" and index + 1 < text.length() and text[index + 1] == "'":
+					index += 2
+					continue
+				index += 1
+				break
+		elif c == "," or c == "]" or c == "}":
+			break
+		elif key and c == ":" and (index + 1 >= text.length() or " ,}".contains(text[index + 1])):
+			break
 
 		index += 1
 
-	out.append(text.substr(start))
-	return out
+	pos[0] = index
+	var raw := text.substr(start, index - start).strip_edges()
+
+	if key:
+		return _unquote(raw)
+
+	return _parse_scalar(raw, source, line)
 
 
 static func _unquote(text: String) -> String:
