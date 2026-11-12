@@ -1,6 +1,6 @@
 extends Node
 ## DotWeb's filesystem sync off the web: callable unguarded, counts no failures, does not error.
-## The browser half (a failed IndexedDB save counted, logged and retried) is seen with tools/dev-env/web_check.mjs.
+## The browser half (a failed IndexedDB save counted, logged and retried) is seen with tools/idb_probe.sh (a real Chromium: user:// files kept after a tab closed right after a write burst).
 ## Run: godot --headless --path . res://examples/web_selftest.tscn
 
 const CHECKS := 17
