@@ -12,14 +12,14 @@ const PORT_LAST := 28330
 const BODY := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ\
 abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-const CHECKS := 45
+const CHECKS := 48
 
 ## The scratch directory. Removed at the start of every run and at the end.
 const SCRATCH := "user://http_selftest"
 
 ## Sections entered against sections that ran to their last line, and against this: a runtime error aborts a section silently,
 ## and a section that bailed after a failed guard counts as unfinished on purpose. The CHECKS total is the other half (docs/testing.md).
-const SECTIONS := 9
+const SECTIONS := 10
 
 var _passed := 0
 var _failed := 0
