@@ -72,6 +72,12 @@ signal progress_changed(fraction: float, text: String)
 ## Run [DotRenderWarmup] under the gate's own cover before lifting it (no host only).
 @export var warm_up_on_open: bool = true
 
+## Also warm everything under [member game_root], not only the [method warm_up] items. The level
+## itself compiles as it is drawn under the cover anyway, and its quad-drawn copies are variants
+## the real draw never uses: on FC web they cost 13 s of compiles per load, and crowded the
+## browser's shader cache so a return visit compiled again. Off warms only the handed-in items.
+@export var warm_game_root: bool = true
+
 ## The warm-up's own cap. A headless run never draws, so this is what ends it there.
 @export var warm_timeout_sec: float = 5.0
 
