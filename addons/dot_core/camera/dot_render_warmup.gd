@@ -19,7 +19,7 @@ signal finished(count: int)
 ## 0 draws everything at once.
 @export var batch_size: int = 1000
 
-## Milliseconds a round may cost its frame. Above 0, rounds start at [constant FIRST_BATCH] items, placing stops at
+## Milliseconds a round may cost its frame. Above 0, rounds start at [member first_batch] items, placing stops at
 ## half the budget, and each next round is sized from the last one's measured draw cost per item, up to
 ## [member batch_size]. A count alone cannot bound a frame: one first-draw compile costs far more than another.
 @export var budget_msec: float = 0.0
@@ -28,7 +28,12 @@ signal finished(count: int)
 ## hidden window never draws, and a cover waiting on this must not wait for ever.
 @export var timeout_sec: float = 5.0
 
-## Items in the first budgeted round, before any cost has been measured.
+## Items in the first budgeted round, before any cost has been measured (capped by [member batch_size]). A warm-up whose
+## items each compile a pipeline (a new level's materials) starts smaller, 1-4, so the unmeasured round cannot be the
+## longest frame; later rounds still grow from the measured cost, up to four times the last.
+@export var first_batch: int = FIRST_BATCH
+
+## Default [member first_batch].
 const FIRST_BATCH := 16
 ## Fewest items a budgeted round places, so a frame slow for other reasons cannot stretch the warm-up out.
 const MIN_BATCH := 4
@@ -123,7 +128,8 @@ func start() -> void:
 	_quad = QuadMesh.new()
 	_quad.size = Vector2(SIZE, SIZE)
 	var _c := RenderingServer.frame_post_draw.connect(_on_drawn)
-	_cap = FIRST_BATCH if batch_size <= 0 else mini(FIRST_BATCH, batch_size)
+	var first := maxi(first_batch, 1)
+	_cap = first if batch_size <= 0 else mini(first, batch_size)
 	_draw_usec = Time.get_ticks_usec()
 	_place_batch()
 	DotLog.debug(CHANNEL, "warming %d materials and meshes" % _items.size(), {"items": _items.size(), "batch": batch_size, "budget_msec": budget_msec})
