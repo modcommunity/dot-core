@@ -335,7 +335,14 @@ func download_to_file(
 				"local partial may be longer than the remote file"
 			)
 		elif status < 200 or status >= 300:
-			out = DotResult.failure(DotError.from_http(status))
+			var http_err := DotError.from_http(status)
+			# Same as _request: a server's Retry-After beats a guessed backoff (429/503).
+			var rh := _parse_headers(completed[2])
+			if rh.has("retry-after"):
+				var ra := str(rh["retry-after"]).strip_edges()
+				if ra.is_valid_float():
+					http_err.retry_after = ra.to_float()
+			out = DotResult.failure(http_err)
 		else:
 			# Only 206 continues what is on disk; 200 is the whole body.
 			var resumed := status == 206
