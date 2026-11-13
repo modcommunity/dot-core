@@ -191,9 +191,12 @@ func warm_items() -> Array:
 	return _warm_extra.duplicate()
 
 
-## Everything to warm: [member game_root]'s materials and meshes plus [method warm_items].
+## Everything to warm: [member game_root]'s materials and meshes (when [member warm_game_root])
+## plus [method warm_items].
 func collect_warm_items() -> Array:
-	var out: Array = DotRenderWarmup.collect(game_root) if game_root != null else []
+	var out: Array = []
+	if warm_game_root and game_root != null:
+		out = DotRenderWarmup.collect(game_root)
 	for item: Variant in _warm_extra:
 		if not out.has(item):
 			out.append(item)

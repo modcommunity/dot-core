@@ -3,7 +3,7 @@ extends Node
 ## Exercises [DotLoadGate] and [DotLoadingCover]: holds, predicates, the timeout warning, freezing and settling under the cover, closing again, the camera requirement and warm-up, a host claiming the cover, the older shells' root signal.
 
 const SECTIONS := 12
-const CHECKS := 104
+const CHECKS := 105
 
 var _passed := 0
 var _failed := 0
@@ -433,6 +433,9 @@ func _test_camera_and_own_warmup() -> void:
 	gate.get_parent().add_child(cam)
 	cam.make_current()
 	_check(gate.collect_warm_items().size() >= 2, "collect_warm_items has the tree's mesh and the extra", str(gate.collect_warm_items().size()))
+	gate.warm_game_root = false
+	_check(gate.collect_warm_items().size() == 1, "warm_game_root off: only the extra", str(gate.collect_warm_items().size()))
+	gate.warm_game_root = true
 	var t0 := Time.get_ticks_msec()
 	var saw_warming := [false]
 	gate.ready_to_show.connect(func() -> void: saw_warming[0] = gate.state() == DotLoadGate.State.WARMING)
