@@ -175,14 +175,15 @@ func _instance_for(item: Variant) -> Node3D:
 		gp.emitting = true
 		gp.visibility_aabb = AABB(Vector3.ONE * -0.01, Vector3.ONE * 0.02)
 		return gp
-	var mi := MeshInstance3D.new()
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	# The instance is made only once there is something to draw: one made and then dropped would
+	# be an orphan node for the life of the process (420 per world build in mg-wipeout).
 	if item is Mesh:
 		var mesh := item as Mesh
 		if mesh.get_surface_count() > PROXY_SURFACES:
 			mesh = _proxy_for(mesh)
 			if mesh == null:
 				return null
+		var mi := _new_instance()
 		mi.mesh = mesh
 		# A mesh is drawn as itself (its vertex format is part of the variant), shrunk to
 		# the same size as a quad.
@@ -192,10 +193,17 @@ func _instance_for(item: Variant) -> Node3D:
 		mi.position -= mesh.get_aabb().get_center() * k
 		return mi
 	if item is Material:
+		var mi := _new_instance()
 		mi.mesh = _quad
 		mi.material_override = item
 		return mi
 	return null
+
+
+func _new_instance() -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	return mi
 
 
 ## One triangle of each surface whose (material, vertex format) has not been drawn yet, in the
