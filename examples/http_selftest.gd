@@ -68,6 +68,7 @@ func _run() -> void:
 	await _test_resume_ignored_range()
 	await _test_resume_failure_preserves_partial()
 	await _test_range_not_satisfiable()
+	await _test_retry_after()
 	await _test_max_bytes()
 	_test_append_file()
 	_test_replace_file()
@@ -236,6 +237,22 @@ func _test_range_not_satisfiable() -> void:
 	_done()
 
 
+func _test_retry_after() -> void:
+	_section("a 429 with Retry-After on the file path")
+
+	var dest := _scratch("throttled.bin")
+	_mode = "429"
+
+	var res := await _http.download_to_file(_url(), dest)
+
+	_check(not res.ok, "fails")
+	if not res.ok:
+		_check(res.error.retry_after == 7.0,
+			"carries the server's Retry-After", str(res.error.retry_after))
+		_check(res.error.is_retryable(), "and is retryable")
+	_done()
+
+
 # The filesystem primitive
 
 func _test_max_bytes() -> void:
@@ -371,6 +388,9 @@ func _answer(c: StreamPeerTCP, raw: String) -> void:
 		"error":
 			head = "HTTP/1.1 500 Internal Server Error\r\n"
 			body = "no"
+		"429":
+			head = "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 7\r\n"
+			body = "slow"
 		"416":
 			head = "HTTP/1.1 416 Range Not Satisfiable\r\n"
 			head += "Content-Range: bytes */%d\r\n" % BODY.length()
