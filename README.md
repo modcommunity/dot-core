@@ -1,5 +1,3 @@
-# dot-core
-
 The shared foundation of the [dot-*](https://github.com/modcommunity) family for Godot 4.7+. It holds the small pieces every other addon needs: results and errors, logging, configuration, platform checks, paths, hashing, an HTTP client, a transport layer, reproducible randomness and a loading gate. It is the layer under [dot-server](https://github.com/modcommunity/dot-server), [dot-auth](https://github.com/modcommunity/dot-auth) and [dot-cloud](https://github.com/modcommunity/dot-cloud).
 
 It targets desktop (Windows, macOS, Linux), mobile (Android, iOS) and the web from one codebase. Browser limits are handled in the code, not hidden.
