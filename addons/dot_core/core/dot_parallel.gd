@@ -7,10 +7,13 @@ extends RefCounted
 
 const CHANNEL := "parallel"
 
-## Most workers the automatic count ([code]workers = -1[/code]) asks for: the pool is shared
-## with the engine and with [DotScheduler]'s threads, and the measured gain flattened well
-## before the six cores of the box it was measured on.
+## Default for [member auto_max]: the pool is shared with the engine and with [DotScheduler]'s
+## threads, and the measured gain flattened well before the six cores of the box it was measured on.
 const AUTO_MAX := 8
+
+## Most workers the automatic count ([code]workers = -1[/code]) asks for. Default 8, 0 = no cap
+## (the cores less one). Negative is refused loudly through [method set_auto_max], which leaves it unchanged.
+static var auto_max: int = AUTO_MAX
 
 ## Fork/join times kept per label, for [method describe]'s p99.
 const _SAMPLES_KEPT := 256
@@ -40,13 +43,23 @@ static func available() -> bool:
 
 ## The worker count [param workers] means here: 0 when [method available] is false or
 ## [param workers] is 0; for -1, the processor count less one (the calling thread works too,
-## by waiting), at most [constant AUTO_MAX]; otherwise [param workers] itself.
+## by waiting), at most [member auto_max] (0 = no cap); otherwise [param workers] itself.
 static func resolve_workers(workers: int) -> int:
 	if workers == 0 or not available():
 		return 0
 	if workers < 0:
-		return clampi(OS.get_processor_count() - 1, 1, AUTO_MAX)
+		var cores := maxi(1, OS.get_processor_count() - 1)
+		return cores if auto_max == 0 else mini(cores, auto_max)
 	return workers
+
+
+## Sets [member auto_max]; returns false (with an error, value unchanged) when [param value] is negative.
+static func set_auto_max(value: int) -> bool:
+	if value < 0:
+		DotLog.error(CHANNEL, "auto_max %d is negative; use 0 for no cap (kept %d)" % [value, auto_max])
+		return false
+	auto_max = value
+	return true
 
 
 ## Calls [code]task.call(i)[/code] for each [code]i[/code] in [code]0..count-1[/code], results by slot: on the pool when

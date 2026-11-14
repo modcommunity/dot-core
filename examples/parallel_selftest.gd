@@ -4,7 +4,7 @@ extends Node
 ## that ran inline would pass equality), and [member DotParallel.verify] catches an order-dependent task. Three ERROR lines from the verify section are expected.
 
 const SECTIONS := 4
-const CHECKS := 15
+const CHECKS := 18
 
 var _passed := 0
 var _failed := 0
@@ -50,6 +50,14 @@ func _test_resolve() -> void:
 	var auto := DotParallel.resolve_workers(-1)
 	_check(auto == 0 if not available else (auto >= 1 and auto <= DotParallel.AUTO_MAX),
 		"-1 is the cores less one, at least 1 and at most AUTO_MAX (%d)" % auto)
+	var was := DotParallel.auto_max
+	DotParallel.set_auto_max(1)
+	_check(DotParallel.resolve_workers(-1) == (1 if available else 0), "auto_max 1 caps the automatic count")
+	DotParallel.set_auto_max(0)
+	_check(DotParallel.resolve_workers(-1) == (maxi(1, OS.get_processor_count() - 1) if available else 0),
+		"auto_max 0 is no cap")
+	_check(not DotParallel.set_auto_max(-1) and DotParallel.auto_max == 0, "a negative auto_max is refused, value kept")
+	DotParallel.auto_max = was
 	_check(DotParallel.resolve_workers(3) == (3 if available else 0), "a count is itself where the pool is available")
 
 

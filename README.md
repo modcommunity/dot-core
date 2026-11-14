@@ -70,6 +70,8 @@ godot --headless --path . res://examples/capability_report.tscn
 godot --headless --path . res://examples/randomness_selftest.tscn
 ```
 
+Worker caps are settings: `DotParallel.auto_max` (default 8, 0 = unlimited) and `DotScheduler.auto_thread_max` (default 4, 0 = unlimited); negatives are refused with an error.
+
 The first scene prints what the build can do. The second checks the randomness code. Both run offline. The capability report shows quickly that a web export has no threads or that a device reports no storage quota, which changes how dot-cloud behaves. The `examples/` folder holds more self-tests.
 
 ## Status

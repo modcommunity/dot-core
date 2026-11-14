@@ -39,9 +39,14 @@ const PROGRESS_STEPS_ON_THREAD := 8
 ## Ignored when [method DotPlatform.has_threads] is false.
 @export var use_threads: bool = true
 
-## Worker count. 0 means [code]min(4, processors - 1)[/code].
-## Capped low: the pool is for IO-bound work, and saturating every core worsens the frame.
-@export_range(0, 16, 1) var thread_count: int = 0
+## Worker count. 0 means [code]min(auto_thread_max, processors - 1)[/code]. Negative is refused
+## loudly and treated as 0. No upper limit.
+@export_range(0, 16, 1, "or_greater") var thread_count: int = 0
+
+## The cap on the automatic worker count (when [member thread_count] is 0). Default 4, 0 = unlimited
+## (the cores less one). The pool is for IO-bound work, and saturating every core worsens the frame.
+## Negative is refused loudly and treated as the default.
+@export_range(0, 16, 1, "or_greater") var auto_thread_max: int = 4
 
 var _main_queue: Array[DotJob] = []
 var _thread_queue: Array[DotJob] = []
@@ -83,9 +88,16 @@ func _threading_enabled() -> bool:
 
 
 func _resolved_thread_count() -> int:
+	if thread_count < 0:
+		DotLog.error("scheduler", "thread_count %d is negative; use 0 for automatic" % thread_count)
 	if thread_count > 0:
 		return thread_count
-	return maxi(1, mini(4, OS.get_processor_count() - 1))
+	var cap := auto_thread_max
+	if cap < 0:
+		DotLog.error("scheduler", "auto_thread_max %d is negative; use 0 for no cap (using 4)" % cap)
+		cap = 4
+	var cores := maxi(1, OS.get_processor_count() - 1)
+	return cores if cap == 0 else mini(cores, cap)
 
 
 
