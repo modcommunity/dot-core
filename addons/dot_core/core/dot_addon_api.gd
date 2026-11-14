@@ -444,8 +444,9 @@ static func apply_floors(derived: Dictionary, floors: Dictionary) -> Dictionary:
 ## Which of a game's floors cannot be honoured, against [method derive] and [method guarded]; empty is sound.
 ## Unsound: an addon the game does not use; a floor above this build; below its OLDEST; or an addon no file asks the level of.
 ## [param oldest] stands in for [method build_oldest] per addon, for a test.
+## [param pinned] is addon to the level of the version the live shell pins ([method pinned_levels]); a floor is judged against the lower of that and the build, since the pack runs on the shell. An addon with no entry is judged against the build.
 static func floor_audit(
-	floors: Dictionary, derived: Dictionary, guards: Dictionary, oldest: Dictionary = {}
+	floors: Dictionary, derived: Dictionary, guards: Dictionary, oldest: Dictionary = {}, pinned: Dictionary = {}
 ) -> PackedStringArray:
 	var out := PackedStringArray()
 	var names: Array = floors.keys()
@@ -459,8 +460,12 @@ static func floor_audit(
 			continue
 
 		var have := int(derived[addon])
+		var of_what := "this build has"
+		if pinned.has(addon) and int(pinned[addon]) < have:
+			have = int(pinned[addon])
+			of_what = "the pinned shell has"
 		if floor_level > have:
-			out.append("%s has a floor of %d, above the %d this build has" % [addon, floor_level, have])
+			out.append("%s has a floor of %d, above the %d %s" % [addon, floor_level, have, of_what])
 			continue
 
 		var lowest := int(oldest[addon]) if oldest.has(addon) else build_oldest(addon)
@@ -472,6 +477,32 @@ static func floor_audit(
 		if floor_level < have and not guards.has(addon):
 			out.append('%s has a floor of %d and no file asks the host for its level (DotAddonApi.build_level("%s")), so nothing runs an older path'
 				% [addon, floor_level, addon])
+	return out
+
+
+## The level each addon has at the version an addons.lock pins (`repo<TAB>ref` lines, as dot-server-deploy writes it), read with
+## `git show ref:addons/<name>/<name>_api.gd` in `<repos_root>/<repo>`. A repo, ref or LEVEL it cannot read is left out, so the audit falls back to the linked build. Empty when the lock is absent. Not for runtime: it runs git.
+static func pinned_levels(lock_path: String, repos_root: String) -> Dictionary:
+	var out := {}
+	if not FileAccess.file_exists(lock_path):
+		return out
+	var re := RegEx.create_from_string("const\\s+LEVEL\\s*:?=\\s*(\\d+)")
+	for line in FileAccess.get_file_as_string(lock_path).split("\n"):
+		if line.strip_edges().is_empty() or line.begins_with("#"):
+			continue
+		var cols := line.split("\t")
+		if cols.size() < 2:
+			continue
+		var repo := cols[0].strip_edges()
+		var ref := cols[1].strip_edges()
+		var addon := repo.replace("-", "_")
+		var output := []
+		var code := OS.execute("git", ["-C", repos_root.path_join(repo), "show", "%s:addons/%s/%s_api.gd" % [ref, addon, addon]], output, false)
+		if code != 0 or output.is_empty():
+			continue
+		var hit := re.search(str(output[0]))
+		if hit != null:
+			out[addon] = int(hit.get_string(1))
 	return out
 
 

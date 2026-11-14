@@ -4,7 +4,7 @@ extends Node
 ## The sentences are asserted, not only the codes: a check for CODE_VERSION alone passes for a refusal nobody can read.
 
 const SECTIONS := 8
-const CHECKS := 67
+const CHECKS := 74
 
 const SCRATCH := "user://addon_api_selftest"
 
@@ -298,6 +298,26 @@ func _test_floors() -> void:
 	var unguarded := DotAddonApi.floor_audit({"dot_net": 2}, derived, guards, oldest)
 	_check(unguarded.size() == 1 and unguarded[0].contains("no file asks"), "a floor nothing guards is refused", str(unguarded))
 	_check(DotAddonApi.floor_audit({"dot_net": 3}, derived, {}, oldest).is_empty(), "a floor at the build's level needs no guard: it lowers nothing")
+
+	# A pinned shell is the ceiling: a floor at the pinned level is sound without a guard, one above it is not.
+	var pins := {"dot_net": 2}
+	_check(DotAddonApi.floor_audit({"dot_net": 2}, derived, {}, oldest, pins).is_empty(), "a floor at the pinned level needs no guard, though the build is higher")
+	var over_pin := DotAddonApi.floor_audit({"dot_net": 3}, derived, {}, oldest, pins)
+	_check(over_pin.size() == 1 and over_pin[0].contains("pinned"), "a floor above the pinned level is refused", str(over_pin))
+	var under_pin := DotAddonApi.floor_audit({"dot_net": 1}, derived, {"dot_net": true}, oldest, pins)
+	_check(under_pin.is_empty(), "a guarded floor below the pinned level is sound")
+	var unguarded_pin := DotAddonApi.floor_audit({"dot_net": 1}, derived, {}, oldest, pins)
+	_check(unguarded_pin.size() == 1 and unguarded_pin[0].contains("no file asks"), "a floor below the pinned level with no guard is still refused", str(unguarded_pin))
+	_check(DotAddonApi.floor_audit({"dot_net": 3}, derived, {}, oldest, {"dot_ui": 1}).is_empty(), "an addon with no pin falls back to the build")
+	var lock_dir := SCRATCH + "/pins"
+	DirAccess.make_dir_recursive_absolute(lock_dir)
+	var lf := FileAccess.open(lock_dir + "/addons.lock", FileAccess.WRITE)
+	lf.store_string("# c\ndot-no-such-repo\tv9.9.9\n")
+	lf.close()
+	_check(DotAddonApi.pinned_levels(lock_dir + "/addons.lock", lock_dir).is_empty(), "pinned_levels skips a repo it cannot read")
+	_check(DotAddonApi.pinned_levels(lock_dir + "/none.lock", lock_dir).is_empty(), "and an absent lock is empty")
+	DirAccess.remove_absolute(lock_dir + "/addons.lock")
+	DirAccess.remove_absolute(lock_dir)
 
 	# guarded() reads the same files derive() does, so a scratch project stands in for a game.
 	var dir := SCRATCH + "/floors"
