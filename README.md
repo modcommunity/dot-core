@@ -1,73 +1,81 @@
-This is the **core** asset for TMC's **Dot** collection. This asset provides the foundation for all other `dot-*` assets and ensures they work together seamlessly.
+# dot-core
 
-This collection of assets provides modular building blocks for creating games and applications within the TMC ecosystem, ensuring consistency and interoperability across all `dot-*` assets. This includes core functionality, networking, authentication, cloud integration, and more.
+The shared foundation of the [dot-*](https://github.com/modcommunity) family for Godot 4.7+. It holds the small pieces every other addon needs: results and errors, logging, configuration, platform checks, paths, hashing, an HTTP client, a transport layer, reproducible randomness and a loading gate. It is the layer under [dot-server](https://github.com/modcommunity/dot-server), [dot-auth](https://github.com/modcommunity/dot-auth) and [dot-cloud](https://github.com/modcommunity/dot-cloud).
 
-**These assets are COMPLETELY OPEN SOURCE**. You are free to use, modify, and distribute them under the terms of the MIT license. The only thing not open source is the back-end web infrastructure. So if you opt into using your own authentication backend instead of integrating with TMC, you will need to build and integrate your own back-end infrastructure.
-
-## From Maintainer & WARNING
-This asset, along with all the others, was built initially with **Claude Code** and will continue to be maintained and extended using it. This is because I (`gamemann`) cannot build the entire TMC platform alone (I wish I could lol).
-
-**Please treat this as partially tested.** Every asset has its own headless test suite and those suites pass, but very little of this has been in front of real players yet. Expect rough edges, and please report anything you run into.
-
-I intend on reviewing code, testing, and editing documentation regularly. If you're interested in helping out, please let me know!
-
-## The Foundation of the `dot-*` Asset Family
-Shared foundation for the `dot-*` Godot 4 asset family, and the common layer under [dot-server](https://github.com/modcommunity/dot-server), [dot-auth](https://github.com/modcommunity/dot-auth) and [dot-cloud](https://github.com/modcommunity/dot-cloud).
-
-Targets desktop (Windows, macOS, Linux), mobile (Android, iOS) and the web from one codebase, and encodes the browser's limitations rather than pretending they do not exist.
+It targets desktop (Windows, macOS, Linux), mobile (Android, iOS) and the web from one codebase. Browser limits are handled in the code, not hidden.
 
 ## Install
 
-Copy `addons/dot_core/` into your project and enable **dot-core** in *Project → Project Settings → Plugins*. The plugin only registers inspector types; every class is available via `class_name` whether it is enabled or not.
+1. Copy `addons/dot_core/` into your project.
+2. Enable dot-core in *Project > Project Settings > Plugins*.
+3. Run `godot --headless --path . --import` once so the `Dot*` classes register.
 
-Requires Godot 4.7 or newer.
+The plugin only registers inspector types. Every class is available by its `class_name` whether the plugin is enabled or not. Starting a new game? Begin from [dot-game-template](https://github.com/modcommunity/dot-game-template).
 
-## First 10 minutes
+## First steps
 
-1. Copy `addons/dot_core/` into your project, enable it, and run `godot --headless --path . --import` so the `Dot*` classes register.
-2. Return failures as a `DotResult` and branch on its `DotError.CODE_*`, never on the message.
-3. Log through `DotLog` with a `CHANNEL` per file.
-4. Run the example scene under [Try it](#try-it).
-5. Starting a game rather than an addon? Begin from [dot-game-template](https://github.com/modcommunity/dot-game-template).
-
-## Configuration tiers
-
-Settings layer the same way in every addon, weakest first: the addon's schema defaults, the addon's shipped `cfg/addon/<addon>/`, the game's `cfg/game/<game>/<addon>/`, the server operator's `cfg/server/addon/<addon>/` and `cfg/server/game/<game>/`, then environment variables, then the command line, then runtime changes (a console `set`). The folder is the addon name with `-` written as `_`. Secrets are read from files only: a key marked sensitive is refused from the environment and the command line. Details: [dot-core's addon-config.md](docs/addon-config.md).
+1. Return failures as a `DotResult` and branch on its `DotError.CODE_*`, never on the message.
+2. Log through `DotLog`, with a `CHANNEL` constant per file.
+3. Run the example scene under [Test](#test) on every platform you ship to.
 
 ## What is in it
 
-| | |
+| Class | What it does |
 | --- | --- |
-| **`DotResult` / `DotError`** | The return type of everything fallible. Stable `CODE_*` values callers branch on; reading `.value` on a failure errors instead of handing back a default. |
-| **`DotPlatform`** | Cached capability detection for threads, UDP, listening, pack mounting and storage family. Ask about capabilities, not platform names. |
-| **`DotNodeRef`** | An inspector-editable description of *which node*: relative, absolute, group, registry, ancestor/descendant by type, or create-if-missing. Replaces hardcoded scene paths. |
-| **`DotConfig`** | Layered configuration: exported defaults < file < environment < command line, with reflective key discovery and secret-key protection. |
-| **`DotScheduler` / `DotJob`** | Long work in slices. Worker threads where available, a per-frame time budget where not. |
-| **`DotTransport`** | Swappable multiplayer transport. WebSocket serves browser and native clients from one listener; ENet is lighter but browser-incompatible. `DotTransportAuto` picks and logs why. |
-| **`DotHttp`** | `HTTPRequest`-based client with retries, jittered backoff, `Retry-After`, range-resumed downloads and connection pooling. Works in the browser sandbox. |
-| **`DotLog` / `DotLogSink`** | Levelled, channelled logging with structured fields, rotating files and UDP forwarding. Only ERROR and above are mirrored into the engine's own output (`mirror_min_level`), because a debug build appends an unsuppressible backtrace to every one and a recoverable warning then reads as a crash. [dot-log](https://github.com/modcommunity/dot-log) is the sink layer for everything beyond a file. |
-| **`DotPaths`** | Path sanitisation that *refuses* traversal rather than cleaning it, atomic writes, and web filesystem flushing. |
-| **`DotHash`** | SHA-256, HMAC, constant-time comparison, base64url, CSPRNG tokens. |
-| **`DotRandomStream` and friends** | Randomness a second machine can reproduce. A draw is a pure function of (key, index), so two peers that draw in a different order do not diverge and adding a feature does not change yesterday's replay. `DotRandomTable` for weighted picks with pity, `DotRandomSchedule` for events in ticks, `DotRandomManager` for the named streams a game hands out. |
-| **`DotLoadGate` / `DotLoadingCover`** | "The game is not ready to be seen yet" in a few lines: `hold`/`release` reasons, `require` a predicate, `freeze` the local body until the world under it exists (it then settles onto the floor under the cover, input off), `warm_up` extra materials, and a timeout that opens anyway with a warning naming what was still held. Covers the screen itself (and compiles the scene's shaders under the cover with `DotRenderWarmup`) unless a host such as a client shell claims the job. [docs/loading.md](docs/loading.md) |
+| `DotResult`, `DotError` | The return type of everything that can fail. `CODE_*` values are stable. Reading `.value` on a failure raises an error instead of returning a default. |
+| `DotPlatform` | Cached checks for threads, UDP, listening, pack mounting and storage. Ask about capabilities, not platform names. |
+| `DotNodeRef` | An inspector-editable description of which node: relative, absolute, group, registry, ancestor or descendant by type, or create if missing. Replaces hardcoded scene paths. |
+| `DotConfig` | Layered configuration with key discovery and protection for secret keys. |
+| `DotScheduler`, `DotJob` | Long work in slices. Worker threads where they exist, a per-frame time budget where they do not. |
+| `DotTransport` | Swappable multiplayer transport. WebSocket serves browser and native clients from one listener. ENet is lighter but does not work in browsers. `DotTransportAuto` picks one and logs why. |
+| `DotHttp` | An `HTTPRequest` client with retries, jittered backoff, `Retry-After`, resumable downloads and connection pooling. Works in the browser. |
+| `DotLog`, `DotLogSink` | Levelled, channelled logging with structured fields, rotating files and UDP forwarding. [dot-log](https://github.com/modcommunity/dot-log) adds more sinks. |
+| `DotPaths` | Path cleaning that refuses traversal instead of repairing it, atomic writes and web filesystem flushing. |
+| `DotHash` | SHA-256, HMAC, constant-time comparison, base64url and secure random tokens. |
+| `DotRandomStream` and related | Randomness another machine can reproduce. A draw depends only on a key and an index, so peers that draw in a different order still agree. `DotRandomTable` does weighted picks, `DotRandomSchedule` does events in ticks, and `DotRandomManager` hands out named streams. See [docs/randomness.md](docs/randomness.md). |
+| `DotLoadGate`, `DotLoadingCover` | Holds the screen until the game is ready to be seen. See [docs/loading.md](docs/loading.md). |
 
-## Try it
+`DotLog` mirrors only ERROR and above into Godot's own output (`mirror_min_level`). A debug build adds a backtrace to every mirrored line, and a recoverable warning would then look like a crash.
+
+## Configuration layers
+
+Every addon reads settings in the same order, weakest first:
+
+| Layer | Where |
+| --- | --- |
+| Addon defaults | The addon's schema, then `cfg/addon/<addon>/` |
+| Game | `cfg/game/<game>/<addon>/` |
+| Server operator | `cfg/server/addon/<addon>/`, then `cfg/server/game/<game>/<addon>/` |
+| Environment | `DOT_*` variables |
+| Command line | `--flag` arguments |
+| Runtime | For example a console `set` |
+
+The folder name is the addon name with `-` written as `_`. Secrets are read from files only. A key marked sensitive is refused from the environment and the command line. Add `cfg/*` to your export preset's `include_filter`, or the files are missing from exported builds. See [docs/addon-config.md](docs/addon-config.md).
+
+## Design notes
+
+| Rule | Why |
+| --- | --- |
+| No autoloads. | An autoload reserves a global name, fixes the start order and cannot be created twice. Use `DotRegistry` for lookup and place nodes yourself. |
+| No hardcoded scene paths. | Anything that needs a host node exports a `DotNodeRef`. |
+| Browser limits are real. | There is no UDP, no `HTTPClient`, no threads by default, the filesystem needs explicit flushes, and a resource pack cannot be unmounted. See [docs/transports.md](docs/transports.md#where-each-constraint-lives). |
+
+More notes are in the [docs index](docs/README.md).
+
+## Test
 
 ```bash
+godot --headless --path . --import
 godot --headless --path . res://examples/capability_report.tscn
 godot --headless --path . res://examples/randomness_selftest.tscn
 ```
 
-Prints what the build can do and self-tests the pieces that need no network. Run it on every target you ship to. It is the quickest way to discover that your web export has no threads or that a device reports no storage quota, both of which change how dot-cloud behaves.
+The first scene prints what the build can do. The second checks the randomness code. Both run offline. The capability report shows quickly that a web export has no threads or that a device reports no storage quota, which changes how dot-cloud behaves. The `examples/` folder holds more self-tests.
 
-## Design notes
+## Status
 
-**No autoloads.** An addon that ships one reserves a global name, fixes the initialisation order, and cannot be instantiated twice. Use `DotRegistry` for name-based lookup and place `Node`s yourself.
-
-**Nothing hardcodes a scene path.** Anything that needs a host node exports a `DotNodeRef`.
-
-**Browser constraints are load-bearing, not edge cases.** No UDP, no `HTTPClient`, no threads by default, an IndexedDB filesystem needing explicit flushes, and no way to unmount a resource pack. See [docs/transports.md](docs/transports.md#where-each-constraint-lives) for where each one is handled.
+Built and maintained with Claude Code. The test suites pass, but little of this has been in front of real players yet. Please report rough edges by opening an issue.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Only the TMC back-end web infrastructure is not open source.
