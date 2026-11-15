@@ -4,8 +4,8 @@ extends Node3D
 ## Every "never inside" check is armed: the same path is first flown with no probe and must put the camera inside geometry on many frames,
 ## else a path that never nears a wall passes for the one reason it could not fail.
 
-const SECTIONS := 11
-const CHECKS := 67
+const SECTIONS := 12
+const CHECKS := 72
 
 const WORLD := 1
 const PEOPLE := 2
@@ -486,7 +486,58 @@ func _test_render_warmup() -> void:
 	scene.free()
 	_test_render_warmup_dedupe()
 
+	_test_render_warmup_order()
 	await _test_render_warmup_many_surfaces()
+
+
+## The dear compiles are drawn first, equal costs keep their queue order, and off keeps the queue as given.
+func _test_render_warmup_order() -> void:
+	_section("DotRenderWarmup draws the dear compiles first")
+	var plain := StandardMaterial3D.new()
+	var lit := StandardMaterial3D.new()
+	lit.normal_enabled = true
+	lit.normal_texture = PlaceholderTexture2D.new()
+	var shader_small := ShaderMaterial.new()
+	shader_small.shader = Shader.new()
+	shader_small.shader.code = "shader_type spatial;"
+	var shader_big := ShaderMaterial.new()
+	shader_big.shader = Shader.new()
+	shader_big.shader.code = "shader_type spatial;\n" + "// pad\n".repeat(400)
+	var proc := ParticleProcessMaterial.new()
+	var quad := QuadMesh.new()
+	var queue: Array = [quad, plain, shader_small, lit, proc, shader_big]
+	_check(DotRenderWarmup.item_cost(lit) > DotRenderWarmup.item_cost(plain), "a material with a normal map costs more than a plain one")
+	_check(DotRenderWarmup.item_cost(shader_big) > DotRenderWarmup.item_cost(shader_small), "a longer shader costs more")
+	_check(DotRenderWarmup.item_cost(shader_small) > DotRenderWarmup.item_cost(lit), "a shader costs more than a material")
+	var warm := DotRenderWarmup.new()
+	warm.dedupe = false
+	warm.dear_first = true
+	warm.first_batch = 100
+	warm.timeout_sec = 0.1
+	add_child(warm)
+	warm.add_items(queue)
+	warm.start()
+	var order: Array = []
+	for child in warm.get_children():
+		order.append(child)
+	var cost_order := true
+	var last := INF
+	for child in order:
+		var item: Variant = (child as MeshInstance3D).material_override if (child is MeshInstance3D and (child as MeshInstance3D).material_override != null) else (child as MeshInstance3D).mesh if child is MeshInstance3D else (child as GPUParticles3D).process_material
+		var c := DotRenderWarmup.item_cost(item)
+		if c > last:
+			cost_order = false
+		last = c
+	_check(order.size() == 6 and cost_order, "placed in falling cost (%d items)" % order.size())
+	await warm.finished
+	var off := DotRenderWarmup.new()
+	off.dedupe = false
+	off.timeout_sec = 0.1
+	add_child(off)
+	off.add_items(queue)
+	off.start()
+	_check(off.get_child(0) is MeshInstance3D, "off keeps the queue order (the particles, fifth, are not first)")
+	await off.finished
 
 
 ## Items that compile one pipeline are queued once; distinct pipelines all stay.

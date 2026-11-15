@@ -52,6 +52,11 @@ signal finished(count: int)
 ## Anything [method item_key] cannot key (a particle process material) is always kept. Off draws every item.
 @export var dedupe: bool = true
 
+## Draws the items that cost most to compile first, by [method item_cost]. The rounds start at [member first_batch]
+## and double, so the dear compiles land in the small early rounds, where one dear item is a small round, and the
+## cheap bulk fills the large later ones. Equal estimates keep their queue order. Off (the default: software-GL A/B 2026-11-15 showed no gain beyond noise) draws in queue order.
+@export var dear_first: bool = false
+
 ## Default [member first_batch].
 const FIRST_BATCH := 1
 ## Default [member growth].
@@ -217,6 +222,39 @@ static func _material_key(mat: BaseMaterial3D, cache: Dictionary) -> String:
 	return key
 
 
+## A relative estimate of what [param item] costs the frame that first draws it (no unit, only the order matters).
+## A particle process material compiles a transform-feedback program, a [ShaderMaterial] a whole shader (longer code,
+## more cost), a [BaseMaterial3D] by the features that grow its shader, a mesh only its vertex format's pipeline.
+static func item_cost(item: Variant) -> float:
+	if item is ParticleProcessMaterial:
+		return 40.0
+	if item is ShaderMaterial:
+		var sm := item as ShaderMaterial
+		var cost := 20.0
+		if sm.shader != null:
+			cost += float(sm.shader.code.length()) / 200.0
+			if sm.shader.get_mode() == Shader.MODE_PARTICLES:
+				cost += 20.0
+		if sm.next_pass != null:
+			cost += item_cost(sm.next_pass)
+		return cost
+	if item is BaseMaterial3D:
+		var mat := item as BaseMaterial3D
+		var cost := 4.0
+		for prop: Dictionary in mat.get_property_list():
+			if int(prop["type"]) == TYPE_OBJECT and int(prop["usage"]) & PROPERTY_USAGE_STORAGE \
+					and prop["name"] != "next_pass" and mat.get(prop["name"]) != null:
+				cost += 1.0
+		if mat.shading_mode == BaseMaterial3D.SHADING_MODE_PER_PIXEL:
+			cost += 2.0
+		if mat.next_pass != null:
+			cost += item_cost(mat.next_pass)
+		return cost
+	if item is Mesh:
+		return 2.0
+	return 1.0
+
+
 func item_count() -> int:
 	return _items.size()
 
@@ -233,6 +271,8 @@ func start() -> void:
 		return
 	_started = true
 	_start_msec = Time.get_ticks_msec()
+	if dear_first:
+		_order_by_cost()
 	var cam := get_parent() as Camera3D
 	var near := cam.near if cam != null else 0.05
 	# Just past the near plane, centred: inside every frustum, behind nothing.
@@ -249,6 +289,18 @@ func start() -> void:
 	_draw_usec = Time.get_ticks_usec()
 	_place_batch()
 	DotLog.debug(CHANNEL, "warming %d materials and meshes" % _items.size(), {"items": _items.size(), "batch": batch_size, "budget_msec": budget_msec})
+
+
+## Sorts the queue by [method item_cost], dearest first, equal costs in queue order.
+func _order_by_cost() -> void:
+	var rows: Array = []
+	for i in _items.size():
+		rows.append([item_cost(_items[i]), i])
+	rows.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0] or (a[0] == b[0] and a[1] < b[1]))
+	var sorted: Array = []
+	for row: Array in rows:
+		sorted.append(_items[row[1]])
+	_items = sorted
 
 
 ## Rounds the items are drawn in. With [member budget_msec] the size follows the measured cost,
