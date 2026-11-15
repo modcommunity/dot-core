@@ -4,7 +4,7 @@ extends Node3D
 ## Every "never inside" check is armed: the same path is first flown with no probe and must put the camera inside geometry on many frames,
 ## else a path that never nears a wall passes for the one reason it could not fail.
 
-const SECTIONS := 10
+const SECTIONS := 11
 const CHECKS := 59
 
 const WORLD := 1
@@ -432,6 +432,7 @@ func _test_render_warmup() -> void:
 	var scene := Node3D.new()
 	var a := StandardMaterial3D.new()
 	var b := StandardMaterial3D.new()
+	b.cull_mode = BaseMaterial3D.CULL_DISABLED  # a distinct pipeline: identical ones are deduped
 	var box := BoxMesh.new()
 	box.material = a
 	for i in 3:
@@ -483,8 +484,60 @@ func _test_render_warmup() -> void:
 	await _render_warmup_paced(cam)
 	cam.queue_free()
 	scene.free()
+	_test_render_warmup_dedupe()
 
 	await _test_render_warmup_many_surfaces()
+
+
+## Items that compile one pipeline are queued once; distinct pipelines all stay.
+func _test_render_warmup_dedupe() -> void:
+	_section("DotRenderWarmup queues one item per pipeline")
+	var plain: Array = []
+	for i in 6:
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(i * 0.1, 0.2, 0.3)  # a uniform: same shader
+		plain.append(m)
+	var trans := StandardMaterial3D.new()
+	trans.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	var textured := StandardMaterial3D.new()
+	textured.albedo_texture = PlaceholderTexture2D.new()
+	var shader := Shader.new()
+	shader.code = "shader_type spatial;\nvoid fragment() { ALBEDO = vec3(1.0); }"
+	var sm_a := ShaderMaterial.new()
+	sm_a.shader = shader
+	var sm_b := ShaderMaterial.new()
+	sm_b.shader = shader
+	var other := Shader.new()
+	other.code = "shader_type spatial;\nvoid fragment() { ALBEDO = vec3(0.5); }"
+	var sm_c := ShaderMaterial.new()
+	sm_c.shader = other
+	var particles := [ParticleProcessMaterial.new(), ParticleProcessMaterial.new()]
+	var box_a := BoxMesh.new()
+	box_a.material = plain[0]
+	var box_b := BoxMesh.new()
+	box_b.material = plain[1]
+	var box_t := BoxMesh.new()
+	box_t.material = trans
+	var all: Array = plain + [trans, textured, sm_a, sm_b, sm_c, box_a, box_b, box_t] + particles
+
+	var warm := DotRenderWarmup.new()
+	warm.add_items(all)
+	# plain x6 -> 1, trans, textured, sm_a/sm_b -> 1, sm_c, box_a/box_b -> 1, box_t; the particles are kept (2)
+	_check(warm.item_count() == 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2, "%d items queue as %d pipelines" % [all.size(), warm.item_count()])
+	_check(warm.skipped_count() == all.size() - warm.item_count() and int(warm.describe()["deduped"]) == warm.skipped_count(), "the skipped ones are counted (%d)" % warm.skipped_count())
+	_check(warm._items.has(plain[0]) and not warm._items.has(plain[1]), "the first of a pipeline is the one kept")
+	_check(warm._items.has(trans) and warm._items.has(textured) and warm._items.has(sm_c) and warm._items.has(box_t), "distinct pipelines are kept")
+	warm.free()
+	var off := DotRenderWarmup.new()
+	off.dedupe = false
+	off.add_items(all)
+	_check(off.item_count() == all.size() and off.skipped_count() == 0, "dedupe off keeps every item (%d)" % off.item_count())
+	off.free()
+	var again := DotRenderWarmup.new()
+	again.add_items(plain)
+	again.add_items(plain)
+	_check(again.item_count() == 1, "a second add of the same items adds nothing")
+	again.free()
 
 
 ## A budget_msec warm-up starts small and sizes each next round from the measured cost per item.
@@ -493,6 +546,7 @@ func _render_warmup_paced(cam: Camera3D) -> void:
 	for i in 40:
 		mats.append(StandardMaterial3D.new())
 	var paced := DotRenderWarmup.new()
+	paced.dedupe = false  # forty identical materials, to be sized, not merged
 	paced.budget_msec = 40.0
 	paced.timeout_sec = 0.3
 	cam.add_child(paced)
@@ -558,6 +612,7 @@ func _test_render_warmup_many_surfaces() -> void:
 	var cam2 := Camera3D.new()
 	add_child(cam2)
 	var warm2 := DotRenderWarmup.new()
+	warm2.dedupe = false  # the proxy cache is under test, not the item key
 	warm2.timeout_sec = 0.3
 	cam2.add_child(warm2)
 	warm2.add_items([big])

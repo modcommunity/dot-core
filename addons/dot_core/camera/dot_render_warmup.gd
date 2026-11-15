@@ -47,6 +47,11 @@ signal finished(count: int)
 ## more; in play, hold it.
 @export var dear_decay: float = DEAR_DECAY
 
+## Skips an item whose pipeline [method item_key] says another queued item already compiles: a scene's hundreds of
+## [BaseMaterial3D]s collapse to the few dozen distinct shaders, and drawing the second of a pair compiles nothing.
+## Anything [method item_key] cannot key (a particle process material) is always kept. Off draws every item.
+@export var dedupe: bool = true
+
 ## Default [member first_batch].
 const FIRST_BATCH := 1
 ## Default [member growth].
@@ -62,6 +67,9 @@ const SIZE := 0.0005
 
 var _items: Array = []
 var _seen := {}
+var _keys := {}  # pipeline key -> true, for the items queued
+var _key_cache := {}  # material instance id -> key
+var _skipped := 0  # items dropped as another's pipeline
 var _drawn := 0
 var _next := 0
 var _placed := 0
@@ -131,11 +139,80 @@ func add_items(items: Array) -> void:
 	for item: Variant in items:
 		if (item is Material or item is Mesh) and not _seen.has(item):
 			_seen[item] = true
+			if dedupe:
+				var key := item_key(item, _key_cache)
+				if key != "":
+					if _keys.has(key):
+						_skipped += 1
+						continue
+					_keys[key] = true
 			_items.append(item)
+
+
+## What decides the pipeline [param item] compiles. A [BaseMaterial3D]: its class, every int and bool property and
+## which textures it has (a superset of the engine's own shader key). A [ShaderMaterial]: its shader (uniform values
+## compile nothing). A [Mesh]: each surface's primitive, vertex format and material key. "" for anything else
+## (a particle process material, a mesh with a material it cannot key): never merged. [param cache] holds material
+## keys by instance id across calls.
+static func item_key(item: Variant, cache: Dictionary = {}) -> String:
+	if item is BaseMaterial3D:
+		return _material_key(item as BaseMaterial3D, cache)
+	if item is ShaderMaterial:
+		var sm := item as ShaderMaterial
+		if sm.shader == null:
+			return ""
+		var next := ""
+		if sm.next_pass != null:
+			next = item_key(sm.next_pass, cache)
+			if next == "":
+				return ""
+		return "shader:%d;next=%s" % [sm.shader.get_instance_id(), next]
+	if item is Mesh:
+		var mesh := item as Mesh
+		var parts := PackedStringArray([mesh.get_class()])
+		for i in mesh.get_surface_count():
+			var mat := mesh.surface_get_material(i)
+			var mat_key := "default" if mat == null else item_key(mat, cache)
+			if mat_key == "":
+				return ""
+			var fmt := (mesh as ArrayMesh).surface_get_format(i) if mesh is ArrayMesh else -1
+			var prim := (mesh as ArrayMesh).surface_get_primitive_type(i) if mesh is ArrayMesh else -1
+			parts.append("%d/%d/%s" % [prim, fmt, mat_key])
+		return "mesh:" + "#".join(parts)
+	return ""
+
+
+static func _material_key(mat: BaseMaterial3D, cache: Dictionary) -> String:
+	var id := mat.get_instance_id()
+	if cache.has(id):
+		return cache[id]
+	var parts := PackedStringArray([mat.get_class()])
+	for prop: Dictionary in mat.get_property_list():
+		if not int(prop["usage"]) & PROPERTY_USAGE_STORAGE:
+			continue
+		var name: String = prop["name"]
+		match int(prop["type"]):
+			TYPE_BOOL, TYPE_INT:
+				parts.append("%s=%s" % [name, mat.get(name)])
+			TYPE_OBJECT:
+				if name != "next_pass":
+					parts.append("%s=%s" % [name, mat.get(name) != null])
+	var next := mat.next_pass
+	if next != null:
+		var next_key := item_key(next, cache)
+		parts.append("next=" + (next_key if next_key != "" else "id%d" % next.get_instance_id()))
+	var key := "mat:" + ";".join(parts)
+	cache[id] = key
+	return key
 
 
 func item_count() -> int:
 	return _items.size()
+
+
+## Items [method add_items] dropped because another queued item compiles the same pipeline.
+func skipped_count() -> int:
+	return _skipped
 
 
 ## Puts every item in front of the parent camera (or wherever this node is) and starts
@@ -388,4 +465,4 @@ func left() -> int:
 
 
 func describe() -> Dictionary:
-	return {"items": _items.size(), "started": _started, "drawn_frames": _drawn, "done": _done, "rounds": _rounds, "placed": _placed, "left": left(), "budget_msec": budget_msec, "longest_round_ms": snappedf(_longest_usec / 1000.0, 0.1), "longest_round_items": _longest_items, "over_budget_rounds": _over_rounds}
+	return {"items": _items.size(), "deduped": _skipped, "started": _started, "drawn_frames": _drawn, "done": _done, "rounds": _rounds, "placed": _placed, "left": left(), "budget_msec": budget_msec, "longest_round_ms": snappedf(_longest_usec / 1000.0, 0.1), "longest_round_items": _longest_items, "over_budget_rounds": _over_rounds}
