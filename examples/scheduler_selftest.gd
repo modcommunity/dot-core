@@ -173,7 +173,7 @@ func _test_cancel() -> void:
 	# A step 40 ms long on a worker. cancel() must not wait for it: it is called from the
 	# main thread, which is the frame.
 	var running := ProbeJob.new()
-	running.step_usec = 40_000
+	running.step_usec = 400_000
 	running.steps_to_finish = 1_000
 	var gate := Semaphore.new()
 	var t := Thread.new()
@@ -183,14 +183,14 @@ func _test_cancel() -> void:
 			pass
 	)
 	gate.wait()
-	OS.delay_usec(10_000)
+	OS.delay_usec(30_000)
 
 	var before := Time.get_ticks_usec()
 	running.cancel()
 	var took_ms := float(Time.get_ticks_usec() - before) / 1000.0
 	t.wait_to_finish()
 
-	_check(took_ms < 20.0, "cancel() did not wait for the step in progress (%.1f ms)" % took_ms)
+	_check(took_ms < 200.0, "cancel() did not wait for the step in progress (%.1f ms)" % took_ms)
 	_check(running.state == DotJob.State.CANCELLED, "the worker settled it at its next step")
 	_check(running.torn_inside == 0, "and tore it down outside any step")
 

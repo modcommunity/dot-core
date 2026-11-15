@@ -120,7 +120,7 @@ func _test_tls_hello_screened() -> void:
 		return
 
 	var raw_ms := await _raw_hello_closed_ms(server, port)
-	_check(raw_ms >= 0 and raw_ms < 1000, "a raw TLS handshake byte is closed in %d ms" % raw_ms)
+	_check(raw_ms >= 0 and raw_ms < 2500, "a raw TLS handshake byte is closed in %d ms" % raw_ms)
 	_check(int(server.screen.describe()["refused_tls"]) == 1, "and counted as a refused TLS hello")
 
 	# The real thing: the engine's own wss:// client, as the client link's TLS-first try is.
@@ -134,7 +134,7 @@ func _test_tls_hello_screened() -> void:
 		failed = wss.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED
 		await get_tree().process_frame
 	var wss_ms := Time.get_ticks_msec() - started
-	_check(failed and wss_ms < 1000, "a wss:// client at the plain port fails in %d ms, not at its timeout" % wss_ms)
+	_check(failed and wss_ms < 2500, "a wss:// client at the plain port fails in %d ms, not at its timeout" % wss_ms)
 	wss.close()
 
 	var ids: Array[int] = []

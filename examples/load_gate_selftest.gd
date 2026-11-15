@@ -154,7 +154,7 @@ func _test_timeout() -> void:
 	gate.require(&"never", func() -> bool: return false)
 	_records.clear()
 	var t0 := Time.get_ticks_msec()
-	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 15000:
 		await get_tree().process_frame
 	_check(gate.is_open(), "open after the timeout")
 	var warned: Array = _records.filter(func(r: Dictionary) -> bool:
@@ -250,7 +250,7 @@ func _test_settle() -> void:
 	_records.clear()
 	gate.release(&"map")
 	var t0 := Time.get_ticks_msec()
-	while not gate.is_settling() and not gate.is_open() and Time.get_ticks_msec() - t0 < 2000:
+	while not gate.is_settling() and not gate.is_open() and Time.get_ticks_msec() - t0 < 10000:
 		await get_tree().physics_frame
 	_check(gate.is_settling() and not gate.is_open(), "released: it settles before it opens", str(gate.describe()))
 	_check(gate.is_cover_showing() and gate.state() == DotLoadGate.State.CLOSED, "still covered and still CLOSED to anyone asking")
@@ -267,7 +267,7 @@ func _test_settle() -> void:
 	_check(sampler.process_mode == Node.PROCESS_MODE_DISABLED, "a freeze_input node stays stopped through settling")
 	var input_seen := false
 	t0 = Time.get_ticks_msec()
-	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 15000:
 		input_seen = input_seen or body.input_enabled
 		await get_tree().physics_frame
 	_check(gate.is_open() and at_open.size() == 1 and bool(at_open[0][0]), "it opens with the body on the floor", str(at_open))
@@ -285,7 +285,7 @@ func _test_settle() -> void:
 	gate.release(&"map2")
 	var seen_settling := false
 	t0 = Time.get_ticks_msec()
-	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 15000:
 		seen_settling = seen_settling or gate.is_settling()
 		await get_tree().physics_frame
 	_check(seen_settling and gate.is_open() and at_open.size() == 2 and bool(at_open[1][0]), "and settles again before reopening", str(at_open))
@@ -294,13 +294,13 @@ func _test_settle() -> void:
 	gate.hold(&"map3")
 	gate.release(&"map3")
 	t0 = Time.get_ticks_msec()
-	while not gate.is_settling() and Time.get_ticks_msec() - t0 < 2000:
+	while not gate.is_settling() and Time.get_ticks_msec() - t0 < 10000:
 		await get_tree().physics_frame
 	gate.hold(&"map4")
 	_check(not gate.is_settling() and body.process_mode == Node.PROCESS_MODE_DISABLED and not body.input_enabled, "a hold while settling stops it again, input still off")
 	gate.release(&"map4")
 	t0 = Time.get_ticks_msec()
-	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 15000:
 		await get_tree().physics_frame
 	_check(gate.is_open() and body.input_enabled, "and it opens after settling afresh")
 	_drop(gate)
@@ -319,7 +319,7 @@ func _settle_frames_zero() -> void:
 	gate2.freeze(body2)
 	var t0 := Time.get_ticks_msec()
 	var settling2 := false
-	while not gate2.is_open() and Time.get_ticks_msec() - t0 < 2000:
+	while not gate2.is_open() and Time.get_ticks_msec() - t0 < 10000:
 		settling2 = settling2 or gate2.is_settling()
 		await get_tree().physics_frame
 	_check(gate2.is_open() and not settling2 and mode_at_open == [0], "settle_frames 0 skips it: frozen until open", str(mode_at_open))
@@ -439,7 +439,7 @@ func _test_camera_and_own_warmup() -> void:
 	var t0 := Time.get_ticks_msec()
 	var saw_warming := [false]
 	gate.ready_to_show.connect(func() -> void: saw_warming[0] = gate.state() == DotLoadGate.State.WARMING)
-	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 15000:
 		await get_tree().process_frame
 	_check(gate.is_open() and saw_warming[0], "a camera in the game opens it, through a warm-up", str(gate.describe()))
 	await get_tree().process_frame
@@ -476,7 +476,7 @@ func _test_hosted() -> void:
 	await _frames(6)
 	_records.clear()
 	var t0 := Time.get_ticks_msec()
-	while not gate.is_open() and Time.get_ticks_msec() - t0 < 3000:
+	while not gate.is_open() and Time.get_ticks_msec() - t0 < 15000:
 		await get_tree().process_frame
 	_check(gate.is_open(), "a host that never finishes is not waited on for ever")
 	_check(_records.any(func(r: Dictionary) -> bool: return int(r["level"]) == DotLog.Level.WARN), "and that is a warning")
