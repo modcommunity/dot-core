@@ -441,10 +441,9 @@ static func apply_floors(derived: Dictionary, floors: Dictionary) -> Dictionary:
 	return out
 
 
-## Which of a game's floors cannot be honoured, against [method derive] and [method guarded]; empty is sound.
-## Unsound: an addon the game does not use; a floor above this build; below its OLDEST; or an addon no file asks the level of.
-## [param oldest] stands in for [method build_oldest] per addon, for a test.
-## [param pinned] is addon to the level of the version the live shell pins ([method pinned_levels]); a floor is judged against the lower of that and the build, since the pack runs on the shell. An addon with no entry is judged against the build.
+## Which of a game's floors cannot be honoured, against [method derive] and [method guarded]; empty is sound. Unsound: an addon the game does not use; a floor above this build; below its OLDEST; or an addon no file asks the level of.
+## [param oldest] stands in for [method build_oldest] per addon, for a test. [param pinned] is addon to the level of the version the live shell pins ([method pinned_levels]);
+## a floor is judged against the lower of that and the build, since the pack runs on the shell. An addon with no entry is judged against the build.
 static func floor_audit(
 	floors: Dictionary, derived: Dictionary, guards: Dictionary, oldest: Dictionary = {}, pinned: Dictionary = {}
 ) -> PackedStringArray:

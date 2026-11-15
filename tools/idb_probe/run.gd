@@ -1,8 +1,7 @@
 extends Node
 
-## Page side of tools/idb_probe.sh: how many user:// files survive a tab closed right after a burst of writes.
-## Query: phase=write|count, mode=old|new (old = the engine's own save only; new = DotWeb.sync_filesystem, which
-## also installs the pagehide/beforeunload/visibility flush), n=<files> (default 400), tail=<small files written two seconds after the sync call> (default 0), kb=<size each> (default 24).
+## Page side of tools/idb_probe.sh: how many user:// files survive a tab closed right after a burst of writes. Query: phase=write|count, mode=old|new (old = the engine's own save only;
+## new = DotWeb.sync_filesystem, which also installs the pagehide/beforeunload/visibility flush), n=<files> (default 400), tail=<small files written two seconds after the sync call> (default 0), kb=<size each> (default 24).
 ## Prints "IDB WROTE n" or "IDB COUNT n bytes" on the console; the page driver (check.mjs) reads them.
 
 const DIR := "user://idb_probe"

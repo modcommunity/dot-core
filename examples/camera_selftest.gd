@@ -539,7 +539,7 @@ func _test_render_warmup_many_surfaces() -> void:
 	var proxy := (warm2.get_child(0) as MeshInstance3D).mesh
 	_check(proxy.get_surface_count() == 3, "a many-surface mesh is warmed as one triangle per material (%d surfaces)" % proxy.get_surface_count())
 	_check(proxy.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV2] != null, "and keeps the vertex format of the surface")
-	# A second mesh over the same materials and format has nothing new to draw. It used to
+	# A second mesh over the same materials and format has nothing new to draw, and must not
 	# leave a bare MeshInstance3D behind each time (420 orphans per world build in mg-wipeout).
 	var orphans_before := int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
 	warm2.add_items([big.duplicate()])
