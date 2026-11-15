@@ -20,23 +20,42 @@ signal finished(count: int)
 @export var batch_size: int = 1000
 
 ## Milliseconds a round may cost its frame. Above 0, rounds start at [member first_batch] items, placing stops at
-## half the budget, and each next round is sized from the last one's measured draw cost per item, up to
-## [member batch_size]. A count alone cannot bound a frame: one first-draw compile costs far more than another.
+## half the budget, and each next round is sized from the measured draw cost per item, up to [member batch_size].
+## A count alone cannot bound a frame: one first-draw compile costs far more than another, so an item is priced at
+## the dearer of the last round's mean and the dearest seen lately (halved by each round that kept to the budget),
+## and a round grows at most [member growth] times the last. One item dearer than the budget still takes its
+## frame: nothing splits a compile.
 @export var budget_msec: float = 0.0
 
 ## Seconds without a drawn frame after which [signal finished] fires anyway: a headless run or a
 ## hidden window never draws, and a cover waiting on this must not wait for ever.
 @export var timeout_sec: float = 5.0
 
-## Items in the first budgeted round, before any cost has been measured (capped by [member batch_size]). A warm-up whose
-## items each compile a pipeline (a new level's materials) starts smaller, 1-4, so the unmeasured round cannot be the
-## longest frame; later rounds still grow from the measured cost, up to four times the last.
+## Items in the first budgeted round, before any cost has been measured (capped by [member batch_size]). One: an
+## unmeasured round of 16 first-draw compiles was a 4.2 s frame in the web shell (staging02, 2026-11-15); later
+## rounds grow from the measured cost, by at most [member growth].
 @export var first_batch: int = FIRST_BATCH
 
+## Most a budgeted round may grow over the last, as a factor. Cheap rounds (pipelines already compiled) make the
+## per-item estimate tiny, and a round sized from that alone can land on a run of uncompiled ones. 0 = no limit.
+@export var growth: float = GROWTH
+
+## What each round that kept to the budget leaves of the dearest per-item cost seen, from 0 (forget it at once) to 1
+## (hold it for good: once one item outran the budget, every later round is one item, so no frame holds two
+## compiles). Below 1 trades frame bound for pace: in the web shell, decay 0.5 let a run of cheap rounds forget a
+## 1.4 s compile and grow to a 32-item, 2.7 s round (staging02, 2026-11-15). Under a loading screen pace matters
+## more; in play, hold it.
+@export var dear_decay: float = DEAR_DECAY
+
 ## Default [member first_batch].
-const FIRST_BATCH := 16
-## Fewest items a budgeted round places, so a frame slow for other reasons cannot stretch the warm-up out.
-const MIN_BATCH := 4
+const FIRST_BATCH := 1
+## Default [member growth].
+const GROWTH := 2.0
+## Default [member dear_decay].
+const DEAR_DECAY := 0.5
+## Fewest items a budgeted round places. One: a round must make progress, and each further item dearer than the
+## budget is another budget's worth over it.
+const MIN_BATCH := 1
 
 ## Side of each instance, in metres. Small enough to be invisible at the near plane.
 const SIZE := 0.0005
@@ -58,6 +77,11 @@ var _round_usec := 0  # when the current round was placed
 var _draw_usec := 0  # the last frame_post_draw
 var _first_cost_usec := 0  # placing to first draw of the current round
 var _base_usec := -1  # cheapest frame with nothing new placed: the frame without the warm-up
+var _dear_usec := 0.0  # dearest per-item cost seen lately; halved by each round that kept to the budget
+var _longest_usec := 0  # dearest round's first frame
+var _longest_items := 0  # and the items it held
+var _over_rounds := 0  # rounds whose first frame passed the budget
+var _frames_total := 0  # frames drawn since start
 
 ## A mesh with more surfaces than this is drawn as one triangle per distinct material and
 ## vertex format, not as itself: a converted map is thousands of meshes, so drawing each
@@ -127,6 +151,10 @@ func start() -> void:
 	position = Vector3(0.0, 0.0, -(near + 0.01))
 	_quad = QuadMesh.new()
 	_quad.size = Vector2(SIZE, SIZE)
+	if growth < 0.0 or (growth > 0.0 and growth < 1.0):
+		DotLog.warn(CHANNEL, "growth %.2f cannot grow a round; use 1 or more, or 0 for no limit" % growth, {"growth": growth})
+	if dear_decay < 0.0 or dear_decay > 1.0:
+		DotLog.warn(CHANNEL, "dear_decay %.2f is outside 0..1; 0 forgets a dear item at once, 1 holds it" % dear_decay, {"dear_decay": dear_decay})
 	var _c := RenderingServer.frame_post_draw.connect(_on_drawn)
 	var first := maxi(first_batch, 1)
 	_cap = first if batch_size <= 0 else mini(first, batch_size)
@@ -285,10 +313,16 @@ func _on_drawn() -> void:
 	var now := Time.get_ticks_usec()
 	if _drawn == 0:
 		_first_cost_usec = now - _round_usec
+		if _first_cost_usec > _longest_usec:
+			_longest_usec = _first_cost_usec
+			_longest_items = _round_placed
+		if budget_msec > 0.0 and _first_cost_usec > int(budget_msec * 1000.0):
+			_over_rounds += 1
 	elif _base_usec < 0 or now - _draw_usec < _base_usec:
 		_base_usec = now - _draw_usec
 	_draw_usec = now
 	_drawn += 1
+	_frames_total += 1
 	if _drawn < frames:
 		return
 	if _next >= _items.size():
@@ -303,15 +337,26 @@ func _on_drawn() -> void:
 
 
 ## Sizes the next budgeted round from the last: its first frame less the cheapest frame seen is
-## what its items cost, and the budget less that frame is the room they get.
+## what its items cost, and the budget less that frame is the room they get. Each item is priced at the
+## dearer of that mean and the dearest seen lately, so one cheap round cannot size the next for a run of compiles.
 func _resize() -> void:
 	if _round_placed <= 0:
 		return
 	var base := maxi(_base_usec, 0)
-	var per_item := maxf(float(_first_cost_usec - base) / float(_round_placed), 1.0)
-	var room := budget_msec * 1000.0 - float(base)
-	var n := int(room / per_item) if room > 0.0 else MIN_BATCH
-	_cap = clampi(n, MIN_BATCH, maxi(_round_placed * 4, MIN_BATCH))
+	# A device whose bare frame already passes the budget still gives the warm-up half of it, or one item a
+	# round would be the whole pace.
+	var room := maxf(budget_msec * 1000.0 - float(base), budget_msec * 500.0)
+	var cost := float(_first_cost_usec - base)
+	var mean := maxf(cost / float(_round_placed), 1.0)
+	if cost > room:
+		_dear_usec = maxf(_dear_usec, mean)
+	else:
+		_dear_usec *= dear_decay
+	var per_item := maxf(mean, _dear_usec)
+	var n := int(room / per_item)
+	if growth > 0.0:
+		n = mini(n, int(float(_round_placed) * growth))
+	_cap = maxi(n, MIN_BATCH)
 	if batch_size > 0:
 		_cap = mini(_cap, batch_size)
 
@@ -322,6 +367,9 @@ func _finish() -> void:
 	_done = true
 	if RenderingServer.frame_post_draw.is_connected(_on_drawn):
 		RenderingServer.frame_post_draw.disconnect(_on_drawn)
+	# A renderer that drew and then stopped (a hidden tab) leaves items to compile in play; headless never drew.
+	if _frames_total > 0 and left() > 0:
+		DotLog.warn(CHANNEL, "warm-up timed out with %d of %d items never drawn; they will compile on first use" % [left(), _items.size()], describe())
 	finished.emit(_placed)
 	queue_free()
 
@@ -329,7 +377,15 @@ func _finish() -> void:
 func _exit_tree() -> void:
 	if RenderingServer.frame_post_draw.is_connected(_on_drawn):
 		RenderingServer.frame_post_draw.disconnect(_on_drawn)
+	# Freed before its last round went up (its camera went away): those items compile on first use instead.
+	if _started and not _done and left() > 0:
+		DotLog.warn(CHANNEL, "warm-up freed with %d of %d items never drawn; they will compile on first use" % [left(), _items.size()], describe())
+
+
+## Items not put up yet.
+func left() -> int:
+	return _items.size() - _next
 
 
 func describe() -> Dictionary:
-	return {"items": _items.size(), "started": _started, "drawn_frames": _drawn, "done": _done, "rounds": _rounds, "placed": _placed, "budget_msec": budget_msec}
+	return {"items": _items.size(), "started": _started, "drawn_frames": _drawn, "done": _done, "rounds": _rounds, "placed": _placed, "left": left(), "budget_msec": budget_msec, "longest_round_ms": snappedf(_longest_usec / 1000.0, 0.1), "longest_round_items": _longest_items, "over_budget_rounds": _over_rounds}

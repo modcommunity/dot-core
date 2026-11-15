@@ -5,7 +5,7 @@ extends Node3D
 ## else a path that never nears a wall passes for the one reason it could not fail.
 
 const SECTIONS := 10
-const CHECKS := 53
+const CHECKS := 59
 
 const WORLD := 1
 const PEOPLE := 2
@@ -508,9 +508,35 @@ func _render_warmup_paced(cam: Camera3D) -> void:
 	paced._first_cost_usec = 900000
 	paced._resize()
 	_check(paced._cap == DotRenderWarmup.MIN_BATCH, "a round far over budget shrinks the next to the floor (%d)" % paced._cap)
+	# 16 cheap items right after that: their mean says 30000 more, but the dear item is remembered, halving per round.
 	paced._first_cost_usec = 10100
 	paced._resize()
-	_check(paced._cap == 64, "a cheap round grows the next at most fourfold (%d)" % paced._cap)
+	_check(paced._cap == 1, "a cheap round right after a dear one keeps the next small (%d)" % paced._cap)
+	paced._resize()
+	paced._resize()
+	_check(paced._cap == 4, "the dear item's weight halves each round that keeps to the budget (%d)" % paced._cap)
+	# dear_decay 1 holds a dear item for good: cheap rounds never grow past one item again.
+	paced.dear_decay = 1.0
+	paced._dear_usec = 55000.0
+	for i in 8:
+		paced._resize()
+	_check(paced._cap == 1 and paced._dear_usec == 55000.0, "dear_decay 1 holds the dear item: rounds stay at one (%d)" % paced._cap)
+	paced.dear_decay = DotRenderWarmup.DEAR_DECAY
+	paced._dear_usec = 0.0
+	paced._resize()
+	_check(paced._cap == 32, "a cheap round grows the next at most by growth, twofold (%d)" % paced._cap)
+	paced.growth = 0.0
+	paced._resize()
+	_check(paced._cap == paced.batch_size, "growth 0 is no limit: batch_size is the only one (%d)" % paced._cap)
+	paced.growth = DotRenderWarmup.GROWTH
+	# Bare frames of 60 ms against a 40 ms budget: the warm-up still gets half the budget, not one item a round.
+	paced._base_usec = 60000
+	paced._round_placed = 1
+	paced._first_cost_usec = 61000
+	paced._resize()
+	_check(paced._cap == 2, "a device slower than the budget still grows its rounds (%d)" % paced._cap)
+	var seen := paced.describe()
+	_check(seen.has("longest_round_ms") and seen.has("left") and int(seen["left"]) == paced.left() and paced.left() > 0, "describe reports the longest round and the items left (%s)" % seen)
 	await paced.finished
 
 
