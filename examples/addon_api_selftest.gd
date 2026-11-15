@@ -4,7 +4,7 @@ extends Node
 ## The sentences are asserted, not only the codes: a check for CODE_VERSION alone passes for a refusal nobody can read.
 
 const SECTIONS := 8
-const CHECKS := 74
+const CHECKS := 77
 
 const SCRATCH := "user://addon_api_selftest"
 
@@ -317,6 +317,7 @@ func _test_floors() -> void:
 	_check(DotAddonApi.pinned_levels(lock_dir + "/addons.lock", lock_dir).is_empty(), "pinned_levels skips a repo it cannot read")
 	_check(DotAddonApi.pinned_levels(lock_dir + "/none.lock", lock_dir).is_empty(), "and an absent lock is empty")
 	DirAccess.remove_absolute(lock_dir + "/addons.lock")
+	_check_pinned_renamed_repo(lock_dir)
 	DirAccess.remove_absolute(lock_dir)
 
 	_floors_from_files()
@@ -387,3 +388,34 @@ func _check(ok: bool, what: String, detail: String = "") -> void:
 ## the level first moved, which is a check of the number rather than of the reading.
 func _core_level() -> int:
 	return int(load("res://addons/dot_core/dot_core_api.gd").get("LEVEL"))
+
+
+## A repo whose name is not its addon's (repo `fc-renamed` holds `arena_renamed`) is read by the addon folder, located through the repo name or its origin URL.
+func _check_pinned_renamed_repo(lock_url: String) -> void:
+	var lock_dir := ProjectSettings.globalize_path(lock_url)
+	var repo := lock_dir + "/fc-renamed"
+	var addon := repo + "/addons/arena_renamed"
+	DirAccess.make_dir_recursive_absolute(addon)
+	var api := FileAccess.open(addon + "/arena_renamed_api.gd", FileAccess.WRITE)
+	api.store_string("extends RefCounted\nconst LEVEL := 7\n")
+	api.close()
+	var out := []
+	var made := OS.execute("git", ["-C", repo, "init", "-q"], out) == 0 \
+		and OS.execute("git", ["-C", repo, "add", "."], out) == 0 \
+		and OS.execute("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x"], out) == 0 \
+		and OS.execute("git", ["-C", repo, "tag", "v1"], out) == 0
+	_check(made, "scratch repo for a renamed addon built")
+	if made:
+		var lf := FileAccess.open(lock_dir + "/addons.lock", FileAccess.WRITE)
+		lf.store_string("fc-renamed\tv1\n")
+		lf.close()
+		var got := DotAddonApi.pinned_levels(lock_dir + "/addons.lock", lock_dir)
+		_check(got == {"arena_renamed": 7}, "pinned_levels names the addon by its folder, not the repo (fc-renamed -> arena_renamed, not fc_renamed)", str(got))
+		OS.execute("git", ["-C", repo, "remote", "add", "origin", "git@example.com:org/fc-origin.git"], out)
+		lf = FileAccess.open(lock_dir + "/addons.lock", FileAccess.WRITE)
+		lf.store_string("fc-origin\tv1\n")
+		lf.close()
+		got = DotAddonApi.pinned_levels(lock_dir + "/addons.lock", lock_dir)
+		_check(got == {"arena_renamed": 7}, "a repo found by its origin URL when no folder carries its name", str(got))
+		DirAccess.remove_absolute(lock_dir + "/addons.lock")
+	OS.execute("rm", ["-rf", repo])

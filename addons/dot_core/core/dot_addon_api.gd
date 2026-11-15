@@ -479,13 +479,13 @@ static func floor_audit(
 	return out
 
 
-## The level each addon has at the version an addons.lock pins (`repo<TAB>ref` lines, as dot-server-deploy writes it), read with
-## `git show ref:addons/<name>/<name>_api.gd` in `<repos_root>/<repo>`. A repo, ref or LEVEL it cannot read is left out, so the audit falls back to the linked build. Empty when the lock is absent. Not for runtime: it runs git.
+## The level each addon has at the version an addons.lock pins (`repo<TAB>ref` lines, as dot-server-deploy writes it). The addon is named by the folder the repo holds at that ref (`addons/<name>/<name>_api.gd`, found with `git ls-tree`), not by the repo's name, which differs when a repo was renamed (repo `fc-weapons` holds `arena_weapons`). The repo is `<repos_root>/<repo>`, else the checkout there whose origin URL ends in `<repo>`. A repo, ref or LEVEL it cannot read is left out, so the audit falls back to the linked build. Empty when the lock is absent. Not for runtime: it runs git.
 static func pinned_levels(lock_path: String, repos_root: String) -> Dictionary:
 	var out := {}
 	if not FileAccess.file_exists(lock_path):
 		return out
 	var re := RegEx.create_from_string("const\\s+LEVEL\\s*:?=\\s*(\\d+)")
+	var api_file := RegEx.create_from_string("^addons/([a-z0-9_]+)/([a-z0-9_]+)_api\\.gd$")
 	for line in FileAccess.get_file_as_string(lock_path).split("\n"):
 		if line.strip_edges().is_empty() or line.begins_with("#"):
 			continue
@@ -494,15 +494,37 @@ static func pinned_levels(lock_path: String, repos_root: String) -> Dictionary:
 			continue
 		var repo := cols[0].strip_edges()
 		var ref := cols[1].strip_edges()
-		var addon := repo.replace("-", "_")
-		var output := []
-		var code := OS.execute("git", ["-C", repos_root.path_join(repo), "show", "%s:addons/%s/%s_api.gd" % [ref, addon, addon]], output, false)
-		if code != 0 or output.is_empty():
+		var dir := _repo_dir(repo, repos_root)
+		if dir.is_empty():
 			continue
-		var hit := re.search(str(output[0]))
-		if hit != null:
-			out[addon] = int(hit.get_string(1))
+		var tree := []
+		if OS.execute("git", ["-C", dir, "ls-tree", "-r", "--name-only", ref, "addons/"], tree, false) != 0 or tree.is_empty():
+			continue
+		for path in str(tree[0]).split("\n"):
+			var named := api_file.search(path)
+			if named == null or named.get_string(1) != named.get_string(2):
+				continue
+			var addon := named.get_string(1)
+			var output := []
+			if OS.execute("git", ["-C", dir, "show", "%s:%s" % [ref, path]], output, false) != 0 or output.is_empty():
+				continue
+			var hit := re.search(str(output[0]))
+			if hit != null:
+				out[addon] = int(hit.get_string(1))
 	return out
+
+
+static func _repo_dir(repo: String, repos_root: String) -> String:
+	var direct := repos_root.path_join(repo)
+	if DirAccess.dir_exists_absolute(direct):
+		return direct
+	for sub in DirAccess.get_directories_at(repos_root):
+		var url := []
+		if OS.execute("git", ["-C", repos_root.path_join(sub), "remote", "get-url", "origin"], url, false) != 0 or url.is_empty():
+			continue
+		if str(url[0]).strip_edges().trim_suffix(".git").get_file() == repo:
+			return repos_root.path_join(sub)
+	return ""
 
 
 ## Every addon a project's own files ask the host's level of, by name:
