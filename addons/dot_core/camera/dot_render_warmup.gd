@@ -509,7 +509,7 @@ func _finish() -> void:
 		RenderingServer.frame_post_draw.disconnect(_on_drawn)
 	# A renderer that drew and then stopped (a hidden tab) leaves items to compile in play; headless never drew.
 	if _frames_total > 0 and left() > 0:
-		DotLog.warn(CHANNEL, "warm-up timed out with %d of %d items never drawn; they will compile on first use" % [left(), _items.size()], describe())
+		DotLog.warn(CHANNEL, "warm-up timed out with items never drawn (left and items in the context); they will compile on first use", describe())
 	finished.emit(_placed)
 	queue_free()
 
