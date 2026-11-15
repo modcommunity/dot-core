@@ -169,17 +169,28 @@ static func item_key(item: Variant, cache: Dictionary = {}) -> String:
 		return "shader:%d;next=%s" % [sm.shader.get_instance_id(), next]
 	if item is Mesh:
 		var mesh := item as Mesh
-		var parts := PackedStringArray([mesh.get_class()])
+		var parts := PackedStringArray([mesh.get_class(), "shapes%d" % (mesh as ArrayMesh).get_blend_shape_count() if mesh is ArrayMesh else 0])
 		for i in mesh.get_surface_count():
 			var mat := mesh.surface_get_material(i)
 			var mat_key := "default" if mat == null else item_key(mat, cache)
 			if mat_key == "":
 				return ""
-			var fmt := (mesh as ArrayMesh).surface_get_format(i) if mesh is ArrayMesh else -1
-			var prim := (mesh as ArrayMesh).surface_get_primitive_type(i) if mesh is ArrayMesh else -1
-			parts.append("%d/%d/%s" % [prim, fmt, mat_key])
+			parts.append("%s/%s" % [_surface_layout(mesh, i), mat_key])
 		return "mesh:" + "#".join(parts)
 	return ""
+
+
+## The vertex layout and primitive of one surface: an [ArrayMesh]'s own format and primitive; any other mesh (a
+## [PrimitiveMesh]) by which vertex arrays it fills, its class fixing the primitive.
+static func _surface_layout(mesh: Mesh, surface: int) -> String:
+	if mesh is ArrayMesh:
+		var am := mesh as ArrayMesh
+		return "%d/%d" % [am.surface_get_primitive_type(surface), am.surface_get_format(surface)]
+	var arrays := mesh.surface_get_arrays(surface)
+	var filled := ""
+	for i in arrays.size():
+		filled += "1" if arrays[i] != null and arrays[i].size() > 0 else "0"
+	return "arrays" + filled
 
 
 static func _material_key(mat: BaseMaterial3D, cache: Dictionary) -> String:

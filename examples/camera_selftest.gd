@@ -5,7 +5,7 @@ extends Node3D
 ## else a path that never nears a wall passes for the one reason it could not fail.
 
 const SECTIONS := 11
-const CHECKS := 59
+const CHECKS := 67
 
 const WORLD := 1
 const PEOPLE := 2
@@ -538,6 +538,39 @@ func _test_render_warmup_dedupe() -> void:
 	again.add_items(plain)
 	_check(again.item_count() == 1, "a second add of the same items adds nothing")
 	again.free()
+	_test_render_warmup_dedupe_meshes()
+
+
+## Meshes that differ in vertex format or blend shapes compile different pipelines and stay; the same layout merges.
+func _test_render_warmup_dedupe_meshes() -> void:
+	var mat := StandardMaterial3D.new()
+	var meshes: Array = []
+	for variant in [0, 2, 3]:
+		var am := ArrayMesh.new()
+		var arrays: Array = []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3.RIGHT, Vector3.UP])
+		if variant == 2:
+			arrays[Mesh.ARRAY_COLOR] = PackedColorArray([Color.RED, Color.RED, Color.RED])
+		var shapes: Array = []
+		if variant == 3:
+			am.add_blend_shape("s")
+			shapes.append(arrays.duplicate())
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, shapes)
+		am.surface_set_material(0, mat)
+		meshes.append(am)
+	var copy := meshes[0].duplicate() as ArrayMesh
+	var warm := DotRenderWarmup.new()
+	warm.add_items(meshes + [copy])
+	_check(warm.item_count() == 3, "plain, vertex colour and blend shape meshes stay apart; a copy merges (%d)" % warm.item_count())
+	warm.free()
+	var prim_a := BoxMesh.new()
+	var prim_b := BoxMesh.new()
+	prim_b.add_uv2 = true
+	var warm_p := DotRenderWarmup.new()
+	warm_p.add_items([prim_a, prim_b])
+	_check(warm_p.item_count() == 2, "primitive meshes filling different arrays stay apart")
+	warm_p.free()
 
 
 ## A budget_msec warm-up starts small and sizes each next round from the measured cost per item.
