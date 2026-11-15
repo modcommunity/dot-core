@@ -480,6 +480,15 @@ func _test_render_warmup() -> void:
 	cut.start()
 	_check(cut.batch_count() == 2 and cut.get_child_count() == 3, "a batch size splits the items across frames (%d up, %d rounds)" % [cut.get_child_count(), cut.batch_count()])
 	await cut.finished
+	await _render_warmup_paced(cam)
+	cam.queue_free()
+	scene.free()
+
+	await _test_render_warmup_many_surfaces()
+
+
+## A budget_msec warm-up starts small and sizes each next round from the measured cost per item.
+func _render_warmup_paced(cam: Camera3D) -> void:
 	var mats: Array = []
 	for i in 40:
 		mats.append(StandardMaterial3D.new())
@@ -503,10 +512,6 @@ func _test_render_warmup() -> void:
 	paced._resize()
 	_check(paced._cap == 64, "a cheap round grows the next at most fourfold (%d)" % paced._cap)
 	await paced.finished
-	cam.queue_free()
-	scene.free()
-
-	await _test_render_warmup_many_surfaces()
 
 
 func _test_render_warmup_many_surfaces() -> void:

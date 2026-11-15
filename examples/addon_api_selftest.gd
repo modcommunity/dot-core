@@ -319,6 +319,16 @@ func _test_floors() -> void:
 	DirAccess.remove_absolute(lock_dir + "/addons.lock")
 	DirAccess.remove_absolute(lock_dir)
 
+	_floors_from_files()
+
+	var named := DotAddonApi.parse("[]", DotAddonApi.FLOOR_FILE)
+	_check(not named.ok and named.error.message.contains(DotAddonApi.FLOOR_FILE), "a floor file that is not a table is named as itself", str(named.error) if not named.ok else "")
+
+	_done()
+
+
+## Floors read from a scratch project's files: guarded() finds the guards, requires.uses.json declares the uses.
+func _floors_from_files() -> void:
 	# guarded() reads the same files derive() does, so a scratch project stands in for a game.
 	var dir := SCRATCH + "/floors"
 	DirAccess.make_dir_recursive_absolute(dir + "/game")
@@ -352,11 +362,6 @@ func _test_floors() -> void:
 	_check(DotAddonApi.floor_audit({"dot_core": by_file.get("dot_core", 1)}, by_file, {}, {}).is_empty(), "so a floor on it is not refused as unused")
 	DirAccess.remove_absolute(udir + "/" + DotAddonApi.USES_FILE)
 	DirAccess.remove_absolute(udir)
-
-	var named := DotAddonApi.parse("[]", DotAddonApi.FLOOR_FILE)
-	_check(not named.ok and named.error.message.contains(DotAddonApi.FLOOR_FILE), "a floor file that is not a table is named as itself", str(named.error) if not named.ok else "")
-
-	_done()
 
 
 func _section(title: String) -> void:
