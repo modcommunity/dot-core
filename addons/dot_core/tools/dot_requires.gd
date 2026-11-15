@@ -1,7 +1,7 @@
 extends SceneTree
 
 ## Writes, or checks, the requirements file a pack carries (see [DotAddonApi]): no args derives from the project's files, `--out F` writes, `--check F` audits.
-## A `requires.floor.json` lowers the addons it names ([method DotAddonApi.apply_floors]); an unsound floor fails; a committed file is whole and unfloored.
+## A `requires.floor.json` lowers the addons it names ([method DotAddonApi.apply_floors]); an unsound floor fails, judged against `--pin NAME=N` (repeatable, lowest wins: the level the live shell pins, from addons.lock) where given, else the linked head; a committed file is whole and unfloored.
 ## Exit 0 ok, 1 incomplete/overstated/unsound, 2 usage or I/O. Import first (an empty class list is refused). Document on stdout, messages on stderr.
 
 
@@ -49,25 +49,11 @@ func _init() -> void:
 		return
 
 	if has_floors:
-		var floors_read := DotAddonApi.parse(FileAccess.get_file_as_string(floor_path), DotAddonApi.FLOOR_FILE)
-		if not floors_read.ok:
-			printerr("dot_requires: %s" % str(floors_read.error))
-			quit(1)
+		var floored: Variant = _floored(derived, floor_path, args)
+		if floored is int:
+			quit(floored)
 			return
-		var floors := floors_read.value as Dictionary
-		var unsound := DotAddonApi.floor_audit(floors, derived, DotAddonApi.guarded())
-		for p in unsound:
-			printerr("dot_requires: %s: %s" % [DotAddonApi.FLOOR_FILE, p])
-		if not unsound.is_empty():
-			quit(1)
-			return
-		var names: Array = floors.keys()
-		names.sort()
-		for addon in names:
-			if int(floors[addon]) < int(derived[addon]):
-				printerr("dot_requires: %s built against level %d, asks for %d (guarded, %s)"
-					% [addon, int(derived[addon]), int(floors[addon]), DotAddonApi.FLOOR_FILE])
-		derived = DotAddonApi.apply_floors(derived, floors)
+		derived = floored
 
 	var text := DotAddonApi.encode(derived)
 
@@ -91,3 +77,41 @@ static func _arg(args: PackedStringArray, flag: String) -> String:
 	if i >= 0 and i + 1 < args.size():
 		return args[i + 1]
 	return ""
+
+
+static func _pins(args: PackedStringArray) -> Dictionary:
+	var out := {}
+	for i in args.size():
+		if args[i] != "--pin":
+			continue
+		var kv := args[i + 1].split("=") if i + 1 < args.size() else PackedStringArray()
+		if kv.size() != 2 or not kv[1].is_valid_int():
+			return {"error": "--pin wants NAME=LEVEL, got '%s'" % (args[i + 1] if i + 1 < args.size() else "")}
+		var addon := kv[0].replace("-", "_")
+		out[addon] = mini(int(out[addon]), int(kv[1])) if out.has(addon) else int(kv[1])
+	return out
+
+
+## [param derived] lowered by the floor file, or the exit code when the file is unreadable (1), a `--pin` is malformed (2) or a floor is unsound (1).
+static func _floored(derived: Dictionary, floor_path: String, args: PackedStringArray) -> Variant:
+	var floors_read := DotAddonApi.parse(FileAccess.get_file_as_string(floor_path), DotAddonApi.FLOOR_FILE)
+	if not floors_read.ok:
+		printerr("dot_requires: %s" % str(floors_read.error))
+		return 1
+	var floors := floors_read.value as Dictionary
+	var pins := _pins(args)
+	if pins.has("error"):
+		printerr("dot_requires: %s" % pins["error"])
+		return 2
+	var unsound := DotAddonApi.floor_audit(floors, derived, DotAddonApi.guarded(), {}, pins)
+	for p in unsound:
+		printerr("dot_requires: %s: %s" % [DotAddonApi.FLOOR_FILE, p])
+	if not unsound.is_empty():
+		return 1
+	var names: Array = floors.keys()
+	names.sort()
+	for addon in names:
+		if int(floors[addon]) < int(derived[addon]):
+			printerr("dot_requires: %s built against level %d, asks for %d (guarded, %s)"
+				% [addon, int(derived[addon]), int(floors[addon]), DotAddonApi.FLOOR_FILE])
+	return DotAddonApi.apply_floors(derived, floors)
