@@ -29,15 +29,20 @@ static func now() -> int:
 static func add(system: StringName, since_usec: int, what: String = "") -> void:
 	if not enabled or since_usec <= 0:
 		return
-	add_usec(system, Time.get_ticks_usec() - since_usec, what)
+	_charge(system, since_usec, Time.get_ticks_usec() - since_usec, what)
 
 
 ## Charges [param usec] already measured by the caller to [param system]; a traced span is taken to end now.
 static func add_usec(system: StringName, usec: int, what: String = "") -> void:
 	if not enabled:
 		return
+	_charge(system, Time.get_ticks_usec() - usec if trace else 0, usec, what)
+
+
+## One stamp per charge: a traced span starts at [param start_usec] exactly, so nested spans stay nested.
+static func _charge(system: StringName, start_usec: int, usec: int, what: String) -> void:
 	if trace:
-		span(system, Time.get_ticks_usec() - usec, usec)
+		span(system, start_usec, usec)
 	var row: PackedInt64Array = _rows.get(system, PackedInt64Array([0, 0, 0]))
 	row[0] += usec
 	row[1] += 1
