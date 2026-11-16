@@ -37,14 +37,24 @@ var overrides: Dictionary = {}
 ## same script twice.
 static var _levels_cache: Dictionary = {}
 
+## Addon folders found present, so a level asked every tick (a game's guard in a players loop) stats the
+## folder once a run, not ~90 us a call. Only a found folder is kept: an addon absent now may arrive with a
+## mounted pack, and a mounted pack is never taken away again.
+static var _installed: Dictionary = {}
+
 
 
 ## Whether an addon is in this build at all, by folder (present in exports too).
 ## A pack asking for an addon a deployment left out is the one requirement no level can meet.
 static func installed(addon: String) -> bool:
+	if _installed.has(addon):
+		return true
 	if not _is_addon_name(addon):
 		return false
-	return DirAccess.dir_exists_absolute("%s/%s" % [ADDONS_ROOT, addon])
+	if not DirAccess.dir_exists_absolute("%s/%s" % [ADDONS_ROOT, addon]):
+		return false
+	_installed[addon] = true
+	return true
 
 
 ## The path of the file an addon's level lives in.

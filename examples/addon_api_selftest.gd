@@ -4,7 +4,7 @@ extends Node
 ## The sentences are asserted, not only the codes: a check for CODE_VERSION alone passes for a refusal nobody can read.
 
 const SECTIONS := 8
-const CHECKS := 77
+const CHECKS := 78
 
 const SCRATCH := "user://addon_api_selftest"
 
@@ -55,6 +55,13 @@ func _test_what_this_build_has() -> void:
 	_check(DotAddonApi.installed("dot_core"), "dot-core is installed")
 	_check(not DotAddonApi.installed("dot_no_such_addon"), "an addon that is not here is not installed")
 	_check(not DotAddonApi.installed("../dot_core"), "and a name that walks out of addons/ is not an addon")
+	_check(DotAddonApi._installed.has("dot_core") and not DotAddonApi._installed.has("dot_no_such_addon"),
+		"a found addon is remembered for the run, a missing one is asked again (a pack may mount it)")
+	var t_level := Time.get_ticks_usec()
+	for _i in 1000:
+		DotAddonApi.build_level("dot_core")
+	var level_us := float(Time.get_ticks_usec() - t_level) / 1000.0
+	print("addon_api: build_level %.2f us a call once cached" % level_us)
 	_check(api.level_of("dot_core") == _core_level(), "dot-core's level is read from its api file (%d)" % api.level_of("dot_core"))
 	_check(api.level_of("dot_no_such_addon") == 0, "an absent addon has level 0")
 	_check(DotAddonApi.display_name("dot_player_controller") == "dot-player-controller", "and it is named the way a person names it")
