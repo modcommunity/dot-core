@@ -68,3 +68,4 @@ A pack says what it needs at its root: `{"format": 1, "addons": {"dot_net": 3}}`
 - 33: DotWeb.fetch_bytes / can_fetch_bytes and DotHttp.web_whole_body_fetch (web downloads held in memory are read whole by the browser, not one chunk per frame).
 - 34: DotAddonApi.pinned_levels and floor_audit's `pinned` argument (a floor is judged against the level of the version the live shell pins, from addons.lock, not the linked head).
 - 35: DotParallel.auto_max / set_auto_max and DotScheduler.auto_thread_max (the automatic worker caps 8 and 4 are settings, 0 = no cap); DotScheduler.thread_count has no upper limit.
+- 36: DotLog.display_channel and CHANNEL_PREFIX: a legacy `dot.`/`dot_`/`dot-` channel prints, ships and is configured as `gs.`/`gs_`/`gs-` (Gamespice); records keep the channel the caller passed; set_channel_level takes either spelling.

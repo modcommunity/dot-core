@@ -85,6 +85,11 @@ static var timestamps: bool = false
 ## dot-core owning an autoload; see [method signals].
 static var _bus: DotLogBus = null
 
+## The platform prefix a channel is shown and configured under. Channels named before the
+## Gamespice rename ([code]dot.x[/code], [code]dot_x.y[/code]) print and match as [code]gs.x[/code], [code]gs_x.y[/code].
+const CHANNEL_PREFIX := "gs"
+const _LEGACY_PREFIX := "dot"
+
 
 
 static func set_level(level: int) -> void:
@@ -97,16 +102,31 @@ static func get_level() -> int:
 
 ## Raise or lower the threshold for one channel only.
 ## DEBUG globally also turns on every physics and RPC trace. [constant Level.OFF] silences a channel.
+## Either spelling of a renamed channel works: [code]dot.bot[/code] and [code]gs.bot[/code] are one channel.
 static func set_channel_level(channel: String, level: int) -> void:
-	_channel_levels[channel] = clampi(level, Level.TRACE, Level.OFF)
+	_channel_levels[display_channel(channel)] = clampi(level, Level.TRACE, Level.OFF)
 
 
 static func clear_channel_level(channel: String) -> void:
-	_channel_levels.erase(channel)
+	_channel_levels.erase(display_channel(channel))
 
 
 static func get_channel_level(channel: String) -> int:
-	return _channel_levels.get(channel, _level)
+	return _channel_levels.get(display_channel(channel), _level)
+
+
+## The channel as consoles, files and configuration see it: the legacy [code]dot[/code] prefix
+## ([code]dot.[/code], [code]dot_[/code], [code]dot-[/code] or the bare word) becomes [constant CHANNEL_PREFIX].
+## A record keeps the channel its caller passed, so code comparing against a [code]CHANNEL[/code] constant is unaffected.
+static func display_channel(channel: String) -> String:
+	if not channel.begins_with(_LEGACY_PREFIX):
+		return channel
+	if channel.length() == _LEGACY_PREFIX.length():
+		return CHANNEL_PREFIX
+	var sep := channel[_LEGACY_PREFIX.length()]
+	if sep == "." or sep == "_" or sep == "-":
+		return CHANNEL_PREFIX + channel.substr(_LEGACY_PREFIX.length())
+	return channel
 
 
 ## Parses a level from a string, for cvars and command-line flags.
@@ -235,7 +255,9 @@ static func result(
 ## True when a record at this level and channel would be emitted.
 ## Guard genuinely expensive message construction with it.
 static func enabled(level: int, channel: String = "") -> bool:
-	var threshold: int = _channel_levels.get(channel, _level) if channel != "" else _level
+	if channel == "" or _channel_levels.is_empty():
+		return level >= _level and _level != Level.OFF
+	var threshold: int = _channel_levels.get(display_channel(channel), _level)
 	return level >= threshold and threshold != Level.OFF
 
 
@@ -293,7 +315,7 @@ static func format_line(record: Dictionary) -> String:
 
 	var channel: String = record.get("channel", "")
 	if channel != "":
-		parts.append("%-8s" % channel)
+		parts.append("%-8s" % display_channel(channel))
 
 	parts.append(str(record.get("message", "")))
 
@@ -327,7 +349,7 @@ static func format_json(record: Dictionary) -> String:
 		# severity cannot do it on a string: "ERROR" < "INFO" < "WARN" alphabetically,
 		# which orders them almost exactly wrong.
 		"severity": record.get("level", Level.INFO),
-		"channel": record.get("channel", ""),
+		"channel": display_channel(str(record.get("channel", ""))),
 		"message": record.get("message", ""),
 		"t": record.get("ticks_ms", 0),
 	}

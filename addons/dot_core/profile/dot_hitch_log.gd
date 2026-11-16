@@ -169,7 +169,7 @@ func _on_removed(_n: Node) -> void:
 func _on_log(rec: Dictionary) -> void:
 	_log_lines += 1
 	if _marks.size() < 6:
-		_marks.append("log %s: %s" % [rec.get("channel", ""), String(rec.get("message", "")).left(48)])
+		_marks.append("log %s: %s" % [DotLog.display_channel(str(rec.get("channel", ""))), String(rec.get("message", "")).left(48)])
 
 
 func _on_physics() -> void:

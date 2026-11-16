@@ -151,7 +151,7 @@ func _format(record: Dictionary) -> String:
 
 	var channel: String = record.get("channel", "")
 	if channel != "":
-		parts.append("%-8s" % channel)
+		parts.append("%-8s" % DotLog.display_channel(channel))
 
 	parts.append(str(record.get("message", "")))
 
