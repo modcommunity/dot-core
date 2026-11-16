@@ -66,9 +66,17 @@ static func _leg_anchor(skeleton: Skeleton3D, foot: int) -> Variant:
 	return [best, skeleton.get_bone_global_rest(best).affine_inverse() * rest]
 
 
-## A sample (without `points`, `blocked`) from [param skeleton]'s pose at [param t]: foot bones
+## Height of the lowest ankle above [param root] with the skeleton in its rest pose: the sole offset.
+func _rest_sole(skeleton: Skeleton3D, root: Vector3) -> float:
+	var low := INF
+	for foot in _feet_bones:
+		low = minf(low, (skeleton.global_transform * skeleton.get_bone_global_rest(foot).origin).y - root.y)
+	return low
+
+
 ## A sample (without `points`, `blocked`) from [param skeleton]'s pose at [param t]: foot bones by
-## name, soles taken from the first frame so a foot's height is above the ground.
+## name, soles taken from the skeleton's rest pose (not the first frame: a capture that starts mid-blend
+## from another clip would read the sole off a moving foot) so a foot's height is above the ground.
 func pose_sample(t: float, skeleton: Skeleton3D, root: Vector3, grounded: bool) -> Dictionary:
 	var sample := {"t": t, "root": root, "ground_y": root.y, "grounded": grounded}
 	if skeleton == null:
@@ -90,7 +98,7 @@ func pose_sample(t: float, skeleton: Skeleton3D, root: Vector3, grounded: bool) 
 		ankles.append(skeleton.global_transform * at.origin)
 	if not ankles.is_empty():
 		if is_nan(_sole):
-			_sole = ankles.map(func(a: Vector3) -> float: return a.y - root.y).min()
+			_sole = _rest_sole(skeleton, root)
 		sample["feet"] = ankles.map(func(a: Vector3) -> Vector3: return a - Vector3(0.0, _sole, 0.0))
 	var rotations: Array = []
 	for i in skeleton.get_bone_count():

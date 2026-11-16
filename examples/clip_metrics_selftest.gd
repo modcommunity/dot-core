@@ -4,7 +4,7 @@ extends Node
 ## godot --headless --path . res://examples/clip_metrics_selftest.tscn
 
 const SECTIONS := 1
-const CHECKS := 2
+const CHECKS := 3
 
 var _failed := 0
 var _checks := 0
@@ -47,6 +47,13 @@ func _ready() -> void:
 		# Hips drop 0.1: a leg-driven ankle falls 0.1 whatever the control bone does.
 		_check(absf(drop - 0.1) < 0.001, "%s foot: ankle follows the leg (fell %.3f)" % ["control" if control else "child", drop])
 		sk.queue_free()
+	# The sole is the rest pose's, so a first sample taken mid-blend (hips already 0.1 low) still reads the drop.
+	var mid := _build(false)
+	add_child(mid)
+	mid.set_bone_pose_position(1, Vector3(0, 0.8, 0))
+	var first: Dictionary = DotClipMetrics.new().pose_sample(0.0, mid, Vector3.ZERO, true)
+	_check(absf((first["feet"][0] as Vector3).y + 0.1) < 0.001, "sole comes from the rest pose, not a mid-blend first frame (foot y %.3f)" % (first["feet"][0] as Vector3).y)
+	mid.queue_free()
 	_sections += 1
 	print("clip_metrics_selftest: %d sections, %d checks, %d failed" % [_sections, _checks, _failed])
 	if _sections != SECTIONS or _checks != CHECKS:
