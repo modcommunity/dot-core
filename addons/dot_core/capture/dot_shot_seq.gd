@@ -11,8 +11,8 @@ var _next_msec := 0
 
 ## Reads the environment; true when a sequence was asked for.
 func enabled() -> bool:
-	_frames = clampi(OS.get_environment("DOT_SHOT_FRAMES").to_int(), 0, 48)
-	var secs := clampf(OS.get_environment("DOT_SHOT_SECS").to_float() if OS.get_environment("DOT_SHOT_SECS") != "" else 2.0, 0.2, 6.0)
+	_frames = clampi(DotConfig.gs_env("DOT_SHOT_FRAMES").to_int(), 0, 48)
+	var secs := clampf(DotConfig.gs_env("DOT_SHOT_SECS").to_float() if DotConfig.gs_env("DOT_SHOT_SECS") != "" else 2.0, 0.2, 6.0)
 	_interval_msec = int(secs * 1000.0 / maxf(_frames, 1))
 	return _frames > 0
 

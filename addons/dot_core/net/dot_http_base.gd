@@ -80,7 +80,7 @@ static func _setting(arg: String, env: String, project: String, fallback: Varian
 			return ""
 		if a.begins_with("--" + arg + "="):
 			return a.substr(arg.length() + 3)
-	var e := OS.get_environment(env)
+	var e := DotConfig.gs_env(env)
 	if e != "":
 		return e
 	return ProjectSettings.get_setting(project, fallback)

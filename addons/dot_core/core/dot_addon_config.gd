@@ -629,6 +629,8 @@ static func _apply_layer(
 		var raw: Variant = null
 		var from := ""
 		var env_key := _env_name(addon_name, path)
+		if not ambiguous.has(env_key):
+			env_key = DotConfig.gs_env_name(env_key)
 		if OS.has_environment(env_key) and not ambiguous.has(env_key):
 			raw = OS.get_environment(env_key)
 			from = "env " + env_key

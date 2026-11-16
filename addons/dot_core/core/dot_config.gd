@@ -11,6 +11,10 @@ const CHANNEL := "config"
 ## Keys seen that match no exported property; kept so boot reports every typo at once.
 var unknown_keys: PackedStringArray = PackedStringArray()
 
+## Gamespice spelling of a [code]DOT_[/code] environment variable: [code]GS_X[/code] is read first, [code]DOT_X[/code] still works.
+const ENV_PREFIX := "GS_"
+const _LEGACY_ENV_PREFIX := "DOT_"
+
 
 
 ## Prefix for [method apply_env], e.g. [code]"DOT_SERVER_"[/code].
@@ -316,6 +320,21 @@ func save_json_file(path: String) -> DotResult:
 
 
 
+## The variable to read for [param name]: for a [code]DOT_X[/code] name, [code]GS_X[/code] when that is set, else
+## [param name] unchanged. Every other name is returned as given.
+static func gs_env_name(name: String) -> String:
+	if name.begins_with(_LEGACY_ENV_PREFIX):
+		var gs := ENV_PREFIX + name.substr(_LEGACY_ENV_PREFIX.length())
+		if OS.has_environment(gs):
+			return gs
+	return name
+
+
+## [method OS.get_environment] through [method gs_env_name]: [code]GS_X[/code] wins over [code]DOT_X[/code].
+static func gs_env(name: String) -> String:
+	return OS.get_environment(gs_env_name(name))
+
+
 ## Applies environment variables matching [method env_prefix].
 ## Sensitive keys are refused ([method sensitive_keys]). No-op on web, which has no environment.
 func apply_env(prefix_override: String = "") -> PackedStringArray:
@@ -325,9 +344,9 @@ func apply_env(prefix_override: String = "") -> PackedStringArray:
 
 	var d := {}
 	for key in config_keys():
-		var env_name := prefix + key.to_upper()
-		if OS.has_environment(env_name):
-			d[key] = OS.get_environment(env_name)
+		var name := gs_env_name(prefix + key.to_upper())
+		if OS.has_environment(name):
+			d[key] = OS.get_environment(name)
 
 	if d.is_empty():
 		return PackedStringArray()

@@ -76,7 +76,7 @@ static func run(
 
 	if not _env_read:
 		_env_read = true
-		if OS.get_environment("DOT_PARALLEL_VERIFY") == "1":
+		if DotConfig.gs_env("DOT_PARALLEL_VERIFY") == "1":
 			verify = true
 
 	var n := resolve_workers(workers)

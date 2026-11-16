@@ -69,3 +69,4 @@ A pack says what it needs at its root: `{"format": 1, "addons": {"dot_net": 3}}`
 - 34: DotAddonApi.pinned_levels and floor_audit's `pinned` argument (a floor is judged against the level of the version the live shell pins, from addons.lock, not the linked head).
 - 35: DotParallel.auto_max / set_auto_max and DotScheduler.auto_thread_max (the automatic worker caps 8 and 4 are settings, 0 = no cap); DotScheduler.thread_count has no upper limit.
 - 36: DotLog.display_channel and CHANNEL_PREFIX: a legacy `dot.`/`dot_`/`dot-` channel prints, ships and is configured as `gs.`/`gs_`/`gs-` (Gamespice); records keep the channel the caller passed; set_channel_level takes either spelling.
+- 37: DotConfig.gs_env_name / gs_env: for a `DOT_X` environment variable, `GS_X` (Gamespice) is read first and `DOT_X` still works; DotConfig.apply_env, DotAddonConfig, DotHttpBase and the DOT_SHOT_*/DOT_PARALLEL_VERIFY reads use it.
