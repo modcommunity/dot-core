@@ -1,6 +1,6 @@
 class_name DotShotSeq
 extends RefCounted
-## Frame sequence after a screenshot, so a reviewer can see motion: DOT_SHOT_FRAMES frames over DOT_SHOT_SECS seconds into "<still>.seq/NNN.png". Off unless DOT_SHOT_FRAMES is set.
+## Frame sequence after a screenshot, so a reviewer can see motion: GS_SHOT_FRAMES frames over GS_SHOT_SECS seconds into "<still>.seq/NNN.png". Off unless GS_SHOT_FRAMES is set.
 
 var _frames := 0
 var _interval_msec := 0

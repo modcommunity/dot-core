@@ -61,7 +61,7 @@ const MAX_POOL := 16
 const DEFAULT_CHUNK_SIZE := 1048576
 const MAX_CHUNK_SIZE := 16777216
 
-## Chunk size from [code]--dot-http-chunk=N[/code], env [code]DOT_HTTP_CHUNK_SIZE[/code],
+## Chunk size from [code]--dot-http-chunk=N[/code], env [code]GS_HTTP_CHUNK_SIZE[/code],
 ## project setting [code]dot/http/download_chunk_size[/code], then 1 MiB; clamped to 16 MiB.
 static func default_chunk_size() -> int:
 	var v: Variant = _setting("dot-http-chunk", "DOT_HTTP_CHUNK_SIZE", "dot/http/download_chunk_size", DEFAULT_CHUNK_SIZE)
@@ -69,7 +69,7 @@ static func default_chunk_size() -> int:
 
 
 ## Threaded reads, opt-in: [code]--dot-http-threads[/code] / [code]=1[/code], env
-## [code]DOT_HTTP_THREADS[/code], or project setting [code]dot/http/use_threads[/code].
+## [code]GS_HTTP_THREADS[/code], or project setting [code]dot/http/use_threads[/code].
 static func default_use_threads() -> bool:
 	return str(_setting("dot-http-threads", "DOT_HTTP_THREADS", "dot/http/use_threads", false)) in ["true", "1", "yes", "on", ""]
 

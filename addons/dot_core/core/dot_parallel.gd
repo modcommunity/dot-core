@@ -20,7 +20,7 @@ const _SAMPLES_KEPT := 256
 
 ## Test switch: run every task twice (reverse order, then as configured) and [method DotLog.error]
 ## on any slot that differs, catching order dependence or impure tasks. Only for a task given a
-## [code]compare[/code]. [code]DOT_PARALLEL_VERIFY=1[/code] turns it on at the first [method run].
+## [code]compare[/code]. [code]GS_PARALLEL_VERIFY=1[/code] turns it on at the first [method run].
 static var verify: bool = false
 
 ## Slots [member verify] found different, since the process started. What a suite asserts on,
