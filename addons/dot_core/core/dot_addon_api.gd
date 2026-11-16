@@ -479,7 +479,7 @@ static func floor_audit(
 	return out
 
 
-## The level each addon has at the version an addons.lock pins (`repo<TAB>ref` lines, as dot-server-deploy writes it). The addon is named by the folder the repo holds at that ref (`addons/<name>/<name>_api.gd`, found with `git ls-tree`), not by the repo's name, which differs when a repo was renamed (repo `fc-weapons` holds `arena_weapons`). The repo is `<repos_root>/<repo>`, else the checkout there whose origin URL ends in `<repo>`. A repo, ref or LEVEL it cannot read is left out, so the audit falls back to the linked build. Empty when the lock is absent. Not for runtime: it runs git.
+## The level each addon has at the version an addons.lock pins (`repo<TAB>ref` lines, as dot-server-deploy writes it). The addon is named by the folder the repo holds at that ref (`addons/<name>/<name>_api.gd`, found with `git ls-tree`), not by the repo's name, which differs when a repo was renamed (repo `fc-weapons` holds `fc_weapons`, and its tags up to v1.4.51 the legacy `arena_weapons`, so the name follows the ref). The repo is `<repos_root>/<repo>`, else the checkout there whose origin URL ends in `<repo>`. A repo, ref or LEVEL it cannot read is left out, so the audit falls back to the linked build. Empty when the lock is absent. Not for runtime: it runs git.
 static func pinned_levels(lock_path: String, repos_root: String) -> Dictionary:
 	var out := {}
 	if not FileAccess.file_exists(lock_path):

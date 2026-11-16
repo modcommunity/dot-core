@@ -23,7 +23,7 @@ A pack says what it needs at its root: `{"format": 1, "addons": {"dot_net": 3}}`
 
 ## `requires.uses.json`: an addon used through config only
 
-`derive` finds addons from class names and `res://addons/<x>/` paths in scripts and scenes. A game that reaches an addon only through config (a pack list in `cfg/`) shows no such name, so its `requires.json` would omit it and `floor_audit` would refuse a floor on it as unused. The game commits `requires.uses.json` at its root, `{"format": 1, "uses": ["arena_weapons"]}`; `derive` counts each installed name as used (API level 24). Names that are not installed are skipped like any other.
+`derive` finds addons from class names and `res://addons/<x>/` paths in scripts and scenes. A game that reaches an addon only through config (a pack list in `cfg/`) shows no such name, so its `requires.json` would omit it and `floor_audit` would refuse a floor on it as unused. The game commits `requires.uses.json` at its root, `{"format": 1, "uses": ["fc_weapons"]}`; `derive` counts each installed name as used (API level 24). Names that are not installed are skipped like any other.
 
 ## `requires.floor.json`: asking less of an addon the game guards
 
