@@ -327,7 +327,25 @@ static func gs_env_name(name: String) -> String:
 		var gs := ENV_PREFIX + name.substr(_LEGACY_ENV_PREFIX.length())
 		if OS.has_environment(gs):
 			return gs
+		if OS.has_environment(name):
+			_warn_deprecated_env(name, gs)
 	return name
+
+
+## Names already warned about, so each deprecated variable logs one line per process.
+static var _warned_env: Dictionary = {}
+
+
+static func _warn_deprecated_env(old: String, gs: String) -> void:
+	if _warned_env.has(old):
+		return
+	_warned_env[old] = true
+	DotLog.warn("gs.config", "environment variable %s is deprecated, set %s instead (the old name still works)" % [old, gs])
+
+
+## How many deprecated DOT_ variables have been warned about so far (selftest hook).
+static func deprecated_env_warned() -> int:
+	return _warned_env.size()
 
 
 ## [method OS.get_environment] through [method gs_env_name]: [code]GS_X[/code] wins over [code]DOT_X[/code].

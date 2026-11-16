@@ -4,7 +4,7 @@ extends Node
 ## [code]GS_X[/code] is read first and the old name keeps working ([method DotConfig.gs_env_name]).
 
 const SECTIONS := 3
-const CHECKS := 12
+const CHECKS := 15
 const ADDON := "dot_gs_env_selftest"
 
 var _passed := 0
@@ -33,9 +33,14 @@ func _test_names() -> void:
 	_check(DotConfig.gs_env_name("DOT_GS_SELFTEST_A") == "DOT_GS_SELFTEST_A", "with neither set the old name is kept")
 	OS.set_environment("DOT_GS_SELFTEST_A", "old")
 	_check(DotConfig.gs_env("DOT_GS_SELFTEST_A") == "old", "the old name alone is read")
+	var warned := DotConfig.deprecated_env_warned()
+	_check(warned >= 1, "reading the old name alone logs a deprecation warning")
+	DotConfig.gs_env("DOT_GS_SELFTEST_A")
+	_check(DotConfig.deprecated_env_warned() == warned, "and only once per name")
 	OS.set_environment("GS_GS_SELFTEST_A", "new")
 	_check(DotConfig.gs_env_name("DOT_GS_SELFTEST_A") == "GS_GS_SELFTEST_A", "the GS name is chosen when set")
 	_check(DotConfig.gs_env("DOT_GS_SELFTEST_A") == "new", "and its value wins over the old one")
+	_check(DotConfig.deprecated_env_warned() == warned, "setting the GS name logs nothing further")
 	OS.set_environment("SELFTEST_PLAIN", "p")
 	_check(DotConfig.gs_env_name("SELFTEST_PLAIN") == "SELFTEST_PLAIN" and DotConfig.gs_env("SELFTEST_PLAIN") == "p", "a name without DOT_ is untouched")
 	_unset(["DOT_GS_SELFTEST_A", "GS_GS_SELFTEST_A", "SELFTEST_PLAIN"])
