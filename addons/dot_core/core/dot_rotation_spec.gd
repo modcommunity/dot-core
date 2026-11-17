@@ -84,7 +84,7 @@ static func layer(specs: Array) -> Dictionary:
 	return out
 
 
-## Whether a file key (`game-g2gfast`, `gamemann/game-g2gfast`) names [param game].
+## Whether a file key (`game-airdrift`, `gamemann/game-airdrift`) names [param game].
 ## Id or name half, as content.yml matches games.
 ## A former id of the game ([method DotAddonConfig.register_former_game]) matches too.
 static func key_matches(key: String, game: String) -> bool:
