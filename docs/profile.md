@@ -6,4 +6,4 @@ Each hitch carries the frame's split (physics, script, render, wait) and the del
 
 Wall time comes from `Time.get_ticks_usec()` at the engine's per-iteration signals, not from the smoothed `delta`. Check: `examples/hitch_log_selftest`. A game's capture tool: game-fatal-contact `tools/hitch_match`.
 
-Fixes it found in Arena: weapon views prewarmed under the load gate (`ZeeViewModel.prewarm`), muzzle flashes (`DotMuzzleFlash.prewarm`) and `DotFxManager.warm` for the first explosion.
+Fixes it found in Fatal Contact: weapon views prewarmed under the load gate (`ZeeViewModel.prewarm`), muzzle flashes (`DotMuzzleFlash.prewarm`) and `DotFxManager.warm` for the first explosion.

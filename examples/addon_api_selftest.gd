@@ -397,13 +397,13 @@ func _core_level() -> int:
 	return int(load("res://addons/dot_core/dot_core_api.gd").get("LEVEL"))
 
 
-## A repo whose name is not its addon's (repo `fc-renamed` holds `arena_renamed`) is read by the addon folder, located through the repo name or its origin URL.
+## A repo whose name is not its addon's (repo `fc-renamed` holds `legacy_renamed`) is read by the addon folder, located through the repo name or its origin URL.
 func _check_pinned_renamed_repo(lock_url: String) -> void:
 	var lock_dir := ProjectSettings.globalize_path(lock_url)
 	var repo := lock_dir + "/fc-renamed"
-	var addon := repo + "/addons/arena_renamed"
+	var addon := repo + "/addons/legacy_renamed"
 	DirAccess.make_dir_recursive_absolute(addon)
-	var api := FileAccess.open(addon + "/arena_renamed_api.gd", FileAccess.WRITE)
+	var api := FileAccess.open(addon + "/legacy_renamed_api.gd", FileAccess.WRITE)
 	api.store_string("extends RefCounted\nconst LEVEL := 7\n")
 	api.close()
 	var out := []
@@ -417,12 +417,12 @@ func _check_pinned_renamed_repo(lock_url: String) -> void:
 		lf.store_string("fc-renamed\tv1\n")
 		lf.close()
 		var got := DotAddonApi.pinned_levels(lock_dir + "/addons.lock", lock_dir)
-		_check(got == {"arena_renamed": 7}, "pinned_levels names the addon by its folder, not the repo (fc-renamed -> arena_renamed, not fc_renamed)", str(got))
+		_check(got == {"legacy_renamed": 7}, "pinned_levels names the addon by its folder, not the repo (fc-renamed -> legacy_renamed, not fc_renamed)", str(got))
 		OS.execute("git", ["-C", repo, "remote", "add", "origin", "git@example.com:org/fc-origin.git"], out)
 		lf = FileAccess.open(lock_dir + "/addons.lock", FileAccess.WRITE)
 		lf.store_string("fc-origin\tv1\n")
 		lf.close()
 		got = DotAddonApi.pinned_levels(lock_dir + "/addons.lock", lock_dir)
-		_check(got == {"arena_renamed": 7}, "a repo found by its origin URL when no folder carries its name", str(got))
+		_check(got == {"legacy_renamed": 7}, "a repo found by its origin URL when no folder carries its name", str(got))
 		DirAccess.remove_absolute(lock_dir + "/addons.lock")
 	OS.execute("rm", ["-rf", repo])
