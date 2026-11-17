@@ -3,7 +3,7 @@ extends Node
 ## Exercises [DotLoadGate] and [DotLoadingCover]: holds, predicates, the timeout warning, freezing and settling under the cover, closing again, the camera requirement and warm-up, a host claiming the cover, the older shells' root signal.
 
 const SECTIONS := 12
-const CHECKS := 105
+const CHECKS := 106
 
 var _passed := 0
 var _failed := 0
@@ -561,6 +561,9 @@ func _test_cover_title_tip() -> void:
 	_check(plain.describe()["title"] == "" and plain.describe()["tip"] == "", "and describe() reports no title or tip")
 	plain.set_tip("late")
 	_check(plain.find_children("*", "Label", true, false).size() == 2, "a tip set after build adds its label")
+	plain.set_status("A long status line that has to wrap inside the screen rather than run edge to edge. ".repeat(6))
+	var status_label := plain.find_children("*", "Label", true, false)[-1] as Label
+	_check(status_label.autowrap_mode != TextServer.AUTOWRAP_OFF, "a long status wraps instead of running edge to edge")
 	remove_child(plain)
 	plain.free()
 

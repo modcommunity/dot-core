@@ -7,6 +7,9 @@ extends CanvasLayer
 
 ## Above every game's own UI layers.
 const LAYER := 120
+## Clear space kept round the text, and the widest the column grows: a long status wraps in a column this wide, centred.
+const MARGIN := 24
+const MAX_WIDTH := 640.0
 
 @export var background := Color(0.06, 0.07, 0.09, 1.0)
 @export var text_color := Color(0.85, 0.88, 0.92, 1.0)
@@ -53,29 +56,43 @@ func _build() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_root)
 
+	# A margin of at least MARGIN around the column, so a long status wraps inside the screen instead of running edge to edge.
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, MARGIN)
+	_root.add_child(margin)
+	_root.resized.connect(_fit_margin.bind(margin))
+	_fit_margin.call_deferred(margin)
 	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_CENTER)
-	box.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	box.grow_vertical = Control.GROW_DIRECTION_BOTH
-	box.custom_minimum_size = Vector2(360, 0)
+	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	box.add_theme_constant_override("separation", 12)
-	_root.add_child(box)
+	margin.add_child(box)
 	_box = box
 	_sync_text(0)
 	_sync_text(1)
 
 	_status = Label.new()
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.add_theme_color_override("font_color", text_color)
 	_status.add_theme_font_size_override("font_size", 20)
 	box.add_child(_status)
 
 	_bar = ProgressBar.new()
-	_bar.custom_minimum_size = Vector2(360, 8)
+	_bar.custom_minimum_size = Vector2(0, 8)
 	_bar.show_percentage = false
 	_bar.max_value = 100.0
 	_bar.indeterminate = true
 	box.add_child(_bar)
+
+
+## Side margins: MARGIN, or more on a wide screen so the column is never wider than MAX_WIDTH.
+func _fit_margin(margin: MarginContainer) -> void:
+	var side := maxi(MARGIN, int((_root.size.x - MAX_WIDTH) * 0.5))
+	margin.add_theme_constant_override("margin_left", side)
+	margin.add_theme_constant_override("margin_right", side)
 
 
 ## Creates, updates or hides the title (0) or tip (1) label; nothing is built while empty.
