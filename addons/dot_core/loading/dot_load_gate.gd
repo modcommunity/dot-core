@@ -280,7 +280,8 @@ func _close() -> void:
 			_freeze_all()
 		return
 	var was_open := _state == State.OPEN
-	_cancel_warmup()
+	if not warm_survives_close:
+		_cancel_warmup()
 	_state = State.CLOSED
 	_closed_msec = Time.get_ticks_msec()
 	if not is_inside_tree():
@@ -500,8 +501,11 @@ func _begin_warming() -> void:
 	if not warm_up_on_open or cam == null:
 		_open()
 		return
+	if _warmup != null and is_instance_valid(_warmup):
+		return  # kept running through a close: it opens the gate when it ends
 	var warm := DotRenderWarmup.new()
 	warm.name = "LoadGateWarmup"
+	warm.follow_camera = warm_survives_close
 	warm.timeout_sec = warm_timeout_sec
 	warm.budget_msec = warm_budget_msec
 	# The camera is often under a frozen body, and a disabled warm-up never times out.
@@ -509,7 +513,10 @@ func _begin_warming() -> void:
 	warm.add_items(collect_warm_items())
 	_warmup = warm
 	var _c := warm.finished.connect(_on_own_warm_finished.bind(warm, Time.get_ticks_msec()))
-	cam.add_child(warm)
+	if warm_survives_close:
+		add_child(warm)  # top level and following the viewport camera: outlives a camera or a close
+	else:
+		cam.add_child(warm)
 	warm.start()
 
 
@@ -524,7 +531,7 @@ func _on_own_warm_finished(count: int, warm: Node, started: int) -> void:
 
 func _cancel_warmup() -> void:
 	if _warmup != null and is_instance_valid(_warmup):
-		_warmup.queue_free()
+		_warmup.cancel()
 	_warmup = null
 
 

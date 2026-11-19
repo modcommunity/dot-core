@@ -77,6 +77,10 @@ signal progress_changed(fraction: float, text: String)
 ## the browser's shader cache so a return visit compiled again. Off warms only the handed-in items.
 @export var warm_game_root: bool = true
 
+## A warm-up the gate closes under keeps drawing, and a later open reuses it, so every item is drawn once even when a
+## hold lands mid-warm-up (cancelling logged "warm-up freed with 12 of 13 items never drawn"). Off cancels it on close.
+@export var warm_survives_close: bool = true
+
 ## The warm-up's own cap. A headless run never draws, so this is what ends it there.
 @export var warm_timeout_sec: float = 5.0
 

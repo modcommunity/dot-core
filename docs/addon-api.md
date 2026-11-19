@@ -70,3 +70,4 @@ A pack says what it needs at its root: `{"format": 1, "addons": {"dot_net": 3}}`
 - 35: DotParallel.auto_max / set_auto_max and DotScheduler.auto_thread_max (the automatic worker caps 8 and 4 are settings, 0 = no cap); DotScheduler.thread_count has no upper limit.
 - 36: DotLog.display_channel and CHANNEL_PREFIX: a legacy `dot.`/`dot_`/`dot-` channel prints, ships and is configured as `gs.`/`gs_`/`gs-` (Gamespice); records keep the channel the caller passed; set_channel_level takes either spelling.
 - 37: DotConfig.gs_env_name / gs_env: for a `DOT_X` environment variable, `GS_X` (Gamespice) is read first and `DOT_X` still works; DotConfig.apply_env, DotAddonConfig, DotHttpBase and the DOT_SHOT_*/GS_PARALLEL_VERIFY reads use it.
+- 38: DotRenderWarmup.follow_camera / cancel() / is_running(); DotLoadGate.warm_survives_close (a hold mid-warm-up no longer cancels the warm-up, so every item is drawn).

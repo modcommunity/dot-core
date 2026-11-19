@@ -2,8 +2,8 @@ extends Node
 
 ## Exercises [DotLoadGate] and [DotLoadingCover]: holds, predicates, the timeout warning, freezing and settling under the cover, closing again, the camera requirement and warm-up, a host claiming the cover, the older shells' root signal.
 
-const SECTIONS := 12
-const CHECKS := 106
+const SECTIONS := 13
+const CHECKS := 113
 
 var _passed := 0
 var _failed := 0
@@ -50,6 +50,7 @@ func _run() -> void:
 	await _test_settle_by_position()
 	await _test_reclose()
 	await _test_camera_and_own_warmup()
+	await _test_close_mid_warmup()
 	await _test_hosted()
 	await _test_finding_and_old_shells()
 	await _test_cover_title_tip()
@@ -412,6 +413,39 @@ func _test_reclose() -> void:
 	gate.hold(&"a")
 	_check(log.count("closed") == 2, "holding twice closes once")
 	_drop(gate)
+
+
+## A hold landing while the gate warms: the warm-up keeps going (no "never drawn" warning), and a gate that opted out
+## cancels it silently.
+func _test_close_mid_warmup() -> void:
+	_section("closing again mid-warm-up keeps the warm-up running")
+	for survives in [true, false]:
+		var gate := _make(false)
+		gate.warm_survives_close = survives
+		gate.warm_timeout_sec = 3.0
+		gate.warm_up([StandardMaterial3D.new()])
+		var cam := Camera3D.new()
+		gate.get_parent().add_child(cam)
+		cam.make_current()
+		_records.clear()
+		var t0 := Time.get_ticks_msec()
+		while not gate.has_node("LoadGateWarmup") and not cam.has_node("LoadGateWarmup") and not gate.is_open() and Time.get_ticks_msec() - t0 < 5000:
+			await get_tree().process_frame
+		var warm: Node = gate.get_node_or_null("LoadGateWarmup") if survives else cam.get_node_or_null("LoadGateWarmup")
+		_check(warm != null, "the warm-up is up (survives=%s)" % survives)
+		gate.hold("late")
+		await get_tree().process_frame
+		var alive := warm != null and is_instance_valid(warm) and not warm.is_queued_for_deletion()
+		_check(alive == survives, "a hold mid-warm-up %s it" % ("keeps" if survives else "cancels"), str(alive))
+		var freed: Array = _records.filter(func(r: Dictionary) -> bool: return str(r["message"]).begins_with("warm-up freed"))
+		_check(freed.is_empty(), "and no 'freed with items never drawn' warning", str(freed.size()))
+		gate.release("late")
+		t0 = Time.get_ticks_msec()
+		while not gate.is_open() and Time.get_ticks_msec() - t0 < 15000:
+			await get_tree().process_frame
+		if survives:
+			_check(gate.is_open(), "the gate opens again after the kept warm-up", str(gate.describe()))
+		_drop(gate)
 
 
 func _test_camera_and_own_warmup() -> void:

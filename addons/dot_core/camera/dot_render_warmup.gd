@@ -57,6 +57,11 @@ signal finished(count: int)
 ## cheap bulk fills the large later ones. Equal estimates keep their queue order. Off (the default: software-GL A/B 2026-11-15 showed no gain beyond noise) draws in queue order.
 @export var dear_first: bool = false
 
+## Stays on whichever camera the viewport has: the warm-up is a top-level node that copies that camera's pose every
+## frame, so it may be parented to anything (a gate outliving a camera swap) and never goes with a camera that is freed.
+## Off (default) places the items in front of the parent [Camera3D], or where this node is.
+@export var follow_camera: bool = false
+
 ## Default [member first_batch].
 const FIRST_BATCH := 1
 ## Default [member growth].
@@ -95,6 +100,7 @@ var _longest_usec := 0  # dearest round's first frame
 var _longest_items := 0  # and the items it held
 var _over_rounds := 0  # rounds whose first frame passed the budget
 var _frames_total := 0  # frames drawn since start
+var _offset := 0.06  # metres past the camera
 
 ## A mesh with more surfaces than this is drawn as one triangle per distinct material and
 ## vertex format, not as itself: a converted map is thousands of meshes, so drawing each
@@ -273,10 +279,15 @@ func start() -> void:
 	_start_msec = Time.get_ticks_msec()
 	if dear_first:
 		_order_by_cost()
-	var cam := get_parent() as Camera3D
+	var cam := _camera()
 	var near := cam.near if cam != null else 0.05
-	# Just past the near plane, centred: inside every frustum, behind nothing.
-	position = Vector3(0.0, 0.0, -(near + 0.01))
+	_offset = near + 0.01
+	if follow_camera:
+		top_level = true
+		_follow()
+	else:
+		# Just past the near plane, centred: inside every frustum, behind nothing.
+		position = Vector3(0.0, 0.0, -_offset)
 	_quad = QuadMesh.new()
 	_quad.size = Vector2(SIZE, SIZE)
 	if growth < 0.0 or (growth > 0.0 and growth < 1.0):
@@ -289,6 +300,36 @@ func start() -> void:
 	_draw_usec = Time.get_ticks_usec()
 	_place_batch()
 	DotLog.debug(CHANNEL, "warming %d materials and meshes" % _items.size(), {"items": _items.size(), "batch": batch_size, "budget_msec": budget_msec})
+
+
+func _camera() -> Camera3D:
+	if follow_camera:
+		return get_viewport().get_camera_3d() if is_inside_tree() else null
+	return get_parent() as Camera3D
+
+
+## Puts this node just past the near plane of the viewport's camera (follow_camera only; no camera: stays put).
+func _follow() -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam != null:
+		global_transform = cam.global_transform.translated_local(Vector3(0.0, 0.0, -_offset))
+
+
+## Stops without drawing the rest and without the "freed with items never drawn" warning: the caller chose it.
+## [signal finished] does not fire.
+func cancel() -> void:
+	_done = true
+	if RenderingServer.frame_post_draw.is_connected(_on_drawn):
+		RenderingServer.frame_post_draw.disconnect(_on_drawn)
+	if is_inside_tree():
+		queue_free()
+	else:
+		free()
+
+
+## True from [method start] until it finishes or is cancelled.
+func is_running() -> bool:
+	return _started and not _done
 
 
 ## Sorts the queue by [method item_cost], dearest first, equal costs in queue order.
@@ -441,6 +482,8 @@ static func _first_triangle(arrays: Array) -> Array:
 
 
 func _process(_delta: float) -> void:
+	if follow_camera and _started and not _done:
+		_follow()
 	# Never drawn (headless, a hidden window): give up rather than hold a cover up.
 	if _started and not _done and Time.get_ticks_msec() - _start_msec > int(timeout_sec * 1000.0):
 		_finish()

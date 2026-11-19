@@ -4,8 +4,8 @@ extends Node3D
 ## Every "never inside" check is armed: the same path is first flown with no probe and must put the camera inside geometry on many frames,
 ## else a path that never nears a wall passes for the one reason it could not fail.
 
-const SECTIONS := 12
-const CHECKS := 72
+const SECTIONS := 13
+const CHECKS := 76
 
 const WORLD := 1
 const PEOPLE := 2
@@ -488,6 +488,40 @@ func _test_render_warmup() -> void:
 
 	_test_render_warmup_order()
 	await _test_render_warmup_many_surfaces()
+	await _test_render_warmup_follow_cancel()
+
+
+## follow_camera keeps the warm-up on the viewport's camera wherever it is parented; cancel() stops it with no warning.
+func _test_render_warmup_follow_cancel() -> void:
+	_section("DotRenderWarmup follows the viewport camera and cancels silently")
+	var cam := Camera3D.new()
+	add_child(cam)
+	cam.make_current()
+	cam.global_position = Vector3(5, 1, 2)
+	var host := Node.new()
+	add_child(host)
+	var warm := DotRenderWarmup.new()
+	warm.follow_camera = true
+	warm.timeout_sec = 5.0
+	host.add_child(warm)
+	warm.add_items([StandardMaterial3D.new()])
+	warm.start()
+	_check(warm.top_level and warm.global_position.distance_to(cam.global_position) < 0.2, "under a plain node it sits at the camera")
+	cam.global_position = Vector3(-3, 0, 9)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(warm.global_position.distance_to(cam.global_position) < 0.2, "and moves with the camera")
+	var seen: Array = []
+	var sink := func(rec: Dictionary) -> void: seen.append(rec)
+	DotLog.add_sink(sink)
+	_check(warm.is_running(), "it is running")
+	warm.cancel()
+	await get_tree().process_frame
+	DotLog.remove_sink(sink)
+	var warned := seen.filter(func(r: Dictionary) -> bool: return int(r["level"]) >= DotLog.Level.WARN)
+	_check(not is_instance_valid(warm) and warned.is_empty(), "cancel() frees it with no warning")
+	host.queue_free()
+	cam.queue_free()
 
 
 ## The dear compiles are drawn first, equal costs keep their queue order, and off keeps the queue as given.
