@@ -5,7 +5,7 @@ extends Node3D
 ## else a path that never nears a wall passes for the one reason it could not fail.
 
 const SECTIONS := 13
-const CHECKS := 76
+const CHECKS := 77
 
 const WORLD := 1
 const PEOPLE := 2
@@ -521,6 +521,10 @@ func _test_render_warmup_follow_cancel() -> void:
 	var warned := seen.filter(func(r: Dictionary) -> bool: return int(r["level"]) >= DotLog.Level.WARN)
 	_check(not is_instance_valid(warm) and warned.is_empty(), "cancel() frees it with no warning")
 	host.queue_free()
+	var loose := DotRenderWarmup.new()
+	loose.cancel()
+	await get_tree().process_frame
+	_check(not is_instance_valid(loose), "cancel() out of the tree frees it a frame later")
 	cam.queue_free()
 
 

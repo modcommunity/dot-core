@@ -42,3 +42,7 @@ A ranged body written straight to the destination replaced the partial with its 
 ## No JavaScript evaluation
 
 The game origin's CSP is `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:`, so `JavaScriptBridge.eval` throws `EvalError` and returns null, which reads like an empty page. Add a named function to `web/dot_web.js` (on `window.dotWeb`) and call it from `DotWeb` through `get_interface`; pass structured data as a JSON string, since only primitives and objects cross the bridge, and park a Promise's result on a property to poll. dot-ci's `check-no-js-eval.py` enforces it.
+
+## A bare `free()` does not parse in a release template
+
+A script that calls `free()` on itself with no base parses in the editor and fails in a release (web) export: `Parse Error: Function "free()" not found in base self`, and every script that preloads it fails with "Failed to compile depended scripts". A node also cannot free itself inside its own method: the call holds a lock ("Object is locked and can't be freed"). Free another object through a typed base (`(probe as Node).free()`), and free yourself with `queue_free()` in a tree or `call_deferred(&"free")` out of one (`DotRenderWarmup.cancel`).

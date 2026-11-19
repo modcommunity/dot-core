@@ -324,7 +324,10 @@ func cancel() -> void:
 	if is_inside_tree():
 		queue_free()
 	else:
-		free()
+		# Not a bare free(): a release (web) template has no free() in self's
+		# method table, so the whole script fails to parse there, and a node
+		# cannot free itself inside its own call anyway ("object is locked").
+		call_deferred(&"free")
 
 
 ## True from [method start] until it finishes or is cancelled.
