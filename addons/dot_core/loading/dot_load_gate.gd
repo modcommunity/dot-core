@@ -55,6 +55,8 @@ func _ready() -> void:
 	if require_camera and not _holds.has(REASON_CAMERA) and not _requires.has(REASON_CAMERA):
 		require(REASON_CAMERA, _has_camera)
 	_freeze_all()
+	if _state == State.CLOSED:
+		_mute_audio()
 	if _state == State.CLOSED and _host == null:
 		_show_own_cover()
 	DotLog.debug(CHANNEL, "closed until the game is ready", {"hosted": _host != null})
@@ -71,6 +73,31 @@ func _exit_tree() -> void:
 	_settling = false
 	_restore_all()
 	_release_input()
+	_unmute_audio()
+
+
+## True while this gate holds the Master bus muted.
+func is_audio_muted() -> bool:
+	return _audio_muted
+
+
+func _mute_audio() -> void:
+	if _audio_muted or not mute_audio or not is_inside_tree():
+		return
+	_audio_muted = true
+	if _mute_holders == 0:
+		_mute_prior = AudioServer.is_bus_mute(0)
+		AudioServer.set_bus_mute(0, true)
+	_mute_holders += 1
+
+
+func _unmute_audio() -> void:
+	if not _audio_muted:
+		return
+	_audio_muted = false
+	_mute_holders -= 1
+	if _mute_holders == 0:
+		AudioServer.set_bus_mute(0, _mute_prior)
 
 
 func _find_host() -> Object:
@@ -287,6 +314,7 @@ func _close() -> void:
 	if not is_inside_tree():
 		return
 	_freeze_all()
+	_mute_audio()
 	if not is_hosted():
 		_show_own_cover()
 	if was_open:
@@ -540,6 +568,7 @@ func _open() -> void:
 	_settling = false
 	_restore_all()
 	_release_input()
+	_unmute_audio()
 	_hide_own_cover()
 	_hide_placed_cover()
 	_progress_text = ""

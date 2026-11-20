@@ -91,6 +91,9 @@ signal progress_changed(fraction: float, text: String)
 ## Seconds a host has, after [signal ready_to_show], to call [method host_finished].
 @export var host_wait_sec: float = 10.0
 
+## Mute the Master bus while the gate is closed (loading, a map change, settling, warming) and put it back when it opens, so no footstep, ambience, weapon or monster sound leaks from a world that is not shown yet. Only a mute this gate set is undone; a player-muted Master stays muted.
+@export var mute_audio: bool = true
+
 ## Register as [constant SERVICE]. Off for a gate that must not replace another's entry.
 @export var register_service: bool = true
 
@@ -140,3 +143,7 @@ var _settle_ran := 0
 ## instance id -> {"ref", "input", "unhandled", "key", "shortcut", "enabled"}: what settling
 ## turned off, restored when the gate opens.
 var _input_held: Dictionary = {}
+var _audio_muted := false
+# Gates holding the Master mute (several in one process), and the mute state before the first one.
+static var _mute_holders: int = 0
+static var _mute_prior: bool = false

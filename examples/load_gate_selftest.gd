@@ -2,8 +2,8 @@ extends Node
 
 ## Exercises [DotLoadGate] and [DotLoadingCover]: holds, predicates, the timeout warning, freezing and settling under the cover, closing again, the camera requirement and warm-up, a host claiming the cover, the older shells' root signal.
 
-const SECTIONS := 13
-const CHECKS := 113
+const SECTIONS := 14
+const CHECKS := 121
 
 var _passed := 0
 var _failed := 0
@@ -42,6 +42,7 @@ func _run() -> void:
 	_line("dot-core load gate self-test")
 	_line("")
 
+	await _test_audio_mute()  # first: gates left over from other sections hold the mute
 	await _test_hold_release()
 	await _test_predicates()
 	await _test_timeout()
@@ -644,6 +645,45 @@ func _test_slice_msec() -> void:
 	gate.cover_slice_msec = 30
 	_check(gate.slice_msec(8) == 30, "a closed gate widens to the exported budget")
 	_check(gate.slice_msec(50) == 50, "a base above the wide budget is kept")
+
+
+func _test_audio_mute() -> void:
+	_section("master bus muted while closed")
+	_check(not AudioServer.is_bus_mute(0), "master starts unmuted")
+	var gate := _make()
+	await _frames(1)
+	_check(AudioServer.is_bus_mute(0) and gate.is_audio_muted(), "muted while the gate is closed (initial)")
+	gate.hold(&"map", "x")
+	gate.release(&"map")
+	await _frames(60)
+	_check(gate.is_open() and not AudioServer.is_bus_mute(0), "unmuted once open")
+	gate.hold(&"map", "change")
+	_check(AudioServer.is_bus_mute(0), "a map change mutes again")
+	gate.release(&"map")
+	await _frames(60)
+	_check(not AudioServer.is_bus_mute(0), "and restores after it")
+	gate.hold(&"map", "x")
+	_drop(gate)
+	_check(not AudioServer.is_bus_mute(0), "leaving the tree while closed restores")
+	AudioServer.set_bus_mute(0, true)
+	var g2 := _make()
+	await _frames(1)
+	g2.hold(&"a", "a")
+	g2.release(&"a")
+	await _frames(60)
+	_check(AudioServer.is_bus_mute(0), "a player-muted master stays muted after open")
+	AudioServer.set_bus_mute(0, false)
+	_drop(g2)
+	var root3 := Node.new()
+	add_child(root3)
+	var g3 := DotLoadGate.new()
+	g3.register_service = false
+	g3.mute_audio = false
+	root3.add_child(g3)
+	await _frames(1)
+	g3.hold(&"z", "z")
+	_check(not AudioServer.is_bus_mute(0), "mute_audio off leaves the bus alone")
+	_drop(g3)
 
 
 func _section(title: String) -> void:
