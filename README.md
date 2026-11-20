@@ -1,4 +1,4 @@
-[![dot-core - GameSpice addon](docs/banner.png)](https://moddingcommunity.com/a/207-dot-core)
+[![Core - GameSpice addon](docs/banner.png)](https://moddingcommunity.com/a/207-dot-core)
 
 The shared foundation of the [dot-*](https://github.com/gamespice-platform) family for Godot 4.7+. It holds the small pieces every other addon needs: results and errors, logging, configuration, platform checks, paths, hashing, an HTTP client, a transport layer, reproducible randomness and a loading gate. It is the layer under [dot-server](https://github.com/gamespice-platform/server), [dot-auth](https://github.com/gamespice-platform/auth) and [dot-cloud](https://github.com/gamespice-platform/cloud).
 
