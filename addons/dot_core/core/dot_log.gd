@@ -82,7 +82,7 @@ static var timestamps: bool = false
 
 ## Emitted for every record that passes the level filter, after the sinks run.
 ## Wired through a hidden singleton node so that UI can `connect` to it without
-## dot-core owning an autoload; see [method signals].
+## GameSpice Core owning an autoload; see [method signals].
 static var _bus: DotLogBus = null
 
 ## The platform prefix a channel is shown and configured under. Channels named before the

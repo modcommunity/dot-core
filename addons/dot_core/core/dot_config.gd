@@ -2,7 +2,7 @@
 class_name DotConfig
 extends Resource
 
-## Base class for every dot-* configuration object, with layered overrides.
+## Base class for every gs-* configuration object, with layered overrides.
 ## Layers, later wins: exported defaults < file < environment < command line.
 ## Subclasses declare [code]@export[/code] vars; discovery is reflective, no registration.
 

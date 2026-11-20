@@ -3,7 +3,7 @@ class_name DotAddonApi
 extends RefCounted
 
 ## Which addon API a build has, and whether a pack that needs one can run on it.
-## A pack compiles against the HOST's addons, so a newer-than-host pack fails to parse mid-load; this asks first and says "needs dot-net API level 3; this server has 2".
+## A pack compiles against the HOST's addons, so a newer-than-host pack fails to parse mid-load; this asks first and says "needs GameSpice Net API level 3; this server has 2".
 ## Levels live in each addon's [code]<addon>_api.gd[/code] (LEVEL bumped on add, OLDEST raised on remove); a checkout's plugin.cfg version is no honest number.
 
 # No log channel: every answer here is a DotResult its caller logs with the context this
@@ -62,7 +62,7 @@ static func api_script_path(addon: String) -> String:
 	return "%s/%s/%s_api.gd" % [ADDONS_ROOT, addon, addon]
 
 
-## What a person calls the addon: the repository name, `dot-net` for `dot_net`.
+## What a person calls the addon: the repository name, `gs-net` for `dot_net`.
 static func display_name(addon: String) -> String:
 	return addon.replace("_", "-")
 

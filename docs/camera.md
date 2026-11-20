@@ -1,6 +1,6 @@
 # Cameras that stay out of the level
 
-`camera/` holds what every third-person, chase, death and spectator camera in the family uses to stay out of walls and out of people. It is in dot-core because the cameras that need it live in games and in addons that cannot depend on each other: dot-player-controller's orbit rig, dot-spectate's chase and death cameras (as a transform), and games such as the delivery game whose chase camera follows a vehicle and links no controller at all.
+`camera/` holds what every third-person, chase, death and spectator camera in the family uses to stay out of walls and out of people. It is in GameSpice Core because the cameras that need it live in games and in addons that cannot depend on each other: GameSpice Player Controller's orbit rig, GameSpice Spectate's chase and death cameras (as a transform), and games such as the delivery game whose chase camera follows a vehicle and links no controller at all.
 
 ## Why not SpringArm3D
 
@@ -47,8 +47,8 @@ A renderer compiles a material's shader the first time something using it is dra
 - **It draws in rounds**: `batch_size` (1000) items per round, each up `frames` frames. One round of a big map's 18,000 draws was a single 2.4 s frame on a fast GPU, long enough on a slow one for the OS to call the window not responding; rounds keep each frame near 130 ms. 0 restores one round.
 - **A budget bounds the frame, not a count**: with `budget_msec` above 0 the first round is `first_batch` items (1) and each next one is sized from the measured cost: the dearer of the last round's mean per item and the dearest item seen lately (multiplied by `dear_decay`, 0.5, in every round that kept to the budget; 1 holds it for good, so rounds stay one item while compiles are left), grown at most `growth` times the last (2; 0 = no limit). Cost is bimodal (a compiled pipeline is ~0.05 ms, a first compile tens to hundreds), so a count chosen from cheap rounds landed on compiles: the web shell's 50 ms budget gave a 4.2 s frame with the old first round of 16 and fourfold growth. One item dearer than the budget still takes its frame. `describe()` reports `longest_round_ms`, `longest_round_items`, `over_budget_rounds` and `left`; a warm-up freed, or timed out after drawing, with items left warns with the count.
 
-The client shell (dot-server-deploy) runs it under its loading screen; `examples/camera_selftest` covers collection, placement and the timeout.
+The client shell (GameSpice Server Deploy) runs it under its loading screen; `examples/camera_selftest` covers collection, placement and the timeout.
 
 ## Drawing a held model at its own lens: DotViewLens
 
-A first-person model is drawn at its own vertical field of view (`hands_fov`) under whatever lens the camera has: `DotViewLens.apply(model, camera, hands_fov)` scales X and Y by the ratio of the two lenses and pulls the model toward the eye, never more than `MAX_PULL_IN`, so its apparent size at the reference lens is kept. `vertical_from_horizontal_4_3` turns a game's field-of-view setting (horizontal on a 4:3 frame) into the vertical one. zee-dot-weapons' `ZeeViewModel` and dot-props' `DotToolView` both call it.
+A first-person model is drawn at its own vertical field of view (`hands_fov`) under whatever lens the camera has: `DotViewLens.apply(model, camera, hands_fov)` scales X and Y by the ratio of the two lenses and pulls the model toward the eye, never more than `MAX_PULL_IN`, so its apparent size at the reference lens is kept. `vertical_from_horizontal_4_3` turns a game's field-of-view setting (horizontal on a 4:3 frame) into the vertical one. zee-dot-weapons' `ZeeViewModel` and GameSpice Props' `DotToolView` both call it.

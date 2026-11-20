@@ -1,7 +1,7 @@
 @tool
 extends EditorPlugin
 
-## Editor entry point for dot-core. The addon is autoload-free (static utilities, [Resource]s and [Node]s you place yourself),
+## Editor entry point for GameSpice Core. The addon is autoload-free (static utilities, [Resource]s and [Node]s you place yourself),
 ## so the plugin only registers inspector custom types: enabling or disabling it never changes runtime behaviour.
 
 const _ICON := "res://addons/dot_core/icon_placeholder.svg"

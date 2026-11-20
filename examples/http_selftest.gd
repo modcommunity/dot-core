@@ -136,7 +136,7 @@ func _test_plain_download() -> void:
 func _test_resume_joins() -> void:
 	_section("a resumed download")
 
-	# The shape dot-cloud produces: an interrupted transfer left a prefix on
+	# The shape GameSpice Cloud produces: an interrupted transfer left a prefix on
 	# disk and its length is the offset asked for.
 	var dest := _scratch("resume.bin")
 	var have := 40

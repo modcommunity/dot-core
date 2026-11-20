@@ -39,7 +39,7 @@ extends DotTransport
 @export_group("Buffers")
 
 ## Per-peer inbound buffer, as a power-of-two exponent (19 = 512 KiB); it bounds the largest message and the bytes received but not yet polled.
-## A client polls once a frame and must hold a worst-case snapshot (255 fragments, about 300 KB); a server holds one per client and dot-server lowers it ([code]ws_inbound_buffer_exp[/code]).
+## A client polls once a frame and must hold a worst-case snapshot (255 fragments, about 300 KB); a server holds one per client and GameSpice Server lowers it ([code]ws_inbound_buffer_exp[/code]).
 @export_range(10, 24, 1) var inbound_buffer_exp: int = 19
 
 ## Per-peer outbound buffer, as a power-of-two exponent (19 = 512 KiB).

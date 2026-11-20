@@ -2,7 +2,7 @@ class_name DotContentEntry
 extends RefCounted
 
 ## One thing a mounted content pack provides: a map, a weapon, a prop. Built by [DotContentIndex.add_pack];
-## read the typed fields and [method path], never join a mount prefix by hand (it is dot-cloud's detail).
+## read the typed fields and [method path], never join a mount prefix by hand (it is GameSpice Cloud's detail).
 
 var kind: StringName = &""
 var id: String = ""

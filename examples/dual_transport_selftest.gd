@@ -548,7 +548,7 @@ func _test_enet_server_bandwidth() -> void:
 	_check(sent > 100 and got >= sent * 9 / 10, "and the server receives its packets (%d of %d)" % [got, sent])
 	# The packet throttle (DotTransportENet.packet_throttle_deceleration): set on both ends as
 	# they connect, so a late acknowledgement never makes either drop its own unreliable
-	# packets. What it costs without is measured in dot-net's relay_demo, section 4.
+	# packets. What it costs without is measured in GameSpice Net's relay_demo, section 4.
 	var client_side := client.get_peer(1)
 	var server_side: ENetPacketPeer = null
 	for p in server.host.get_peers():

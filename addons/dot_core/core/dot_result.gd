@@ -1,7 +1,7 @@
 class_name DotResult
 extends RefCounted
 
-## The return type of every fallible operation in the dot-* family. Not null (loses the
+## The return type of every fallible operation in the gs-* family. Not null (loses the
 ## reason) or an Array pair (loses types); reading [member value] on a failure pushes an error.
 ## [code]if not res.ok: DotLog.warn("store", res.error); return[/code]
 

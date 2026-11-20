@@ -2,7 +2,7 @@
 class_name DotRandomConfig
 extends DotConfig
 
-## Where a session's randomness comes from, layered like every configuration here. dot-ui
+## Where a session's randomness comes from, layered like every configuration here. GameSpice UI
 ## builds a settings panel from any [DotConfig], so nothing here knows a [Control].
 
 ## The master seed; zero means "pick one at boot and announce it". Not a secret: a seed is

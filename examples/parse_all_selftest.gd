@@ -12,7 +12,7 @@ const FILES := {
 	"bad_ident.gd": "extends Node\nfunc f() -> void:\n\tUndeclaredThing.go()\n",
 	"dep_on_bad.gd": "extends Node\nconst B = preload(\"user://parse_all_selftest/bad_syntax.gd\")\n",
 	"ok_plain.gd": "extends Node\nfunc f() -> int:\n\treturn 2\n",
-	# A script that declares, or inherits, a non-static reload() (dot-vote's sources do):
+	# A script that declares, or inherits, a non-static reload() (GameSpice Vote's sources do):
 	# an untyped script.reload() in the tool reached this method and called it bad.
 	"own_reload.gd": "extends RefCounted\nfunc reload() -> int:\n\treturn 0\n",
 	"inherits_reload.gd": "extends \"user://parse_all_selftest/own_reload.gd\"\n",

@@ -1,13 +1,13 @@
 class_name DotAdminIdentity
 extends RefCounted
 
-## Admin-only identity gate for an api with `identity(token)` and `permit(actor, flag)` hooks (dot-workbench, dot-radio), duck-typed so dot-auth and dot-console stay optional.
+## Admin-only identity gate for an api with `identity(token)` and `permit(actor, flag)` hooks (GameSpice Workbench, GameSpice Radio), duck-typed so GameSpice Auth and GameSpice Console stay optional.
 
 const ACTOR_PREFIX := "id:"
 
 ## Log channel for refusals and admissions.
 var channel := "admin"
-## Callable(token) -> identity or null; the host backs it with dot-auth. An identity is an Object (DotAuthIdentity) or a Dictionary with `uid`.
+## Callable(token) -> identity or null; the host backs it with GameSpice Auth. An identity is an Object (DotAuthIdentity) or a Dictionary with `uid`.
 var resolver: Callable = Callable()
 ## Uids allowed in. Deny by default: with no uid and no group listed, nobody is admitted.
 var admin_uids := PackedStringArray()

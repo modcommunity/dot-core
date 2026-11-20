@@ -359,7 +359,7 @@ static func write_json(
 	return write_text(path, text, atomic)
 
 
-## Writes bytes encrypted with a passphrase (dot-auth's token store).
+## Writes bytes encrypted with a passphrase (GameSpice Auth's token store).
 ## On web the key sits in the same origin: tamper-evidence, not confidentiality.
 static func write_encrypted(
 	path: String,

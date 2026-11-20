@@ -2,7 +2,7 @@
 class_name DotNodeRef
 extends Resource
 
-## A configurable, inspector-editable description of "which node", so no dot-* component
+## A configurable, inspector-editable description of "which node", so no gs-* component
 ## hardcodes a scene path. Resolution is cached per context node; call [method invalidate]
 ## if the tree changes. [code]var res := players_root.resolve(self)[/code]
 

@@ -41,7 +41,7 @@ const ENET_DEFAULT_THROTTLE_DECELERATION := 2
 
 ## How far ENet's packet throttle falls on each late acknowledgement, out of 32; 0 (default here) means it never falls.
 ## ENet's throttle drops unreliable packets at the SENDER and reads one slow frame as congestion: on a steady path a reliable burst took it to 0 and a client got 2-10% of snapshots at 0% loss.
-## Nothing here wants it (state is superseded, dot-net budgets bytes); [constant ENET_DEFAULT_THROTTLE_DECELERATION] restores ENet's.
+## Nothing here wants it (state is superseded, GameSpice Net budgets bytes); [constant ENET_DEFAULT_THROTTLE_DECELERATION] restores ENet's.
 @export_range(0, 32, 1) var packet_throttle_deceleration: int = 0
 
 ## See [member packet_throttle_deceleration]. ENet's defaults.

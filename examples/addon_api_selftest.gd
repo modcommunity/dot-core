@@ -183,7 +183,7 @@ func _test_a_mounted_pack() -> void:
 func _test_deriving_and_auditing() -> void:
 	_section("what a game uses, and whether its own file says so")
 
-	# dot-core's own project has nothing outside addons/ and examples/, so there is
+	# GameSpice Core's own project has nothing outside addons/ and examples/, so there is
 	# nothing of an addon's in use; the consumers' suites are where derive meets a game.
 	var derived := DotAddonApi.derive()
 	_check(derived.is_empty(), "this project, with its examples skipped, uses no addon (%s)" % str(derived))
@@ -391,7 +391,7 @@ func _check(ok: bool, what: String, detail: String = "") -> void:
 		print("  FAIL  %s%s" % [what, "" if detail == "" else "  -- " + detail])
 
 
-## dot-core's level as its api file says, read directly. A literal here failed the day
+## GameSpice Core's level as its api file says, read directly. A literal here failed the day
 ## the level first moved, which is a check of the number rather than of the reading.
 func _core_level() -> int:
 	return int(load("res://addons/dot_core/dot_core_api.gd").get("LEVEL"))

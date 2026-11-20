@@ -213,7 +213,7 @@ func _test_indexed_purity() -> void:
 	_check(is_equal_approx(s.next_unit(), forward), "next() is at() at the counter")
 	_check(s.counter() == 6, "and then moves it")
 
-	# The dot-2d lesson: a receiving peer adopts an index rather than allocating one.
+	# The GameSpice 2D lesson: a receiving peer adopts an index rather than allocating one.
 	var mirror := DotRandomStream.new()
 	mirror.adopt(s.state())
 	_check(

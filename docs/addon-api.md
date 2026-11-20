@@ -1,6 +1,6 @@
 # Which addon API a build has: `DotAddonApi`
 
-**A delivered pack's scripts compile against the HOST's addons**, so a pack written against a newer addon than the client shell or server has does not fail with a sentence: it fails to parse mid-load, with an identifier that "is not declared in the current scope". `DotAddonApi` turns that into "This game needs dot-net API level 3 or newer; this server has level 2.", asked before a single script in the pack is loaded (dot-cloud asks between download and mount; dot-server-deploy's installer asks before switching versions).
+**A delivered pack's scripts compile against the HOST's addons**, so a pack written against a newer addon than the client shell or server has does not fail with a sentence: it fails to parse mid-load, with an identifier that "is not declared in the current scope". `DotAddonApi` turns that into "This game needs GameSpice Net API level 3 or newer; this server has level 2.", asked before a single script in the pack is loaded (GameSpice Cloud asks between download and mount; GameSpice Server Deploy's installer asks before switching versions).
 
 ## A level, not the release version
 
@@ -8,7 +8,7 @@ The tag's semver is honest only in a release: dot-ci stamps it into `plugin.cfg`
 
 ## The rule, for every addon
 
-- `addons/<addon>/<addon>_api.gd` holds `const LEVEL` and `const OLDEST`, with **no `class_name`**, so sixty addons do not add sixty globals. dot-core's is `dot_core_api.gd`.
+- `addons/<addon>/<addon>_api.gd` holds `const LEVEL` and `const OLDEST`, with **no `class_name`**, so sixty addons do not add sixty globals. GameSpice Core's is `dot_core_api.gd`.
 - **Bump `LEVEL` when you add anything a game could call**, and write what the level added in the file's comment.
 - **Raise `OLDEST` to the new `LEVEL` when you remove or change something a game could have called**: every pack built before that no longer compiles.
 - An addon with no api file is at level 1, the level everything was at when the scheme began.
@@ -54,14 +54,14 @@ A pack says what it needs at its root: `{"format": 1, "addons": {"dot_net": 3}}`
 - 19: DotAddonConfig.tier_dirs and apply_overrides (public; DotMapConfig no longer calls the private ones).
 - 20: DotHttp max_bytes on get_bytes, request and download_to_file (a per-call body_size_limit).
 - 21: cfg directory names are singular (cfg/addon/, cfg/game/, cfg/server/addon/, cfg/server/game/, user/addon/); the plural names are read through DotCfgLegacy until 2026-12-31, the singular file winning whole.
-- 22: the profile classes (DotProfileSet, DotProfile, DotProfileRuntime, tools/profile_check.gd) moved to the dot-profile addon, class names unchanged: a project that used them now needs dot-profile (same class names, so OLDEST stays 1). New here for it: DotYaml.emit, DotAddonConfig.set_nested, is_finite_value and check_field (the schema check save_user uses). DotAddonConfig.set_user_tier no longer touches DotProfileSet; that set reads the same flag.
+- 22: the profile classes (DotProfileSet, DotProfile, DotProfileRuntime, tools/profile_check.gd) moved to the GameSpice Profile addon, class names unchanged: a project that used them now needs GameSpice Profile (same class names, so OLDEST stays 1). New here for it: DotYaml.emit, DotAddonConfig.set_nested, is_finite_value and check_field (the schema check save_user uses). DotAddonConfig.set_user_tier no longer touches DotProfileSet; that set reads the same flag.
 - 23: DotCollisionSweep (drawn floor and walls against the physics world, and collision nothing is drawn at).
 - 24: DotAddonApi.USES_FILE and declared_uses: derive() counts addons a project names in requires.uses.json (use through config only), so a floor on them is not refused as "does not use".
 - 25: camera/: DotViewLens (the first-person model lens maths: vertical_from_horizontal_4_3, lens_scale, apply).
 - 26: profile/: DotFrameCost (systems report their per-frame cost: now, add, add_usec, take, reset); DotHitchLog.frame_measured, top_systems and a hitch's `systems`.
 - 27: DotLoadGate.cover_slice_msec and slice_msec(base_ms): a wider per-frame budget for work held under the cover.
 - 28: DotWeb.sync_failures, flush_filesystem (a failed IndexedDB save is counted, logged and retried) and has_new_sync_failures.
-- 29: core/DotAdminIdentity (the admin-only identity gate hoisted from dot-workbench: resolver, admin_uids, admin_groups, flags, fallback_permit; authenticate and permit are the hooks).
+- 29: core/DotAdminIdentity (the admin-only identity gate hoisted from GameSpice Workbench: resolver, admin_uids, admin_groups, flags, fallback_permit; authenticate and permit are the hooks).
 - 30: profile/: DotFrameCost.trace, span, take_events, add_query and take_queries (nested spans and physics queries per system); DotSpaceQuery (cast_motion, rest_info, ray, shape, point, collide_shape, move_and_collide, body_test_motion: counted and timed while DotFrameCost is enabled); a DotHitchLog frame record's `queries`, `events` and `usec`.
 - 31: DotAddonConfig.register_former_game, game_names and former_games (a renamed game's old `cfg/game/<old>/` tiers and rotation keys still apply).
 - 32: capture/DotShotGate.wait_lifted (a screenshot tool awaits the load cover lifting, with a timeout, instead of a fixed number of seconds).

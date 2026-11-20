@@ -154,7 +154,7 @@ static func has_webrtc() -> bool:
 
 
 ## Whether raw [HTTPClient] works.
-## False on web, where only [HTTPRequest] does (through [code]fetch()[/code]); dot-* uses [HTTPRequest] unconditionally.
+## False on web, where only [HTTPRequest] does (through [code]fetch()[/code]); gs-* uses [HTTPRequest] unconditionally.
 static func has_raw_http_client() -> bool:
 	return not is_web()
 
@@ -172,7 +172,7 @@ static func can_mount_packs() -> bool:
 
 
 ## Whether a mounted resource pack can be removed again. Always false.
-## Godot has no [code]unload_resource_pack[/code]; dot-cloud namespaces content by path prefix instead (docs/mounting.md).
+## Godot has no [code]unload_resource_pack[/code]; GameSpice Cloud namespaces content by path prefix instead (docs/mounting.md).
 static func can_unmount_packs() -> bool:
 	return false
 

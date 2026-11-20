@@ -1,7 +1,7 @@
 class_name DotSemVer
 extends RefCounted
 
-## Semantic version parsing and comparison, for dot-cloud, dot-server and dot-auth refusals. Lexical comparison
+## Semantic version parsing and comparison, for GameSpice Cloud, GameSpice Server and GameSpice Auth refusals. Lexical comparison
 ## makes [code]"0.10.0" < "0.9.0"[/code], which lets in a client that should have been refused.
 
 var major: int = 0

@@ -7,10 +7,10 @@ extends Node
 const SECTIONS := 4
 const CHECKS := 19
 const PORT := 47393
-## dot-net's DotNetPacket.MAX_FRAGMENTS and DEFAULT_MTU less its 8-byte fragment header.
+## GameSpice Net's DotNetPacket.MAX_FRAGMENTS and DEFAULT_MTU less its 8-byte fragment header.
 const SNAPSHOT_FRAGMENTS := 255
 const FRAGMENT_BYTES := 1192
-## dot-server's SCOREBOARD_MAX_BYTES.
+## GameSpice Server's SCOREBOARD_MAX_BYTES.
 const SCOREBOARD_BYTES := 16384
 
 var _passed := 0

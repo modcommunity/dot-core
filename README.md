@@ -1,6 +1,6 @@
 [![Core - GameSpice addon](docs/banner.png)](https://moddingcommunity.com/a/24-gs-core)
 
-The shared foundation of the [dot-*](https://github.com/gamespice-platform) family for Godot 4.7+. It holds the small pieces every other addon needs: results and errors, logging, configuration, platform checks, paths, hashing, an HTTP client, a transport layer, reproducible randomness and a loading gate. It is the layer under [dot-server](https://github.com/gamespice-platform/server), [dot-auth](https://github.com/gamespice-platform/auth) and [dot-cloud](https://github.com/gamespice-platform/cloud).
+The shared foundation of the [GameSpice](https://github.com/gamespice-platform) family for Godot 4.7+. It holds the small pieces every other addon needs: results and errors, logging, configuration, platform checks, paths, hashing, an HTTP client, a transport layer, reproducible randomness and a loading gate. It is the layer under [GameSpice Server](https://github.com/gamespice-platform/server), [GameSpice Auth](https://github.com/gamespice-platform/auth) and [GameSpice Cloud](https://github.com/gamespice-platform/cloud).
 
 It targets desktop (Windows, macOS, Linux), mobile (Android, iOS) and the web from one codebase. Browser limits are handled in the code, not hidden.
 
@@ -10,7 +10,7 @@ It targets desktop (Windows, macOS, Linux), mobile (Android, iOS) and the web fr
 2. Enable dot-core in *Project > Project Settings > Plugins*.
 3. Run `godot --headless --path . --import` once so the `Dot*` classes register.
 
-The plugin only registers inspector types. Every class is available by its `class_name` whether the plugin is enabled or not. Starting a new game? Begin from [dot-game-template](https://github.com/gamespice-platform/game-template).
+The plugin only registers inspector types. Every class is available by its `class_name` whether the plugin is enabled or not. Starting a new game? Begin from [GameSpice Game Template](https://github.com/gamespice-platform/game-template).
 
 ## First steps
 
@@ -29,7 +29,7 @@ The plugin only registers inspector types. Every class is available by its `clas
 | `DotScheduler`, `DotJob` | Long work in slices. Worker threads where they exist, a per-frame time budget where they do not. |
 | `DotTransport` | Swappable multiplayer transport. WebSocket serves browser and native clients from one listener. ENet is lighter but does not work in browsers. `DotTransportAuto` picks one and logs why. |
 | `DotHttp` | An `HTTPRequest` client with retries, jittered backoff, `Retry-After`, resumable downloads and connection pooling. Works in the browser. |
-| `DotLog`, `DotLogSink` | Levelled, channelled logging with structured fields, rotating files and UDP forwarding. [dot-log](https://github.com/gamespice-platform/log) adds more sinks. |
+| `DotLog`, `DotLogSink` | Levelled, channelled logging with structured fields, rotating files and UDP forwarding. [GameSpice Log](https://github.com/gamespice-platform/log) adds more sinks. |
 | `DotPaths` | Path cleaning that refuses traversal instead of repairing it, atomic writes and web filesystem flushing. |
 | `DotHash` | SHA-256, HMAC, constant-time comparison, base64url and secure random tokens. |
 | `DotRandomStream` and related | Randomness another machine can reproduce. A draw depends only on a key and an index, so peers that draw in a different order still agree. `DotRandomTable` does weighted picks, `DotRandomSchedule` does events in ticks, and `DotRandomManager` hands out named streams. See [docs/randomness.md](docs/randomness.md). |

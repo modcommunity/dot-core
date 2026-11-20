@@ -171,7 +171,7 @@ static func write_dir_for(addon_name: String) -> String:
 
 
 ## Turns the player's user tier on for a solo or listen-host process, off for a server or a connected client.
-## dot-profile's set reads this same flag, so one call switches both.
+## GameSpice Profile's set reads this same flag, so one call switches both.
 static func set_user_tier(enabled: bool) -> void:
 	user_tier_enabled = enabled
 

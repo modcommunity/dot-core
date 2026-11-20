@@ -1,4 +1,4 @@
-# Engine traps dot-core exists to absorb
+# Engine traps GameSpice Core exists to absorb
 
 Each of these parses cleanly, is silent off the path that hits it, and has cost the family a real bug. The family-wide list is [gdscript-hazards.md](../../../docs/gdscript-hazards.md).
 
@@ -6,8 +6,8 @@ Each of these parses cleanly, is silent off the path that hits it, and has cost 
 
 GDScript's comparison operators between two **mismatched Variant types** are a runtime error, not `false`/`true`. The expression is abandoned, an error is pushed, and the calling function carries on with an undefined condition, so the caller sees a plausible answer and the only trace is a log line.
 
-- dot-npc-ai's blackboard `has()` was the textbook sentinel comparison (`get_value(key, now, MISSING) != MISSING`) and answered false for every value that was not a `StringName`.
-- dot-settings hit the same thing comparing a coerced value with its raw source, and its suite reported "0 failed" and exited 0 while eight checks never ran.
+- GameSpice NPC AI's blackboard `has()` was the textbook sentinel comparison (`get_value(key, now, MISSING) != MISSING`) and answered false for every value that was not a `StringName`.
+- GameSpice Settings hit the same thing comparing a coerced value with its raw source, and its suite reported "0 failed" and exited 0 while eight checks never ran.
 
 `DotValue.same` / `differs` / `is_blank` / `same_dictionary` answer the question actually asked. Two foldings are deliberate: int against float, and `StringName` against `String` (a document that made a round trip through JSON would otherwise report a change on every load). Use them **anywhere either side is a `Variant` whose type you do not control**: a config file, a wire message, a saved document, a sentinel. Comparisons between two values of a declared type stay plain.
 
@@ -15,7 +15,7 @@ GDScript's comparison operators between two **mismatched Variant types** are a r
 
 Everything `DotWeb.get_global` hands back is a `JavaScriptObject`, which forwards **every** member access to the JavaScript object behind it. `obj.get("hidden")` invokes a JavaScript method called `get` (`TypeError: obj[method] is not a function`), and `obj.call("addEventListener", …)` asks for a method called `call`. Both parse, both are silent off-web, and neither reaches a headless check.
 
-Read properties with `.hidden`; call methods with `.addEventListener(…)`. The bridge singleton itself is an ordinary `Object`, so `bridge().call("get_interface", name)` inside `dot_web.gd` is correct. It has bitten dot-auth's web handoff, `DotWeb.watch_visibility` (no listener attached, the browser-tab keepalive a no-op that passed its suite) and dot-server-deploy's reload.
+Read properties with `.hidden`; call methods with `.addEventListener(…)`. The bridge singleton itself is an ordinary `Object`, so `bridge().call("get_interface", name)` inside `dot_web.gd` is correct. It has bitten GameSpice Auth's web handoff, `DotWeb.watch_visibility` (no listener attached, the browser-tab keepalive a no-op that passed its suite) and GameSpice Server Deploy's reload.
 
 ## Signals from worker threads must be deferred
 
@@ -29,7 +29,7 @@ So: `DotJob` holds a per-job `Mutex` for every step and every settle, and `_tear
 
 ## Some calls are the damage
 
-`OS.get_unique_id()` on web or iOS pushes `OS::get_unique_id() is not available on the Web platform` and then returns "". Callers in dot-auth, dot-server and dot-user checked for emptiness and fell back correctly, after printing a red engine error on the player's page. `DotPlatform.has_unique_id()` and `unique_id()` ask first. Found by loading the browser client.
+`OS.get_unique_id()` on web or iOS pushes `OS::get_unique_id() is not available on the Web platform` and then returns "". Callers in GameSpice Auth, GameSpice Server and GameSpice User checked for emptiness and fell back correctly, after printing a red engine error on the player's page. `DotPlatform.has_unique_id()` and `unique_id()` ask first. Found by loading the browser client.
 
 ## `push_warning` staples a backtrace on
 

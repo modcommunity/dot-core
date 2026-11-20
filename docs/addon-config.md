@@ -28,7 +28,7 @@ An addon with a typed config class (a `DotVoteRules`, a `DotLogConfig`) reads on
 
 ## List files: replace by default, `merge: true` to add
 
-A file that is a list (a map rotation) is not merged key by key. `replace_aware_layers(addon, file, extra_dir := "")` returns the layers of `file_layers` that apply, weakest first: a layer whose top level lacks `merge: true` replaces every weaker one, so an operator's `cfg/server/addon/dot_map/maps.yml` swaps the shipped list whole, and one that starts `merge: true` adds to it. The reader (dot-map's rotation file) parses the returned paths itself and honours an optional `remove: [ids]` after merging. `DotAddonConfig.merge(into, over)` is the public deep merge (maps by key, lists replaced whole).
+A file that is a list (a map rotation) is not merged key by key. `replace_aware_layers(addon, file, extra_dir := "")` returns the layers of `file_layers` that apply, weakest first: a layer whose top level lacks `merge: true` replaces every weaker one, so an operator's `cfg/server/addon/dot_map/maps.yml` swaps the shipped list whole, and one that starts `merge: true` adds to it. The reader (GameSpice Map's rotation file) parses the returned paths itself and honours an optional `remove: [ids]` after merging. `DotAddonConfig.merge(into, over)` is the public deep merge (maps by key, lists replaced whole).
 
 `DotAddonConfig.config_root` is a `--config` root a host sets when it was handed its cfg directory some other way (dot-server-deploy does).
 

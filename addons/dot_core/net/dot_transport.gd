@@ -9,7 +9,7 @@ extends Resource
 const CHANNEL := "transport"
 
 ## Channel budget shared by every transport, so a 4 MB content chunk on its own channel
-## does not head-of-line block a movement update. dot-server assigns these.
+## does not head-of-line block a movement update. GameSpice Server assigns these.
 enum Channel {
 	## Handshake, authentication, console commands. Reliable, ordered.
 	CONTROL = 0,
@@ -31,7 +31,7 @@ const CHANNEL_COUNT := 4
 
 @export_group("Limits")
 
-## Maximum simultaneous clients, enforced where the transport can. dot-server enforces its
+## Maximum simultaneous clients, enforced where the transport can. GameSpice Server enforces its
 ## own limit too: a transport refusal gives no reason, and reserve slots decide after connect.
 @export_range(1, 4096, 1) var max_clients: int = 32
 
