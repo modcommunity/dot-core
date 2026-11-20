@@ -2,8 +2,8 @@ extends Node
 
 ## Exercises [DotLoadGate] and [DotLoadingCover]: holds, predicates, the timeout warning, freezing and settling under the cover, closing again, the camera requirement and warm-up, a host claiming the cover, the older shells' root signal.
 
-const SECTIONS := 13
-const CHECKS := 113
+const SECTIONS := 15
+const CHECKS := 132
 
 var _passed := 0
 var _failed := 0
@@ -55,6 +55,8 @@ func _run() -> void:
 	await _test_finding_and_old_shells()
 	await _test_cover_title_tip()
 	await _test_slice_msec()
+	await _test_hold_shown()
+	await _test_busy_indicator()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -644,6 +646,101 @@ func _test_slice_msec() -> void:
 	gate.cover_slice_msec = 30
 	_check(gate.slice_msec(8) == 30, "a closed gate widens to the exported budget")
 	_check(gate.slice_msec(50) == 50, "a base above the wide budget is kept")
+
+
+func _test_hold_shown() -> void:
+	_section("hold_shown")
+	var gate := _make()
+	var ran := [false]
+	var run := func() -> void:
+		await gate.hold_shown(&"map", "Loading map")
+		ran[0] = true
+	run.call()
+	_check(gate.is_holding(&"map") and gate.is_cover_showing() and not ran[0], "the hold and the cover are in place at once, the caller still waits")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(ran[0], "the caller resumes after a frame")
+	_check(gate.indicator != null and gate.indicator.is_showing(), "the gate's busy indicator is up while held")
+	_drop(gate)
+
+
+class FakeCloud extends RefCounted:
+	signal phase_changed(phase: int, text: String)
+	signal progress_changed(progress: Dictionary)
+	signal job_progress_changed(snapshot: Dictionary)
+	signal failed(error: DotError)
+	var store: Object = null
+
+
+class FakeStore extends RefCounted:
+	var cleared := 0
+	func clear_unpinned() -> DotResult:
+		cleared += 1
+		return DotResult.success(null)
+
+
+func _test_busy_indicator() -> void:
+	_section("busy indicator")
+	var ind := DotBusyIndicator.new()
+	ind.steady_frames = 3
+	ind.steady_msec = 1000
+	add_child(ind)
+	_check(not ind.is_showing() and DotBusyIndicator.current() == ind, "hidden until something is busy; registered")
+	ind.begin(&"a", "Working", 0.25, "1 MB of 4 MB")
+	_check(ind.is_showing() and ind.is_busy(), "shows while a source is busy")
+	var labels := ind.find_children("*", "Label", true, false)
+	var texts := labels.filter(func(l: Label) -> bool: return l.visible).map(func(l: Label) -> String: return l.text)
+	_check(texts.has("Working") and texts.has("1 MB of 4 MB") and texts.has(ind.warning_text), "status, detail and the stutter warning are shown", str(texts))
+	var bar: ProgressBar = ind.find_children("*", "ProgressBar", true, false)[0]
+	_check(is_equal_approx(bar.value, 25.0) and not bar.indeterminate, "the bar follows the fraction", str(bar.value))
+	ind.end(&"a")
+	_check(ind.is_showing() and ind.is_waiting_steady(), "stays up after the last source until frames are steady")
+	await _frames(6)
+	_check(not ind.is_showing(), "and goes once frames are steady", str(ind.describe()))
+	ind.begin(&"a", "x")
+	ind.max_tail_sec = 0.0
+	ind.end(&"a")
+	await _frames(2)
+	_check(not ind.is_showing(), "the tail is capped by max_tail_sec")
+
+	var cloud := FakeCloud.new()
+	var store := FakeStore.new()
+	cloud.store = store
+	ind.bind_cloud(cloud)
+	cloud.job_progress_changed.emit({"fraction": 0.5, "done_bytes": 1048576, "total_bytes": 2097152, "done_packs": 1, "total_packs": 30, "phase": "download"})
+	_check(ind.is_showing() and ind.describe()["sources"].has("download"), "a content download shows with no cover at all")
+	_check(ind.error_text() == "", "no error yet")
+	cloud.job_progress_changed.emit({"fraction": 1.0, "done_bytes": 2097152, "total_bytes": 2097152, "done_packs": 30, "total_packs": 30, "phase": "download"})
+	_check(not ind.describe()["sources"].has("download"), "a finished job ends the source")
+	cloud.phase_changed.emit(6, "Mounting content")
+	_check(ind.describe()["sources"].has("content"), "the mounting phase counts as busy")
+	cloud.phase_changed.emit(7, "")
+	_check(not ind.describe()["sources"].has("content"), "ready ends it")
+	var err := DotError.new()
+	err.code = DotError.CODE_QUOTA
+	err.message = "Not enough storage for the game's content."
+	cloud.failed.emit(err)
+	_check(ind.is_showing() and ind.error_text() == err.message, "a quota failure is shown to the player")
+	var btns := ind.find_children("*", "Button", true, false)
+	_check(btns.size() == 1 and (btns[0] as Button).visible, "with a clear-downloads button")
+	(btns[0] as Button).pressed.emit()
+	await _frames(2)
+	_check(store.cleared == 1 and ind.error_text() == "", "pressing it clears unpinned content and the error")
+
+	var late := DotBusyIndicator.new()
+	late.name = "Late"
+	remove_child(ind)
+	ind.free()
+	add_child(late)
+	late.watch_service(&"selftest_cloud")
+	var cloud2 := FakeCloud.new()
+	DotRegistry.register(&"selftest_cloud", cloud2)
+	late._try_service()
+	cloud2.phase_changed.emit(4, "Downloading")
+	_check(late.describe()["sources"].has("content"), "watch_service binds a client that registers later")
+	DotRegistry.unregister(&"selftest_cloud")
+	remove_child(late)
+	late.free()
 
 
 func _section(title: String) -> void:
