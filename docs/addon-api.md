@@ -73,3 +73,4 @@ A pack says what it needs at its root: `{"format": 1, "addons": {"dot_net": 3}}`
 - 38: DotRenderWarmup.follow_camera / cancel() / is_running(); DotLoadGate.warm_survives_close (a hold mid-warm-up no longer cancels the warm-up, so every item is drawn).
 - 39: DotLoadGate.mute_audio (default on) / is_audio_muted(): the Master bus is muted while the gate is closed (loading, map change, settling, warming) and restored when it opens.
 - 40: DotNativeParity (core/dot_native_parity.gd): holds a native twin to its script original, same inputs through both, bit-exact compare, skipped when the native class is absent (web), bench(); docs/native-twins.md.
+- 41: DotWireDoc (core/dot_wire_doc.gd): a JSON document as one message (text deflated behind both lengths): `encode(doc, sort_keys)`, `decode_text(bytes, what, max_size)` (every refusal named, no engine error), `digest`; what games hand-wrote in each map or course document.
