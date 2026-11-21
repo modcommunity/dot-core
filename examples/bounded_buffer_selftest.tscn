@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://examples/bounded_buffer_selftest.gd" id="1_bb"]
+
+[node name="BoundedBufferSelfTest" type="Node"]
+script = ExtResource("1_bb")
