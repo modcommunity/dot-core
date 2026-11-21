@@ -72,3 +72,4 @@ A pack says what it needs at its root: `{"format": 1, "addons": {"dot_net": 3}}`
 - 37: DotConfig.gs_env_name / gs_env: for a `DOT_X` environment variable, `GS_X` (Gamespice) is read first and `DOT_X` still works; DotConfig.apply_env, DotAddonConfig, DotHttpBase and the DOT_SHOT_*/GS_PARALLEL_VERIFY reads use it.
 - 38: DotRenderWarmup.follow_camera / cancel() / is_running(); DotLoadGate.warm_survives_close (a hold mid-warm-up no longer cancels the warm-up, so every item is drawn).
 - 39: DotLoadGate.mute_audio (default on) / is_audio_muted(): the Master bus is muted while the gate is closed (loading, map change, settling, warming) and restored when it opens.
+- 40: DotNativeParity (core/dot_native_parity.gd): holds a native twin to its script original, same inputs through both, bit-exact compare, skipped when the native class is absent (web), bench(); docs/native-twins.md.

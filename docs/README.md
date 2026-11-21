@@ -12,3 +12,4 @@
 | [addon-config.md](addon-config.md) | `DotAddonConfig`: `cfg/addon/<addon>/*.yml`, the roots, the layers, secrets |
 | [dot-profile-split.md](dot-profile-split.md) | Done at API level 22: the profile classes moved to the GameSpice Profile addon, class names kept; what was skipped and why |
 | [profile.md](profile.md) | `profile/`: `DotHitchLog`, naming a lag spike from the frame split and counters |
+| [native-twins.md](native-twins.md) | `DotNativeParity`: shipping a native twin behind a script original, the parity suite, skips and `GS_NATIVE_REQUIRED` |
